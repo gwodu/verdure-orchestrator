@@ -97,7 +97,7 @@ export default function Home() {
             <div className="w-48 h-48 sm:w-56 sm:h-56 rounded-full bg-slate-700 border-4 border-emerald-400 mb-6 flex items-center justify-center overflow-hidden">
               {/* Replace the src below with your actual image path */}
               <img 
-                src="/founder.jpg" 
+                src="/Founders-Portrait.jpg" 
                 alt="Gesi Wodu"
                 className="w-full h-full object-cover"
               />
@@ -108,7 +108,7 @@ export default function Home() {
               Gesi Wodu
             </h3>
             <a
-              href="https://www.linkedin.com/in/YOUR_LINKEDIN_USERNAME"
+              href="https://www.linkedin.com/in/gesikeme-wodu"
               target="_blank"
               rel="noopener noreferrer"
               className="text-emerald-400 hover:text-emerald-300 transition-colors mb-8 inline-flex items-center gap-2 text-lg"
