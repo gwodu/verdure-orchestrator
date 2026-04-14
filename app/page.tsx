@@ -94,15 +94,12 @@ export default function Home() {
             Meet the Founder
           </h2>
           <div className="flex flex-col items-center text-center">
-            <div className="w-48 h-48 sm:w-56 sm:h-56 rounded-full bg-slate-700 border-4 border-emerald-400 mb-6 flex items-center justify-center overflow-hidden">
-              {/* Replace the src below with your actual image path */}
+            <div className="w-64 sm:w-72 aspect-[3/4] rounded-2xl bg-slate-800 border-2 border-emerald-400/30 mb-8 flex items-center justify-center overflow-hidden shadow-[0_0_40px_-15px_rgba(52,211,153,0.3)]">
               <img 
                 src="/Founders-Portrait.jpg" 
                 alt="Gesi Wodu"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover object-top"
               />
-              {/* Fallback if image not found - remove the div below once you add your image */}
-              {/* <div className="text-slate-500 text-6xl">👤</div> */}
             </div>
             <h3 className="text-3xl sm:text-4xl font-bold text-white mb-2">
               Gesi Wodu
