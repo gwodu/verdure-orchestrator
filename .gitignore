@@ -1,0 +1,13 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# macOS
+.DS_Store
+
+# Node / website tooling
+node_modules/
+
+# Local env / secrets
+.env
+.env.local

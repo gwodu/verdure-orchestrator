@@ -1,0 +1,40 @@
+# Verdure — KNOWLEDGE.md
+
+Verdure is the orchestration layer for local AI. It detects what a device can run, picks the right model, configures the right backend, and gives the user one-click access to AI on their own machine. The competitive moat is intent-first orchestration: starting with "what are you trying to do?" rather than "browse the model library."
+
+This file is an orientation index, not a content store. Knowledge lives in the `knowledge/` subfolder as numbered, modular files. Claude should read this file at the start of every session, then load only the knowledge files relevant to the current task.
+
+For perspective — *who Claude is while working on this project* — see `CLAUDE.md`.
+
+## Knowledge index
+
+★ marks the most-referenced files (the matching brain).
+
+- `knowledge/01-thesis.md` — what Verdure is, the moat, the seven decisions, phasing strategy
+- `knowledge/02-hardware-tiers.md` ★ — device-to-tier mapping (L1–L3 laptops, P1–P3 phones)
+- `knowledge/03-model-matrix.md` ★ — tier-to-model recommendation matrix, intent-shifts-within-tier
+- `knowledge/04-quantization.md` — pre-quantized only, GGUF, Q4_K_M default
+- `knowledge/05-website-spec.md` — Phase 0 recommendation website full spec
+- `knowledge/06-privacy-principles.md` — ask don't sniff, local by default, no telemetry
+- `knowledge/07-runtime-backends.md` — llama.cpp, ExecuTorch, MLC, pure-Rust paths
+- `knowledge/08-rust-ecosystem.md` — llama-cpp-2, candle, mistral.rs, FFI strategy
+- `knowledge/09-licensing.md` — model license audit
+- `knowledge/10-distribution.md` — Hugging Face source, CDN considerations
+- `knowledge/11-platform-deployment.md` — code signing, app stores, OS specifics
+- `knowledge/open-questions.md` — master open-questions list, organized by urgency
+
+## Where to start by task
+
+- Recommending a model for a specific device → `02` + `03`
+- Designing or modifying the Phase 0 website → `05` + `06`
+- Writing Rust binary code → `07` + `08`
+- License or distribution questions → `09` + `10`
+- Platform-specific deployment → `11`
+- Tracking what is still open → `open-questions.md`
+
+## Conventions
+
+Each knowledge file opens with a status marker (✅ Settled, 🟡 Provisional, 🔴 Open) and ends with an "Open Questions" section where relevant. Open questions also appear in the centralized `open-questions.md` with stable `[OQ-XX]` reference codes. Cross-references between files are always explicit.
+
+## Changelog
+- 2026-05-24 — initial knowledge base assembled from research and project summary

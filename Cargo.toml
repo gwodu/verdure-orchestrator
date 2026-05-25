@@ -1,0 +1,8 @@
+[workspace]
+name = "verdure"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "verdure"
+path = "src/main.rs"
