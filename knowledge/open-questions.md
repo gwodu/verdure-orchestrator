@@ -10,7 +10,6 @@ When a question is resolved:
 ## Critical — resolve this week
 
 - [ ] **[OQ-07]** Which LLM API for Phase 0 intent classification? Evaluate Claude Haiku 4.5, Gemini Flash, GPT-5 nano, Groq Llama for latency, structured-output reliability, vendor stability. (From `05-website-spec.md`.)
-- [ ] **[OQ-08]** Domain availability — is verdure.com taken? If so, alternative. (From `05-website-spec.md`.)
 - [ ] **[OQ-09]** Phase 0 tech stack pick. Any reasonable choice works; pick one and commit. (From `05-website-spec.md`.)
 - [ ] **[OQ-26]** iOS feasibility for the daemon model. Strategic blocker for Phase 2 on iOS. (From `11-platform-deployment.md`.)
 - [ ] **[OQ-03]** Physical device access for Tier P1 / P2 / L1 testing. Blocks publishing real-world benchmarks. (From `02-hardware-tiers.md`.)
@@ -44,4 +43,4 @@ When a question is resolved:
 
 ## Resolved
 
-*(none yet)*
+- [x] **[OQ-08]** Domain — resolved 2026-05-26: the Phase 0 site is verdureai.com. (From `05-website-spec.md`.)

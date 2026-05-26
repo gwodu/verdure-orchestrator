@@ -36,7 +36,7 @@ This inversion is the differentiation. The runner is commoditizable; the decider
 
 Verdure ships in three phases. The orchestration brain — this knowledge base — is constant across all of them. Only the delivery surface changes.
 
-**Phase 0 — the recommendation website.** A public site at verdure.com that takes the user through a 60-second flow and produces a personalized recommendation with honest performance expectations and tiered install paths. No binary. No installation. See `05-website-spec.md`.
+**Phase 0 — the recommendation website.** A public site at verdureai.com that takes the user through a 60-second flow and produces a personalized recommendation with honest performance expectations and tiered install paths. No binary. No installation. See `05-website-spec.md`.
 
 **Phase 1 — the laptop binary.** A Rust daemon on macOS / Windows / Linux. No app sandbox. Other processes call Verdure via local socket. Closes the loop from recommendation to one-click install and run.
 

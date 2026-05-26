@@ -2,7 +2,7 @@
 
 **Status:** 🟡 Provisional (strategy locked; implementation details TBD)
 
-This file specifies the Phase 0 recommendation website at verdure.com. The website is the orchestration brain exposed publicly — the propositional knowledge base operationalized as a recommender. No binary, no installation, no model downloads through Verdure. Just intent-and-device → recommendation → install path.
+This file specifies the Phase 0 recommendation website at verdureai.com. The website is the orchestration brain exposed publicly — the propositional knowledge base operationalized as a recommender. No binary, no installation, no model downloads through Verdure. Just intent-and-device → recommendation → install path.
 
 For privacy posture, see `06-privacy-principles.md`.
 
@@ -81,7 +81,7 @@ Phase 0 is easier to ship and easier to iterate on than Phase 1. The temptation 
 ## Open questions
 
 - [OQ-07] Which LLM API for intent classification? (latency, structured-output reliability, vendor stability)
-- [OQ-08] Domain availability — is verdure.com taken? If so, alternative?
+- [OQ-08] Resolved (2026-05-26) — the Phase 0 domain is verdureai.com.
 - [OQ-09] Tech stack pick — any reasonable choice is fine, but pick one and commit.
 - [OQ-10] Email capture mechanism for the Phase 1 launch list (Mailchimp, Buttondown, ConvertKit, Supabase, etc.).
 - [OQ-11] Visual design language — needs to be defined before launch.
