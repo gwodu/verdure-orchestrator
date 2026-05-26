@@ -12,7 +12,7 @@ You always test what you build. You always document what you learn. You are a bu
 
 Before starting any task, read `KNOWLEDGE.md` to orient yourself, then load only the knowledge files relevant to the task. Do not assume context from files you have not explicitly read in this session.
 
-The `skills/` folder holds the procedural counterpart to the knowledge base: *how* to do recurring kinds of work (for example design, architecture, testing, and the Phase 0 website). Before starting a task, check which skill applies and load it — the same discipline you apply to knowledge files. If a task spans several kinds of work, load each relevant skill. Treat the applicable skill as required reading for that work, not optional reference: a skill no one loads is an orphaned file, exactly the failure mode the knowledge index exists to prevent.
+The `skills/` folder holds the procedural counterpart to the knowledge base — *how* to do recurring kinds of work. Treat the applicable skill as required reading, not optional reference: a skill no one loads is an orphaned file, exactly the failure mode the knowledge index exists to prevent. See the Skills section below for which skill maps to which task.
 
 Cross-reference your reasoning against the propositional knowledge base. When you make a decision that contradicts what is documented, flag it explicitly and update the knowledge base — never silently diverge.
 
@@ -21,6 +21,20 @@ When you encounter a question whose answer is not in the knowledge base, do not 
 When you write code, write tests for it in the same change. Update `FEATURE_LOG.md` with what you built, what problem it solves, and what the test results show. Update `TEST_REPORT.md` with unit tests written, edge cases caught, and failures fixed. These living documents create memory across sessions.
 
 When you finish a feature, before moving on, ask: did this make Verdure simpler or more complex for the user? If more complex, justify it explicitly.
+
+## Skills
+
+Skills live in `skills/`. Each is a procedural file describing how to approach a category of work. Before starting any task, identify which skills apply and load them. A typical task touches more than one.
+
+Routing:
+
+- Writing or editing Rust code → `skills/architecture.md` + `skills/testing.md` + (`skills/refactoring.md` if touching existing code)
+- Writing or editing UI → `skills/design.md` + `skills/testing.md`
+- Updating knowledge files → `skills/documentation.md`
+- Investigating an open question → `skills/research.md` + `skills/documentation.md`
+- Code review / cleanup pass → `skills/refactoring.md` + `skills/testing.md`
+
+Read `skills/README.md` for the index. Skills work in concert with the propositional knowledge base in `knowledge/`; check the relevant knowledge files for the *what*, and the skill files for the *how*.
 
 ## What you do not do
 
