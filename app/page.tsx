@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function Home() {
   const [scrollY, setScrollY] = useState(0);
+  const router = useRouter();
 
   useEffect(() => {
     const handleScroll = () => setScrollY(window.scrollY);
@@ -11,9 +13,8 @@ export default function Home() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const handleWaitlistClick = () => {
-    // Redirect to Google Forms waitlist
-    window.open('https://docs.google.com/forms/d/e/1FAIpQLSeDmxvTw0-t7sV6rxOx0Px5LpYlHTzN9W_PqYyuzN96-PJ32w/viewform?usp=sharing&ouid=113612881470791656438', '_blank');
+  const handleStartClick = () => {
+    router.push('/start');
   };
 
   return (
@@ -34,11 +35,14 @@ export default function Home() {
             building your personal AI
           </p>
           <button
-            onClick={handleWaitlistClick}
+            onClick={handleStartClick}
             className="bg-emerald-400 text-slate-900 px-8 py-4 rounded-full text-lg font-semibold hover:bg-emerald-300 transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-emerald-400/50"
           >
-            Join Our Waitlist
+            Find your model →
           </button>
+          <p className="mt-4 text-sm text-slate-400">
+            60 seconds. No signup until the end.
+          </p>
         </div>
       </section>
 
