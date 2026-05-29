@@ -61,6 +61,14 @@ Don't disable. Don't `#[ignore]` and move on. Either:
 
 A skipped test rots faster than no test at all, because it creates the illusion of coverage where there is none.
 
+## Continuous integration
+
+Tests and the build run on every push and every pull request. CI is the firebreak that catches the failure mode "I forgot to run tests before pushing" — exactly the mode the discipline above is designed to prevent and that CI enforces structurally.
+
+Each repository owns its own `.github/workflows/ci.yml`. For the Rust workspace it runs `cargo test`; for the Phase 0 website it runs `npm test` and `npm run build`. Never merge red. When CI fails, the fix lives in the same change.
+
+When you add a new repository, the first commit after the initial scaffold is the CI workflow. A repository without CI is unprotected — see `[OQ-27]` for active gaps.
+
 ## Self-check before declaring a feature done
 
 - Are there unit tests for the pure logic?
@@ -69,3 +77,4 @@ A skipped test rots faster than no test at all, because it creates the illusion 
 - If this is UI: has Claude actually looked at the screenshot?
 - If a future Claude refactors the internals, will these tests still pass?
 - Has `TEST_REPORT.md` been updated with what was tested and any edge cases caught?
+- Is CI green on the PR? (If the repo has no CI yet, see `[OQ-27]`.)

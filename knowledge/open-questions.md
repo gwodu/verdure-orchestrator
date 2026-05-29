@@ -33,6 +33,7 @@ When a question is resolved:
 - [ ] **[OQ-23]** Apple Developer Program pricing and 2026 notarization policy. (From `11-platform-deployment.md`.)
 - [ ] **[OQ-24]** Windows code signing pricing, CA recommendations, SmartScreen timelines. (From `11-platform-deployment.md`.)
 - [ ] **[OQ-25]** Android 14+ background service policies and Play Store requirements. (From `11-platform-deployment.md`.)
+- [ ] **[OQ-27]** Set up GitHub Actions CI for the `verdure_web` repo — run `npm test` + `npm run build` on every push and pull request to `main`. (The `verdure-orchestrator` repo already has CI for `cargo test`; this OQ tracks the parallel gap on the website side.) (From `skills/testing.md`.)
 
 ## Defer — Month 2 and later
 
