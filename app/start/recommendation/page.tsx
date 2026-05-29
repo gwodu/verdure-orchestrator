@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getIntent, getTier } from '@/lib/session';
-import { findBucket, type Tier } from '@/lib/tiers';
+import type { Tier } from '@/lib/tiers';
 import { classifyIntent } from '@/lib/intent';
 import { recommend, type Recommendation } from '@/lib/recommend';
 
@@ -20,6 +20,19 @@ const OLLAMA_TAGS: Record<string, string> = {
   'Qwen 2.5 1.5B': 'qwen2.5:1.5b',
   'Qwen 2.5 3B': 'qwen2.5:3b',
   'Mistral Small': 'mistral-small',
+};
+
+// Where the user can learn more about a model — official maker pages where
+// they exist, Hugging Face model cards where they don't have one canonical page.
+const INFO_URLS: Record<string, string> = {
+  'Gemma 3 1B': 'https://ai.google.dev/gemma',
+  'Gemma 3 4B': 'https://ai.google.dev/gemma',
+  'Llama 3.2 3B': 'https://www.llama.com/',
+  'Llama 3.1 8B': 'https://www.llama.com/',
+  'Phi-4-mini': 'https://huggingface.co/microsoft/Phi-4-mini-instruct',
+  'Qwen 2.5 1.5B': 'https://qwenlm.github.io/',
+  'Qwen 2.5 3B': 'https://qwenlm.github.io/',
+  'Mistral Small': 'https://mistral.ai/news/mistral-small/',
 };
 
 export default function RecommendationScreen() {
@@ -45,44 +58,54 @@ export default function RecommendationScreen() {
 
   if (!intent || !tier || !rec) return null;
 
-  const bucket = findBucket(tier);
   const ollamaTag = OLLAMA_TAGS[rec.modelName] ?? '';
+  const infoUrl = INFO_URLS[rec.modelName];
 
   return (
     <main className="bg-slate-800 text-white min-h-screen px-6 sm:px-12 py-16">
       <div className="max-w-3xl mx-auto">
         <p className="text-emerald-400 text-sm mb-3 tracking-widest uppercase">Step 4 of 4</p>
-        <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2 leading-tight">
-          We recommend <span className="text-emerald-400">{rec.modelName}</span>
+        <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-12 leading-tight">
+          We recommend{' '}
+          {infoUrl ? (
+            <a
+              href={infoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-emerald-400 hover:text-emerald-300 underline-offset-4 hover:underline transition-colors"
+            >
+              {rec.modelName}
+            </a>
+          ) : (
+            <span className="text-emerald-400">{rec.modelName}</span>
+          )}
         </h1>
-        <p className="text-slate-300 text-lg mb-10">
-          For your {bucket?.label.toLowerCase()}, based on what you described.
-        </p>
-
-        {/* Recommendation card */}
-        <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 mb-8 space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-            <Stat label="Memory" value={`≈ ${rec.footprintGB} GB`} />
-            <Stat label="Speed" value={`≈ ${rec.tokensPerSecEstimate} tok/s`} />
-            <Stat label="Format" value={rec.quantization} />
-          </div>
-          <p className="text-slate-200 pt-4 border-t border-slate-700">{rec.why}</p>
-          <p className="text-xs text-slate-500 pt-2 border-t border-slate-700/50">
-            Speed numbers are estimated from comparable hardware. We&rsquo;ll publish measured numbers once we benchmark on real devices.
-          </p>
-        </div>
 
         {/* Alternatives */}
         {rec.alternatives.length > 0 && (
           <div className="mb-12">
             <h3 className="text-lg font-semibold mb-3 text-slate-300">Alternatives</h3>
             <div className="space-y-2">
-              {rec.alternatives.map((alt) => (
-                <div key={alt.name} className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                  <p className="font-semibold text-emerald-400">{alt.name}</p>
-                  <p className="text-slate-400 text-sm">{alt.reason}</p>
-                </div>
-              ))}
+              {rec.alternatives.map((alt) => {
+                const altInfoUrl = INFO_URLS[alt.name];
+                return (
+                  <div key={alt.name} className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
+                    {altInfoUrl ? (
+                      <a
+                        href={altInfoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-emerald-400 hover:text-emerald-300 underline-offset-4 hover:underline transition-colors"
+                      >
+                        {alt.name}
+                      </a>
+                    ) : (
+                      <p className="font-semibold text-emerald-400">{alt.name}</p>
+                    )}
+                    <p className="text-slate-400 text-sm">{alt.reason}</p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -106,15 +129,6 @@ export default function RecommendationScreen() {
         </div>
       </div>
     </main>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">{label}</p>
-      <p className="text-white font-semibold">{value}</p>
-    </div>
   );
 }
 
