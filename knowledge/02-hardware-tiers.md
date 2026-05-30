@@ -30,17 +30,20 @@ There is also a strategic point: whatever runs well on Tier L1 / P1 will run bri
 
 ## Mapping a user-described device to a tier
 
-In Phase 0, the website asks the user to pick from a curated set of device buckets (see `05-website-spec.md`). Each bucket maps to a tier. In Phase 1+, the binary reads device specs directly via OS APIs and maps to a tier automatically.
+In Phase 0, the website asks the user to pick from a small set of **plain-language device cards** (see `05-website-spec.md`). The cards never show a spec — no RAM, no "GPU", no "Apple Silicon" — because the audience is non-technical (see `../skills/design.md`, "Assume zero technical knowledge"). Each card is described in lived experience and maps to one internal tier; the spec columns below stay internal and are the source of truth we reason with. In Phase 1+, the binary reads device specs directly via OS APIs and maps to a tier automatically.
 
-The user-facing buckets are:
+The card → tier mapping (cards are the user-facing layer; RAM/graphics stay internal):
 
-| User picks | Internal tier | RAM range |
-|---|---|---|
-| "Older laptop (5+ years old, basic specs)" | L1 | 4 GB |
-| "Standard laptop (3–5 years old)" | L2-low | 6–8 GB |
-| "Recent laptop or Intel MacBook" | L2-high | 8 GB |
-| "MacBook with Apple Silicon (M1+)" | L3 | 16 GB+ unified |
-| "Workstation / Gaming PC" | L3+ | 16–32 GB + GPU |
+| User picks (card) | Internal tier | RAM (internal) | What the card quietly signals |
+|---|---|---|---|
+| "A newer Mac" (≈2021 or later) | L3 | 16 GB+ unified | Apple Silicon — can generate images |
+| "An older Mac" (before ≈2021) | L2-high | ~8 GB | Intel Mac, no real GPU |
+| "A regular laptop" (everyday Windows) | L2-low | 6–8 GB | no dedicated GPU |
+| "A gaming computer" | L3+ | 16–32 GB + GPU | dedicated GPU — unlocks image/video |
+| "An older or basic computer" | L1 | ~4 GB | the floor |
+| "I'm not sure" | L2-low (safe default) | 6–8 GB | confirmed/adjustable on the next screen |
+
+The "quietly signals" column is the key Phase-0 win: the cards capture the graphics signal the multimodal engine needs (see `12-multimodal-models.md`) **without ever asking the user a technical question.** Implemented in `website/lib/tiers.ts` (`DEVICE_CARDS`). Distinguishing graphics-memory *amount* for the heaviest tasks remains `[OQ-29]`.
 
 ## Open questions
 

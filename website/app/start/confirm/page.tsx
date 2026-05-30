@@ -2,30 +2,30 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getIntent, getTier } from '@/lib/session';
-import { findBucket, type Tier } from '@/lib/tiers';
+import { getIntent, getDevice } from '@/lib/session';
+import { findCard, type DeviceCard } from '@/lib/tiers';
 import { classifyIntent } from '@/lib/intent';
 import { taskLabel } from '@/lib/modality';
 
 export default function ConfirmScreen() {
   const router = useRouter();
   const [intent, setIntent] = useState<string | null>(null);
-  const [tier, setTier] = useState<Tier | null>(null);
+  const [card, setCard] = useState<DeviceCard | null>(null);
 
   useEffect(() => {
     const i = getIntent();
-    const t = getTier();
-    if (!i || !t) {
+    const id = getDevice();
+    const c = id ? findCard(id) : undefined;
+    if (!i || !c) {
       router.replace('/start');
       return;
     }
     setIntent(i);
-    setTier(t);
+    setCard(c);
   }, [router]);
 
-  if (!intent || !tier) return null;
+  if (!intent || !card) return null;
 
-  const bucket = findBucket(tier);
   const label = taskLabel(classifyIntent(intent));
   const labelDisplay = label.charAt(0).toUpperCase() + label.slice(1);
 
@@ -46,9 +46,11 @@ export default function ConfirmScreen() {
             </p>
           </div>
           <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
-            <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">Your device</p>
-            <p className="text-lg text-white">{bucket?.label}</p>
-            <p className="text-emerald-400 text-sm font-medium">{bucket?.ramRange}</p>
+            <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">Your computer</p>
+            <p className="text-lg text-white">
+              <span aria-hidden="true">{card.emoji}</span> {card.title}
+            </p>
+            <p className="text-slate-400 text-sm">{card.description}</p>
           </div>
         </div>
 

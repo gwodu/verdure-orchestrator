@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { DEVICE_BUCKETS, type Tier } from '@/lib/tiers';
-import { getIntent, saveTier } from '@/lib/session';
+import { DEVICE_CARDS, type DeviceCard } from '@/lib/tiers';
+import { getIntent, saveDevice } from '@/lib/session';
 
 export default function DeviceScreen() {
   const router = useRouter();
@@ -18,8 +18,8 @@ export default function DeviceScreen() {
     setReady(true);
   }, [router]);
 
-  const pick = (tier: Tier) => {
-    saveTier(tier);
+  const pick = (card: DeviceCard) => {
+    saveDevice(card.id);
     router.push('/start/confirm');
   };
 
@@ -27,27 +27,26 @@ export default function DeviceScreen() {
 
   return (
     <main className="bg-slate-800 text-white min-h-screen px-6 sm:px-12 py-16">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-3xl mx-auto">
         <p className="text-emerald-400 text-sm mb-3 tracking-widest uppercase">Step 2 of 4</p>
         <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-3 leading-tight">
-          What kind of device will run it?
+          What kind of computer will you use?
         </h1>
         <p className="text-slate-300 text-lg mb-10">
-          Pick the closest match. We&rsquo;ll recommend a model that runs comfortably on it.
+          Pick whichever one sounds the most like yours.
         </p>
         <div className="grid sm:grid-cols-2 gap-4">
-          {DEVICE_BUCKETS.map((b) => (
+          {DEVICE_CARDS.map((card) => (
             <button
-              key={b.id}
-              onClick={() => pick(b.id)}
+              key={card.id}
+              onClick={() => pick(card)}
               className="text-left p-6 bg-slate-900 border border-slate-700 rounded-xl hover:border-emerald-400 hover:bg-slate-900/60 transition group"
             >
-              <h3 className="text-xl font-semibold mb-1 text-white group-hover:text-emerald-400 transition-colors">
-                {b.label}
-              </h3>
-              <p className="text-slate-400 text-sm mb-2">{b.description}</p>
-              <p className="text-emerald-400 text-sm font-medium mb-2">{b.ramRange}</p>
-              <p className="text-slate-500 text-xs">{b.example}</p>
+              <div className="text-3xl mb-3" aria-hidden="true">{card.emoji}</div>
+              <h2 className="text-xl font-semibold mb-1 text-white group-hover:text-emerald-400 transition-colors">
+                {card.title}
+              </h2>
+              <p className="text-slate-400 text-sm">{card.description}</p>
             </button>
           ))}
         </div>
