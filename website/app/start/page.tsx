@@ -25,7 +25,7 @@ export default function IntentScreen() {
           What do you want your AI to help with?
         </h1>
         <p className="text-slate-300 text-lg mb-10">
-          Describe it in your own words. Examples: &ldquo;write stories with me,&rdquo; &ldquo;turn my recordings into text,&rdquo; &ldquo;make a picture for my blog.&rdquo;
+          Tell us in your own words. We&rsquo;ll find AI that runs on the computer you already have — private and free — and show you exactly how to start. Examples: &ldquo;write stories with me,&rdquo; &ldquo;turn my recordings into text,&rdquo; &ldquo;make a picture for my blog.&rdquo;
         </p>
         <form onSubmit={submit} className="space-y-6">
           <textarea

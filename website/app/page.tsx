@@ -47,7 +47,7 @@ export default function Home() {
             onClick={handleStartClick}
             className="bg-emerald-400 text-slate-900 px-8 py-4 rounded-full text-lg font-semibold hover:bg-emerald-300 transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-emerald-400/50"
           >
-            Find your model →
+            Run your own local AI →
           </button>
           <p className="mt-4 text-sm text-slate-400">
             60 seconds. No signup until the end.
@@ -81,7 +81,7 @@ export default function Home() {
               As you use it, Verdure learns what matters to you. Imagine waking up to a phone that has already sorted your email and messages down to the few things you actually need to see.
             </p>
             <p>
-              And it&rsquo;s more than an assistant — it&rsquo;s a foundation for apps that finally keep your data on your device. A travel agent that books the trips you&rsquo;d actually choose. A tax assistant that prepares your return without your finances ever leaving your phone.
+              And it grows with you. Over time your Verdure does more — booking the trips you&rsquo;d actually choose, or preparing your tax return — always right on your device, never on someone else&rsquo;s servers.
             </p>
             <p className="text-emerald-400 font-semibold">
               AI that works for you — and answers only to you.

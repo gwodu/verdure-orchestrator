@@ -75,7 +75,15 @@ export default function RecommendationScreen() {
           </div>
         )}
 
-        {/* How to get the recommended tool — directly under the solution, no scrolling past a "coming soon". */}
+        {/* Verdure CTA — right under the recommended model: the easy path, not buried at the bottom. */}
+        <h2 className="text-2xl sm:text-3xl font-bold mb-6">
+          {notLocal ? 'In the meantime' : 'Want it even easier?'}
+        </h2>
+        <div className="mb-10">
+          <VerdureWaitlist intentText={intent} modelName={rec.model?.name ?? ''} tier={tier} notLocal={notLocal} />
+        </div>
+
+        {/* How to get the recommended tool — your own copy, today. */}
         {rec.installOptions.length > 0 && (
           <div className="mb-10">
             <h2 className="text-2xl sm:text-3xl font-bold mb-5">How to get {rec.model?.name ?? 'it'}</h2>
@@ -101,12 +109,6 @@ export default function RecommendationScreen() {
             </div>
           </div>
         )}
-
-        {/* Verdure CTA — secondary to the answer above: the easier future, not the buried present. */}
-        <h2 className="text-2xl sm:text-3xl font-bold mb-6">
-          {notLocal ? 'In the meantime' : 'Want it even easier?'}
-        </h2>
-        <VerdureWaitlist intentText={intent} modelName={rec.model?.name ?? ''} tier={tier} notLocal={notLocal} />
 
         <div className="mt-12 text-center">
           <Link href="/start" className="text-slate-400 hover:text-white text-sm">
