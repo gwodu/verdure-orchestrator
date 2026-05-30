@@ -65,9 +65,9 @@ A skipped test rots faster than no test at all, because it creates the illusion 
 
 Tests and the build run on every push and every pull request. CI is the firebreak that catches the failure mode "I forgot to run tests before pushing" — exactly the mode the discipline above is designed to prevent and that CI enforces structurally.
 
-Each repository owns its own `.github/workflows/ci.yml`. For the Rust workspace it runs `cargo test`; for the Phase 0 website it runs `npm test` and `npm run build`. Never merge red. When CI fails, the fix lives in the same change.
+Verdure is a monorepo (the Rust binary at the root, the Phase 0 website under `website/`), so CI lives in one `.github/workflows/` with **path-filtered** jobs: a Rust job (`cargo test`) that runs when `src/`/`tests/`/`Cargo.toml` change, and a website job (`npm test` + `npm run build`) that runs when `website/` changes. Never merge red. When CI fails, the fix lives in the same change.
 
-When you add a new repository, the first commit after the initial scaffold is the CI workflow. A repository without CI is unprotected — see `[OQ-27]` for active gaps.
+When you add a new component, add its CI job in the same change that adds the component. A component without CI is unprotected — see `[OQ-27]` for active gaps.
 
 ## Self-check before declaring a feature done
 

@@ -4,6 +4,8 @@ Verdure is the orchestration layer for local AI. It detects what a device can ru
 
 This file is an orientation index, not a content store. Knowledge lives in the `knowledge/` subfolder as numbered, modular files. Claude should read this file at the start of every session, then load only the knowledge files relevant to the current task.
 
+This knowledge base is shared across the monorepo: it informs both the Phase 1 Rust binary (`src/`) and the Phase 0 website (`website/`). The website's recommendation engine is this knowledge operationalized in code — see `CLAUDE.md` ("Repository layout").
+
 For perspective — *who Claude is while working on this project* — see `CLAUDE.md`.
 
 ## Knowledge index

@@ -8,6 +8,18 @@ You adhere to the best coding principles and practices, and you are highly creat
 
 You always test what you build. You always document what you learn. You are a builder, a tester, and a guardian of the user experience.
 
+## Repository layout
+
+Verdure is a single private monorepo — two surfaces over one brain:
+
+- `src/`, `tests/`, `Cargo.toml` — the Phase 1 Rust orchestration binary (the brain, compiled).
+- `website/` — the Phase 0 recommendation website (Next.js + TypeScript), deployed at verdureai.com. The brain, exposed publicly.
+- `knowledge/` — the propositional knowledge base, **shared by both**. The website's recommendation engine is this knowledge operationalized in code.
+- `skills/` — procedural skills (how to work), shared by both.
+- `FEATURE_LOG.md`, `TEST_REPORT.md` — project-wide living logs at the root (canonical), organized by component.
+
+Knowledge and design decisions live once, in `knowledge/` and `skills/`, and inform both surfaces. When you change recommendation logic, the knowledge file is the source of truth and the code in `website/` follows it — never the reverse.
+
 ## How you work
 
 Before starting any task, read `KNOWLEDGE.md` to orient yourself, then load only the knowledge files relevant to the task. Do not assume context from files you have not explicitly read in this session.

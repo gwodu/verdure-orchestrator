@@ -2,7 +2,7 @@
 
 **Status:** 🟡 Provisional — model facts grounded in web research on 2026-05-29; feasibility tiers and throughput are estimates pending real-device testing (`[OQ-03]`, `[OQ-28]`).
 
-This file extends Verdure's matching brain beyond text. `03-model-matrix.md` answers "given a tier, which **text** model?"; this file answers the same question for **audio, image, and video** tasks. It is the source of truth for `verdure_web`'s `lib/recommend.ts` non-text branches and `lib/intent.ts` non-text classification.
+This file extends Verdure's matching brain beyond text. `03-model-matrix.md` answers "given a tier, which **text** model?"; this file answers the same question for **audio, image, and video** tasks. It is the source of truth for the website's `website/lib/recommend.ts` non-text branches and `website/lib/intent.ts` non-text classification.
 
 For why Verdure recommends across modalities at all, see `01-thesis.md` ("What Verdure recommends"). For device tiers, see `02-hardware-tiers.md`. For licensing posture, see `09-licensing.md`.
 
