@@ -1,14 +1,18 @@
 // Waitlist capture endpoint.
 //
-// STUB IMPLEMENTATION (commit 2 of the website-build chapter).
-// The next commit will replace the console.log below with an append to
-// the Google Sheet configured via env vars (see [OQ-10] in
-// verdure-orchestrator/knowledge/open-questions.md). For now the route
-// logs to the server console and returns success so the UI flow is
-// fully exercisable end-to-end. We are not in production yet — no
-// real data is being captured or lost.
+// Validates the signup, then hands persistence to lib/sheets.ts. Two modes:
+//   - Sheets configured (env vars set, see SETUP_SHEETS.md): append a row;
+//     surface a retryable error if that fails so no real signup is lost.
+//   - Not configured yet: log the signup server-side and return success so the
+//     four-screen flow stays fully exercisable before the Google Cloud setup
+//     is done. Tracked as [OQ-10].
 
 import { NextResponse, type NextRequest } from 'next/server';
+import {
+  appendWaitlistRow,
+  isSheetsConfigured,
+  type WaitlistSignup,
+} from '@/lib/sheets';
 
 type WaitlistPayload = {
   firstName?: unknown;
@@ -41,15 +45,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Please enter a valid email address' }, { status: 400 });
   }
 
-  // TODO(OQ-10): replace with Google Sheets append via service account.
-  console.log('[waitlist] new signup', {
-    timestamp: new Date().toISOString(),
-    firstName,
-    email,
-    intentText,
-    modelName,
-    tier,
-  });
+  const signup: WaitlistSignup = { firstName, email, intentText, modelName, tier };
+  const timestamp = new Date().toISOString();
+
+  if (!isSheetsConfigured()) {
+    // No backend wired up yet — don't lose the signup silently; log it and let
+    // the UI flow proceed. Replace this path by setting the env vars.
+    console.warn('[waitlist] Google Sheets not configured — logging signup only', {
+      timestamp,
+      ...signup,
+    });
+    return NextResponse.json({ ok: true });
+  }
+
+  try {
+    await appendWaitlistRow(signup, timestamp);
+  } catch (err) {
+    console.error('[waitlist] failed to append to Google Sheet', err);
+    return NextResponse.json(
+      { error: 'We could not save your signup just now. Please try again.' },
+      { status: 502 },
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }

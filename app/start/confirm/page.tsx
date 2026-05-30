@@ -4,14 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getIntent, getTier } from '@/lib/session';
 import { findBucket, type Tier } from '@/lib/tiers';
-import { classifyIntent, type Intent } from '@/lib/intent';
-
-const INTENT_LABEL: Record<Intent, string> = {
-  creative: 'Creative writing',
-  code: 'Code & technical',
-  multilingual: 'Multilingual',
-  general: 'General chat / Q&A',
-};
+import { classifyIntent } from '@/lib/intent';
+import { taskLabel } from '@/lib/modality';
 
 export default function ConfirmScreen() {
   const router = useRouter();
@@ -32,7 +26,8 @@ export default function ConfirmScreen() {
   if (!intent || !tier) return null;
 
   const bucket = findBucket(tier);
-  const classified = classifyIntent(intent);
+  const label = taskLabel(classifyIntent(intent));
+  const labelDisplay = label.charAt(0).toUpperCase() + label.slice(1);
 
   return (
     <main className="bg-slate-800 text-white min-h-screen flex flex-col items-center justify-center px-6 sm:px-12 py-16">
@@ -47,7 +42,7 @@ export default function ConfirmScreen() {
             <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">What you want</p>
             <p className="text-lg text-white mb-3 italic">&ldquo;{intent}&rdquo;</p>
             <p className="text-emerald-400 text-sm">
-              Category: <span className="font-semibold">{INTENT_LABEL[classified]}</span>
+              We&rsquo;ll help you with: <span className="font-semibold">{labelDisplay}</span>
             </p>
           </div>
           <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
