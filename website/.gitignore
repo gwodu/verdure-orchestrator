@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# visual self-review output (npm run shots)
+/screenshots
+
 # next.js
 /.next/
 /out/

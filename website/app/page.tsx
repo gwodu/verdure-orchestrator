@@ -5,11 +5,20 @@ import { useRouter } from 'next/navigation';
 
 export default function Home() {
   const [scrollY, setScrollY] = useState(0);
+  const [animate, setAnimate] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
+    // Only run the scroll-driven reveal when the user is fine with motion.
+    // Until this runs (SSR / pre-hydration / no-JS) and whenever reduced motion
+    // is preferred, `animate` stays false and every section renders fully
+    // visible and static — content is never hidden behind an animation.
+    // See ../../skills/design.md, "The visual self-review loop".
+    const motionOk = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    setAnimate(motionOk);
+    if (!motionOk) return;
     const handleScroll = () => setScrollY(window.scrollY);
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
@@ -23,10 +32,10 @@ export default function Home() {
       <section className="min-h-screen flex flex-col items-center justify-center px-6 sm:px-12">
         <div 
           className="text-center transition-all duration-700"
-          style={{
+          style={animate ? {
             opacity: Math.max(1 - scrollY / 400, 0),
             transform: `translateY(${scrollY * 0.3}px)`
-          }}
+          } : undefined}
         >
           <h1 className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-bold text-emerald-400 mb-6 tracking-tight">
             VERDURE
@@ -50,10 +59,10 @@ export default function Home() {
       <section className="min-h-screen flex items-center justify-center px-6 sm:px-12 py-20">
         <div 
           className="max-w-4xl transition-all duration-700"
-          style={{
+          style={animate ? {
             opacity: Math.min(Math.max((scrollY - 300) / 400, 0), 1),
             transform: `translateY(${Math.max(50 - (scrollY - 300) / 8, 0)}px)`
-          }}
+          } : undefined}
         >
           <h2 className="text-4xl sm:text-5xl md:text-6xl font-bold text-emerald-400 mb-8 text-center">
             About Verdure
@@ -85,10 +94,10 @@ export default function Home() {
       <section className="min-h-screen flex items-center justify-center px-6 sm:px-12 py-20">
         <div 
           className="max-w-3xl transition-all duration-700"
-          style={{
+          style={animate ? {
             opacity: Math.min(Math.max((scrollY - 1000) / 400, 0), 1),
             transform: `translateY(${Math.max(50 - (scrollY - 1000) / 8, 0)}px)`
-          }}
+          } : undefined}
         >
           <h2 className="text-4xl sm:text-5xl md:text-6xl font-bold text-emerald-400 mb-12 text-center">
             Meet the Founder

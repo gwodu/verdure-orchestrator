@@ -56,12 +56,12 @@ After any user-facing change, ask: did this remove a step or add one? If it adde
 
 ## The visual self-review loop
 
-After building any UI, render it and look at it. For the Phase 0 website (React):
+After building any UI, render it and look at it. For the Phase 0 website (`website/`) this loop is wired up — don't hand-roll it:
 
-1. Run the app (or use Playwright headless).
-2. Screenshot the page at mobile and desktop viewports.
-3. Look at the screenshots.
-4. Compare to the design intent. Does the device picker actually look scannable? Does the recommendation feel honest or marketing-y? Is the "easiest" path actually visually easiest?
+1. One-time: `npx playwright install chromium`.
+2. `npm run dev`, then `npm run shots` (script: `website/scripts/screenshots.mjs`). It captures the key screens — home, device picker, and the recommendation states incl. the reduced-motion variant — at mobile width into `website/screenshots/` (git-ignored). Add a `SHOTS` entry when you add a screen or a state worth reviewing.
+3. Open the screenshots and actually look at them.
+4. Compare to the design intent. Does the device picker actually look scannable? Is the recommended solution unmistakable, or buried? Does the recommendation feel honest or marketing-y? Is the "easiest" path actually visually easiest?
 5. If something is off, iterate. The loop closes inside the session.
 
 The user-impact statement isn't done when written. It's done when verified against what actually shipped.
