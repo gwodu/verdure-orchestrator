@@ -2,7 +2,7 @@
 
 **Status:** ✅ Settled
 
-This file documents the licenses of models Verdure recommends. For the model-tier mapping itself, see `03-model-matrix.md`.
+This file documents the licenses of the **text** models Verdure recommends. For the model-tier mapping itself, see `03-model-matrix.md`. **Non-text models (audio/image/video) and their licenses are audited inline in `12-multimodal-models.md`** — the same Apache/MIT-first posture applies, with two flags worth repeating: **MusicGen is CC-BY-NC (non-commercial) — avoid**, and FLUX.1 *dev* / HunyuanVideo carry non-commercial or jurisdictional restrictions, so Verdure leads with FLUX.1 *schnell*, Whisper, Kokoro, Real-ESRGAN, and Qwen-Image-Edit instead.
 
 ## The audit
 

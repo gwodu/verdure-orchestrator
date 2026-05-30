@@ -2,6 +2,17 @@
 
 Human-centered design as procedural craft, not as an attitude. The perspective lives in `../CLAUDE.md` — what matters here is the *moves* that turn that perspective into actual interfaces.
 
+## Assume zero technical knowledge
+
+This is the governing assumption behind every design decision, not a nice-to-have. The person using Verdure knows nothing about computers — not RAM, not models, not "GGUF," not "GPU," not "quantization." They know English, and they know what they want to *do*: "write stories," "turn my recordings into text," "make a picture for my blog." Design for exactly that person, every time. The technical user is a happy side effect, never the target. If a screen only works for someone who already understands the tech, it has failed Verdure's actual audience.
+
+Concretely:
+
+- **No jargon on the surface.** Never make the user read a word they would have to look up. "How much memory does your computer have?" not "RAM capacity." Even model names (Whisper, SDXL, Llama) are jargon — lead with the task and the plain benefit, and let the model name sit as an ignorable detail with a "learn more" link for the curious.
+- **Lead with the verb, not the technology.** The user came to *do something*. "Turn speech into text" is the headline; the model that does it is secondary. The whole moat is that Verdure decides the tech *so the user never has to think about it* — the interface must honor that, not leak the decision back onto them.
+- **The relative test.** Every screen should pass: "would a non-technical relative understand this without asking me a question?" If not, it isn't done.
+- **When a technical fact is unavoidable, wrap it in lived experience.** Asking about the device is the hard case: don't ask for specs. Ask what they can answer from memory — the brand, roughly how old it is, whether it's a gaming machine — and infer the rest. "I don't know" must always be a first-class answer, never a dead end.
+
 ## The vocabulary (from Norman)
 
 Use these terms precisely. They make design decisions discussable.

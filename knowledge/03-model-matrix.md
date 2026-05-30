@@ -1,10 +1,12 @@
-# 03 — Model Matrix
+# 03 — Model Matrix (text)
 
 **Status:** 🟡 Provisional (throughput numbers extrapolated from adjacent benchmarks; needs real-world validation)
 
-This file answers: **given a tier, what model do we recommend?**
+This file answers: **given a tier, what *text* model do we recommend?**
 
 It is paired with `02-hardware-tiers.md`, which answers: **given a device, what tier is it?** Together these two files are the matching brain.
+
+**Scope note (2026-05-29):** Verdure now recommends across modalities. This file covers **text** (chat, writing, code, multilingual). For **audio, image, and video** tasks — and the graphics-bound feasibility logic that decides when a task is honestly *not* local-capable — see `12-multimodal-models.md`. The intent classifier first picks a modality, then the task within it.
 
 Quantization defaults are documented in `04-quantization.md`. Licensing is documented in `09-licensing.md`.
 

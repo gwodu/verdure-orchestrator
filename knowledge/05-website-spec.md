@@ -83,6 +83,6 @@ Phase 0 is easier to ship and easier to iterate on than Phase 1. The temptation 
 - [OQ-07] Which LLM API for intent classification? (latency, structured-output reliability, vendor stability)
 - [OQ-08] Resolved (2026-05-26) — the Phase 0 domain is verdureai.com.
 - [OQ-09] Tech stack pick — any reasonable choice is fine, but pick one and commit.
-- [OQ-10] Email capture mechanism for the Phase 1 launch list (Mailchimp, Buttondown, ConvertKit, Supabase, etc.).
+- [OQ-10] Resolved (2026-05-29) — launch-list capture is a Google Sheet: the `/api/waitlist` route appends one row per signup via a service account. Implemented in `gwodu/verdure_web` (`lib/sheets.ts`, setup in `SETUP_SHEETS.md`).
 - [OQ-11] Visual design language — needs to be defined before launch.
 - [OQ-12] Spec database for the free-text device parsing path — is LLM-only sufficient for v1, or do we need to integrate with EveryMac, Notebookcheck, or similar?

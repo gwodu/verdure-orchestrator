@@ -22,7 +22,6 @@ When a question is resolved:
 - [ ] **[OQ-04]** Practical floor — support 4 GB phones or start at 6 GB? (From `02-hardware-tiers.md`.)
 - [ ] **[OQ-05]** Real tokens/sec on physical Unisoc T606 and Helio G81. (From `03-model-matrix.md`.)
 - [ ] **[OQ-06]** Validate intent → model preference assumptions with real users. (From `03-model-matrix.md`.)
-- [ ] **[OQ-10]** Email capture mechanism for Phase 1 launch list. (From `05-website-spec.md`.)
 - [ ] **[OQ-11]** Visual design language for the website. (From `05-website-spec.md`.)
 - [ ] **[OQ-12]** Spec database for free-text device parsing — LLM-only or integrate EveryMac / Notebookcheck. (From `05-website-spec.md`.)
 - [ ] **[OQ-13]** ExecuTorch 1.0 integration specifics on Android. (From `07-runtime-backends.md`.)
@@ -34,6 +33,9 @@ When a question is resolved:
 - [ ] **[OQ-24]** Windows code signing pricing, CA recommendations, SmartScreen timelines. (From `11-platform-deployment.md`.)
 - [ ] **[OQ-25]** Android 14+ background service policies and Play Store requirements. (From `11-platform-deployment.md`.)
 - [ ] **[OQ-27]** Set up GitHub Actions CI for the `verdure_web` repo — run `npm test` + `npm run build` on every push and pull request to `main`. (The `verdure-orchestrator` repo already has CI for `cargo test`; this OQ tracks the parallel gap on the website side.) (From `skills/testing.md`.)
+- [ ] **[OQ-28]** Real on-device throughput for non-text models (Whisper sizes, SD/SDXL, LTX-2) across the three capability classes. Parallels `[OQ-05]` for text. (From `12-multimodal-models.md`.)
+- [ ] **[OQ-29]** The five-tier → three-capability-class collapse can't capture VRAM / unified-memory *amount*, which decides whether image editing and video actually run. Does the device picker need a graphics-memory signal, asked in non-technical terms? (From `12-multimodal-models.md`.)
+- [ ] **[OQ-31]** Validate the modality keyword classifier against real user phrasings; the eventual LLM classifier (`[OQ-07]`) must classify modality, not just text intent. (From `12-multimodal-models.md`.)
 
 ## Defer — Month 2 and later
 
@@ -45,3 +47,5 @@ When a question is resolved:
 ## Resolved
 
 - [x] **[OQ-08]** Domain — resolved 2026-05-26: the Phase 0 site is verdureai.com. (From `05-website-spec.md`.)
+- [x] **[OQ-30]** Music & video generation for non-technical users — resolved 2026-05-29: **recommend them, keeping the honest "this is hard / for comfortable users / needs ComfyUI" framing.** The friction is on-strategy: showing how difficult these are to set up yourself is exactly what demonstrates Verdure's value. Do not hide or over-soften the difficulty. (From `12-multimodal-models.md`.)
+- [x] **[OQ-10]** Launch-list capture mechanism — resolved 2026-05-29: Google Sheets, via a service account appending one row per signup in the `/api/waitlist` route. Chosen over Mailchimp/Buttondown/etc. for zero cost, zero new vendor, and a directly readable list at Phase 0 scale. Implemented in `gwodu/verdure_web` (`lib/sheets.ts`); setup in that repo's `SETUP_SHEETS.md`. (From `05-website-spec.md`.)

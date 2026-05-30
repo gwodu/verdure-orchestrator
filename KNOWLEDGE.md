@@ -12,7 +12,8 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 
 - `knowledge/01-thesis.md` — what Verdure is, the moat, the seven decisions, phasing strategy
 - `knowledge/02-hardware-tiers.md` ★ — device-to-tier mapping (L1–L3 laptops, P1–P3 phones)
-- `knowledge/03-model-matrix.md` ★ — tier-to-model recommendation matrix, intent-shifts-within-tier
+- `knowledge/03-model-matrix.md` ★ — tier-to-**text**-model recommendation matrix, intent-shifts-within-tier
+- `knowledge/12-multimodal-models.md` ★ — audio / image / video model matrix, graphics-bound feasibility, honest "not-local-yet" verdicts
 - `knowledge/04-quantization.md` — pre-quantized only, GGUF, Q4_K_M default
 - `knowledge/05-website-spec.md` — Phase 0 recommendation website full spec
 - `knowledge/06-privacy-principles.md` — ask don't sniff, local by default, no telemetry
@@ -25,7 +26,8 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 
 ## Where to start by task
 
-- Recommending a model for a specific device → `02` + `03`
+- Recommending a text model for a specific device → `02` + `03`
+- Recommending an audio / image / video model (or deciding it isn't local-feasible) → `02` + `12`
 - Designing or modifying the Phase 0 website → `05` + `06`
 - Writing Rust binary code → `07` + `08`
 - License or distribution questions → `09` + `10`
@@ -37,4 +39,5 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 Each knowledge file opens with a status marker (✅ Settled, 🟡 Provisional, 🔴 Open) and ends with an "Open Questions" section where relevant. Open questions also appear in the centralized `open-questions.md` with stable `[OQ-XX]` reference codes. Cross-references between files are always explicit.
 
 ## Changelog
+- 2026-05-29 — added `12-multimodal-models.md`; Verdure now recommends across audio/image/video, not just text. `03` scoped to text.
 - 2026-05-24 — initial knowledge base assembled from research and project summary

@@ -6,6 +6,10 @@
 
 Verdure is the orchestration layer for local AI. Given any device, Verdure detects what it can run, picks the right model, downloads it, configures the right backend, and exposes a unified inference interface. The user picks a model and uses it — everything else is invisible.
 
+## What Verdure recommends
+
+**Scope extended 2026-05-29:** Verdure recommends across modalities — text, audio, image, and video — not just text LLMs. The thesis always said "local AI," but the matching brain began text-only; this makes the broader scope explicit. Crucially, the orchestration includes **honesty about feasibility**: many image and most video tasks need graphics power a typical laptop lacks, so for those devices the right recommendation is "this isn't practical locally yet — here's where to go instead," not a model that would crawl. Honest decline is a feature of the decider, not a gap. The per-modality matrix and feasibility logic live in `12-multimodal-models.md`.
+
 ## What Verdure is not
 
 Verdure is not a model. It is not an inference engine. It is not a replacement for llama.cpp, Ollama, ExecuTorch, MLC LLM, Jan, or LM Studio. Verdure *uses* these as backends, or refers to them as install paths during Phase 0. The value sits above them.
