@@ -60,26 +60,22 @@ export default function Home() {
           </h2>
           <div className="text-lg sm:text-xl md:text-2xl text-slate-200 leading-relaxed space-y-6">
             <p>
-              AI is becoming essential to daily life—but at what cost? Your information gets scattered across the internet, absorbed into massive models you can't see or control.
+              AI is becoming part of everyday life — but at a cost. The things you type are sent off to servers you don&rsquo;t control, feeding models you can&rsquo;t see.
             </p>
             <p className="text-emerald-400 font-semibold">
-              Verdure is an elegant solution to AI safety and privacy concerns.
+              Verdure is personal AI that runs on your own device, not in the cloud — so your information never leaves your hands.
             </p>
             <p>
-              We are building personal AI that runs entirely offline on your phone. 
-              It protects your information by keeping it on your phone, while it uses that information to provide you personalised services, faster, and more affordable than anything relying on distant servers.
+              We&rsquo;re building it to run entirely on your phone. Everything happens right there in your pocket: private by default, fast because nothing has to travel to a server and back, and far cheaper than anything that leans on the cloud.
             </p>
             <p>
-              Verdure learns your preferences as you use it, delivering tailored experiences.
-              Imagine, waking up to perfectly prioritized notifications because Verdure sorts your emails and messages, showing only what matters.
+              As you use it, Verdure learns what matters to you. Imagine waking up to a phone that has already sorted your email and messages down to the few things you actually need to see.
             </p>
             <p>
-              Verdure isn't just an assistant—it's a platform for next-gen AI apps. 
-              Like an AI Travel Agent that books flights based on your learned preferences. 
-              An AI Tax Agent that prepares returns while keeping financial data locked on your device.
+              And it&rsquo;s more than an assistant — it&rsquo;s a foundation for apps that finally keep your data on your device. A travel agent that books the trips you&rsquo;d actually choose. A tax assistant that prepares your return without your finances ever leaving your phone.
             </p>
             <p className="text-emerald-400 font-semibold">
-              Welcome to AI that works for you.
+              AI that works for you — and answers only to you.
             </p>
           </div>
         </div>

@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Verdure - Building Your Personal AI",
-  description: "Personal AI that learns about you and keeps your information safe by running offline on your phone.",
+  description: "Personal AI that runs on your own device, not the cloud — so your information stays yours.",
 };
 
 export default function RootLayout({

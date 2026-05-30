@@ -25,7 +25,7 @@ export default function IntentScreen() {
           What do you want your AI to help with?
         </h1>
         <p className="text-slate-300 text-lg mb-10">
-          Describe it in your own words. Examples: &ldquo;help me write fantasy novels,&rdquo; &ldquo;debug Rust code at work,&rdquo; &ldquo;Spanish homework help for my kid.&rdquo;
+          Describe it in your own words. Examples: &ldquo;write stories with me,&rdquo; &ldquo;turn my recordings into text,&rdquo; &ldquo;make a picture for my blog.&rdquo;
         </p>
         <form onSubmit={submit} className="space-y-6">
           <textarea
