@@ -161,8 +161,8 @@ function VerdureWaitlist({
   // Copy adapts to context: for "not-local-yet" the waitlist is the main thing
   // on offer, framed as "we'll tell you when Verdure can do this for you."
   const blurb = notLocal
-    ? 'Verdure will handle the hard parts for you — and tell you the moment your device can do this. Join the waitlist and we’ll email you when it’s ready.'
-    : 'Verdure handles everything — detection, download, setup. We’re launching soon. Join the waitlist and we’ll email you the moment it’s ready.';
+    ? 'We’ll do all of it for you — as easy as installing an app — and email you the moment your device can do this. Nothing technical to figure out.'
+    : 'We’ll do all of it for you. No setup, no settings, nothing technical — as easy as installing any app. Join the waitlist and we’ll email you the moment it’s ready.';
 
   return (
     <div className="bg-emerald-400 text-slate-900 rounded-xl p-6 shadow-lg">
