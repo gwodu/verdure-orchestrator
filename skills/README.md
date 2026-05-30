@@ -12,11 +12,13 @@ Before starting any task, identify which skills apply and load them. A typical t
 - `refactoring.md` — continuous improvement: named moves, smell-driven, tests-locked
 - `documentation.md` — knowledge maintenance: open questions, feature logs, cross-references
 - `research.md` — honest inquiry: filling gaps without inventing content
+- `copywriting.md` — user-facing text: conversion through trust, awareness stages, honest specificity
 
 ## Quick routing
 
 - Writing or editing Rust code → `architecture` + `testing` + (`refactoring` if touching existing code)
 - Writing or editing UI → `design` + `testing`
+- Writing any user-facing text (website, app, emails, error messages) → `copywriting` + `design`
 - Updating knowledge files → `documentation`
 - Investigating an open question → `research` + `documentation`
 - Code review / cleanup pass → `refactoring` + `testing`

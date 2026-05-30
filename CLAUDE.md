@@ -42,6 +42,7 @@ Routing:
 
 - Writing or editing Rust code → `skills/architecture.md` + `skills/testing.md` + (`skills/refactoring.md` if touching existing code)
 - Writing or editing UI → `skills/design.md` + `skills/testing.md`
+- Writing any user-facing text (website copy, app text, emails) → `skills/copywriting.md` + `skills/design.md`
 - Updating knowledge files → `skills/documentation.md`
 - Investigating an open question → `skills/research.md` + `skills/documentation.md`
 - Code review / cleanup pass → `skills/refactoring.md` + `skills/testing.md`
