@@ -129,7 +129,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="py-12 text-center text-slate-400 border-t border-slate-700">
         <p className="text-sm sm:text-base">
-          © 2025 Verdure. All rights reserved.
+          © {new Date().getFullYear()} Verdure. All rights reserved.
         </p>
       </footer>
     </div>
