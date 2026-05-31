@@ -36,6 +36,8 @@ Every existing tool (Ollama, LM Studio, Jan, Hugging Face) starts with "browse t
 
 This inversion is the differentiation. The runner is commoditizable; the decider is not. Phase 0 plants the flag on this position before competitors notice the gap.
 
+**Known gap — the demand side (`[OQ-33]`).** The decider has two halves: knowing what people *want to do*, and knowing which model *does it*. So far the model half is built (`03`, `12`); the use-case half was bootstrapped from the available models rather than from real usage. To make the moat real, the orchestration should be *planned from validated use cases* — researched for breadth and prevalence — not just from the model catalog. This feeds the intent taxonomy and the planned intent cards (`[OQ-32]`).
+
 ## Phasing strategy
 
 Verdure ships in three phases. The orchestration brain — this knowledge base — is constant across all of them. Only the delivery surface changes.
