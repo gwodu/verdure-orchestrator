@@ -57,3 +57,75 @@ export function taskLabel(c: Classification): string {
       }[c.task];
   }
 }
+
+// A user-facing intent card for Screen 1 — what the user wants to do, in plain
+// words, mirroring the device cards. Picking one feeds its `example` phrase into
+// the flow; the keyword classifier (lib/intent.ts) maps that phrase to
+// `classification`, locked by a unit test so cards and classifier can't drift.
+// The set and ordering are grounded in the demand research — see
+// verdure-orchestrator/knowledge/13-use-case-demand.md. (Notably: video
+// generation is deliberately NOT a card — lowest demand, least local-feasible —
+// but stays reachable via the free-text fallback.)
+export type IntentCard = {
+  id: string;
+  emoji: string;
+  title: string;
+  description: string;
+  example: string;
+  classification: Classification;
+};
+
+export const INTENT_CARDS: IntentCard[] = [
+  {
+    id: 'everyday',
+    emoji: '💬',
+    title: 'Everyday questions & chat',
+    description: 'Ask anything, get advice, think things through.',
+    example: 'answer everyday questions and help me think things through',
+    classification: { modality: 'text', task: 'general' },
+  },
+  {
+    id: 'writing',
+    emoji: '📝',
+    title: 'Writing & ideas',
+    description: 'Stories, blog posts, emails, brainstorming.',
+    example: 'write stories and brainstorm ideas',
+    classification: { modality: 'text', task: 'creative' },
+  },
+  {
+    id: 'coding',
+    emoji: '💻',
+    title: 'Coding & tech help',
+    description: 'Write, fix, and understand code.',
+    example: 'help me write and debug code',
+    classification: { modality: 'text', task: 'code' },
+  },
+  {
+    id: 'transcribe',
+    emoji: '🎙️',
+    title: 'Turn recordings into text',
+    description: 'Transcribe meetings, voice notes, and interviews.',
+    example: 'transcribe my meetings and voice recordings',
+    classification: { modality: 'audio', task: 'transcription' },
+  },
+  {
+    id: 'images',
+    emoji: '🎨',
+    title: 'Create images',
+    description: 'Make pictures, art, and logos from a description.',
+    example: 'create images from a description',
+    classification: { modality: 'image', task: 'generate' },
+  },
+  {
+    id: 'languages',
+    emoji: '🌍',
+    title: 'Languages & translation',
+    description: 'Translate text, and practice another language.',
+    example: 'translate and practice another language',
+    classification: { modality: 'text', task: 'multilingual' },
+  },
+];
+
+export function findIntentCard(id: string): IntentCard | undefined {
+  return INTENT_CARDS.find((c) => c.id === id);
+}

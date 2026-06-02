@@ -14,7 +14,7 @@ Produce a recommendation a non-technical user can act on in 60 seconds.
 
 **Screen 1 — Intent capture.** Plain-language input. The user types a description in their own words: "I want to write fantasy novels," "help me debug Rust code at work," "my kid needs Spanish homework help."
 
-> **Planned (`[OQ-32]`):** offer **intent cards** here too — pick what you want to do (Audio, Speech-to-text, Video generation, General/automation, …) the same way Screen 2 picks the device, with a free-text fallback. Recognition beats recall for non-technical users (see `../skills/design.md`). The card set must be grounded in real usage (`[OQ-33]`), not guessed, and each card maps to the `(modality, task)` taxonomy in `website/lib/modality.ts`.
+> **Done (`[OQ-32]`, 2026-06-01):** Screen 1 is card-based — six intent cards (`INTENT_CARDS` in `website/lib/modality.ts`: Everyday questions/chat, Writing & ideas, Coding & tech help, Turn recordings into text, Create images, Languages & translation), plus a free-text fallback for the long tail. The set is grounded in `13-use-case-demand.md` (recognition over recall, per `../skills/design.md`); **no video-generation card** (weakest, least local-feasible — it stays reachable via free text and gets the honest decline). Each card carries an example phrase the classifier maps to its `(modality, task)`, locked by a unit test.
 
 **Screen 2 — Device picker.** Curated set of 5–6 visual cards mapping to internal tiers (see `02-hardware-tiers.md` for the bucket table). Optional free-text path for typing an exact device model.
 

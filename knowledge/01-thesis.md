@@ -36,7 +36,7 @@ Every existing tool (Ollama, LM Studio, Jan, Hugging Face) starts with "browse t
 
 This inversion is the differentiation. The runner is commoditizable; the decider is not. Phase 0 plants the flag on this position before competitors notice the gap.
 
-**Known gap — the demand side (`[OQ-33]`).** The decider has two halves: knowing what people *want to do*, and knowing which model *does it*. So far the model half is built (`03`, `12`); the use-case half was bootstrapped from the available models rather than from real usage. To make the moat real, the orchestration should be *planned from validated use cases* — researched for breadth and prevalence — not just from the model catalog. This feeds the intent taxonomy and the planned intent cards (`[OQ-32]`).
+**The two halves of the decider.** It must know what people *want to do* and which model *does it*. The model half lives in `03`/`12`; the demand half — what people actually use (local) AI for, by prevalence — is researched in `13-use-case-demand.md` (added 2026-06-01, resolving `[OQ-33]`). The intent layer (Screen 1 cards, the `(modality, task)` taxonomy) is planned from `13`, not from the model catalog. Key demand finding: local-AI use concentrates on transcription, coding, image generation, private document Q&A, and roleplay/uncensored content — driven by privacy, cost, and the absence of content filters.
 
 ## Phasing strategy
 
