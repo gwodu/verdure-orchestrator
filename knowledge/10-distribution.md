@@ -4,6 +4,8 @@
 
 This file documents how Verdure delivers model files to user devices. Phase 0 does not distribute models — the website refers users to existing tools (see `05-website-spec.md`). This buys time to resolve the questions below before Phase 1.
 
+> **Decision content behind the `ModelSource` / `ModelStore` seams** (`14-architecture.md`). Structure (resume/verify/content-addressing contracts) lives there; *where* models come from and the CDN/catalog economics live here.
+
 ## Source of truth
 
 **Hugging Face Hub** is the primary source. Pre-quantized GGUFs (see `04-quantization.md`) are published by official model authors and by community accounts (`bartowski`, `unsloth`, historical `TheBloke`).

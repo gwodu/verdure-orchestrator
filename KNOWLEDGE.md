@@ -25,6 +25,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 - `knowledge/09-licensing.md` — model license audit
 - `knowledge/10-distribution.md` — Hugging Face source, CDN considerations
 - `knowledge/11-platform-deployment.md` — code signing, app stores, OS specifics
+- `knowledge/14-architecture.md` ★ — the structural spine: pure core + replaceable adapters (seams), the one-click pipeline, the Phase 0↔1 boundary. Composes 07/08/10/11.
 - `knowledge/open-questions.md` — master open-questions list, organized by urgency
 
 ## Where to start by task
@@ -36,6 +37,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 - Writing Rust binary code → `07` + `08`
 - License or distribution questions → `09` + `10`
 - Platform-specific deployment → `11`
+- How the binary is structured / adding a device or engine / the one-click pipeline → `14`
 - Tracking what is still open → `open-questions.md`
 
 ## Conventions
@@ -43,6 +45,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 Each knowledge file opens with a status marker (✅ Settled, 🟡 Provisional, 🔴 Open) and ends with an "Open Questions" section where relevant. Open questions also appear in the centralized `open-questions.md` with stable `[OQ-XX]` reference codes. Cross-references between files are always explicit.
 
 ## Changelog
+- 2026-06-05 — added `14-architecture.md` (the structural spine: pure core + adapters/seams, the one-click pipeline, the Phase 0↔1 single-source-of-truth boundary). `07/08/10/11` reframed as the decision-content behind specific seams.
 - 2026-06-01 — added `13-use-case-demand.md` (the demand side); intent layer / Screen 1 cards now planned from researched use cases, not the model catalog.
 - 2026-05-29 — added `12-multimodal-models.md`; Verdure now recommends across audio/image/video, not just text. `03` scoped to text.
 - 2026-05-24 — initial knowledge base assembled from research and project summary

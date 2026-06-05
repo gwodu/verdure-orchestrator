@@ -4,6 +4,8 @@
 
 This file documents Rust crates for ML inference. For the underlying runtime backends, see `07-runtime-backends.md`.
 
+> **Decision content behind the `Backend` seam** (`14-architecture.md`) — specifically the crate/FFI implementation choices. Structure lives there; *which* crate and FFI strategy lives here.
+
 ## Production-ready
 
 **`llama-cpp-2`** (utilityai) — actively maintained low-level Rust bindings closely mirroring the llama.cpp C API. Tool-calling support, OpenAI-compatible server option. **This is the primary binding for the Phase 1 binary.**

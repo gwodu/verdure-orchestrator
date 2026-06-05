@@ -4,6 +4,8 @@
 
 This file documents the practical realities of shipping Verdure on each platform. Phase 0 (the website) sidesteps these. Phase 1 and beyond hit them directly.
 
+> **Decision content behind the `Transport` / shell layer** (`14-architecture.md`) — signing, packaging, and per-OS IPC. Structure (the `Transport` trait, the shell's job) lives there; the per-platform packaging realities live here.
+
 ## macOS
 
 - Notarization required for distribution outside the App Store

@@ -4,6 +4,8 @@
 
 This file documents the inference runtime backends Verdure uses or routes to for **text** models. For the Rust bindings that wrap these backends, see `08-rust-ecosystem.md`.
 
+> **Decision content behind the `Backend` seam** (`14-architecture.md`). Structure (the trait, how it composes) lives there; *which* engine and why lives here.
+
 **Multimodal note (2026-05-29):** non-text models use different runtimes — whisper.cpp / faster-whisper (audio transcription), ONNX (TTS), diffusers / ComfyUI and ncnn-vulkan (image), ComfyUI (video). In Phase 0, Verdure only *refers* users to GUI apps that bundle these (MacWhisper, Upscayl, Draw Things, etc.; see `12-multimodal-models.md`), so no backend integration is needed. Wiring non-text backends into the Phase 1 binary is out of scope for v1 and not yet an open question — flag it when Phase 1 scope is set.
 
 ## Primary backend: llama.cpp

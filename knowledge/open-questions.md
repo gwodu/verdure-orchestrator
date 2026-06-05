@@ -37,6 +37,12 @@ When a question is resolved:
 - [ ] **[OQ-29]** The five-tier → three-capability-class collapse can't capture VRAM / unified-memory *amount*, which decides whether image editing and video actually run. Does the device picker need a graphics-memory signal, asked in non-technical terms? (From `12-multimodal-models.md`.)
 - [ ] **[OQ-31]** Validate the modality keyword classifier against real user phrasings; the eventual LLM classifier (`[OQ-07]`) must classify modality, not just text intent. (From `12-multimodal-models.md`.)
 - [ ] **[OQ-34]** Should `document`/RAG and `companionship` become first-class tasks (taxonomy + model-matrix entries + Screen 1 cards)? Both are large local-native uses the current `(modality, task)` taxonomy omits. (From `13-use-case-demand.md`.)
+- [ ] **[OQ-35]** `Executor` on Android — is `InProcessExecutor` (FFI, no isolation) the only viable strategy, or can a foreground-service worker give partial crash isolation? Phase 2 process-model blocker. (Related to `[OQ-25]`.) (From `14-architecture.md`.)
+- [ ] **[OQ-36]** `Transport` cross-app IPC — the API surface (streaming, cancellation, concurrent sessions) AND the per-app authorization model (socket file-perms vs. explicit user consent per calling app), and whether either leaks across Unix socket / named pipe / Binder into the trait. (From `14-architecture.md`.)
+- [ ] **[OQ-37]** Core-purity litmus — gate the core on compiling to `wasm32` in CI as cheap proof no platform detail leaked? Decide if the gate is worth the build cost. (From `14-architecture.md`.)
+- [ ] **[OQ-38]** Eviction policy under memory pressure — LRU, intent-priority, or pinned-plus-LRU? Core logic; needs a default before the lifecycle manager. (From `14-architecture.md`.)
+- [ ] **[OQ-39]** Concurrency & resource arbitration for the daemon — resident-model count, request queueing/fairness across concurrent callers, per-session context, interaction with eviction and the `Executor`. (From `14-architecture.md`.)
+- [ ] **[OQ-40]** Model catalog/registry — who resolves a model ID to `(hash, metadata, file)`, and how it updates/versions across an always-latest website and pinned installed apps. Maybe its own seam. (Ties to `[OQ-21]`/`[OQ-22]`.) (From `14-architecture.md`.)
 
 ## Defer — Month 2 and later
 
