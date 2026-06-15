@@ -45,5 +45,11 @@ Building our own chat shell is rejected: it contradicts "port, don't build," and
 - **Frontier-quality reasoning/coding fully offline** — the *tooling* is solved; local model quality at home is the gap, worse on modest/Intel hardware.
 - **Turnkey meeting assistants** (auto-join calls + diarization + CRM) and **NotebookLM-style audio overviews** end-to-end offline.
 
+## Pipeability (for chaining — see `14`, composition layer)
+A tool can be chained only if it exposes I/O programmatically (file/CLI output, a watched folder, or a localhost REST API). GUI-only tools can't be wired as-shipped — and Verdure must not build them an interface (port a headless equivalent instead).
+- **Pipeable today:** whisper.cpp & Buzz (Buzz's **watch folder** is the best non-technical trigger), Ollama, AnythingLLM (REST consumer), Jan, llamafile, rembg, Piper, Upscayl-CLI, ComfyUI (REST, but JSON-format input is technical).
+- **GUI-only as shipped (not chainable):** Ultimate Vocal Remover official app — port the headless `audio-separator` (pip) as a separate tool if its chain is needed.
+A `pipeable: yes/no` flag + the typed I/O ports belong in each tool's manifest.
+
 ## Open questions
 - [OQ-46] Verify **AnythingLLM / Jan on the Intel-Mac target**, and prove the unattended REST/file config as the port mechanism for assistant-style tools (the core of the shell decision). (From `15-port-catalog.md`.)
