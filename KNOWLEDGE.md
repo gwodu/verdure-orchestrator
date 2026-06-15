@@ -25,7 +25,8 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 - `knowledge/09-licensing.md` — model license audit
 - `knowledge/10-distribution.md` — Hugging Face source, CDN considerations
 - `knowledge/11-platform-deployment.md` — code signing, app stores, OS specifics
-- `knowledge/14-architecture.md` ★ — the structural spine: pure core + replaceable adapters (seams), the one-click pipeline, the Phase 0↔1 boundary. Composes 07/08/10/11.
+- `knowledge/14-architecture.md` ★ — the structural spine: pure core + replaceable adapters (seams), the one-click pipeline, the Phase 0↔1 boundary, the Tool layer. Composes 07/08/10/11.
+- `knowledge/15-port-catalog.md` ★ — the supply-side database: portable free/open-source local tools by use case, the two port classes, and the "port AnythingLLM, don't build a shell" decision.
 - `knowledge/open-questions.md` — master open-questions list, organized by urgency
 
 ## Where to start by task
@@ -38,6 +39,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 - License or distribution questions → `09` + `10`
 - Platform-specific deployment → `11`
 - How the binary is structured / adding a device or engine / the one-click pipeline → `14`
+- Which existing tool to port for a use case (the local-tool database) → `15` (+ `13` demand, `09` licensing)
 - Tracking what is still open → `open-questions.md`
 
 ## Conventions
@@ -45,6 +47,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 Each knowledge file opens with a status marker (✅ Settled, 🟡 Provisional, 🔴 Open) and ends with an "Open Questions" section where relevant. Open questions also appear in the centralized `open-questions.md` with stable `[OQ-XX]` reference codes. Cross-references between files are always explicit.
 
 ## Changelog
+- 2026-06-15 — added `15-port-catalog.md` (the supply-side local-tool database) + the two port classes; decided to **port AnythingLLM/Jan as the configurable shell rather than build one**; aligned `14`'s Tool layer to "port, never build." Seed from OSS lists (TAAFT is ~95% cloud). `[OQ-46]`.
 - 2026-06-15 — adopted "the decider that finishes the job": a deferred, data-driven, **plug-n-play Tool layer** (configure & launch existing local tools / the device's own model, **never build bespoke apps**) — the local answer to "There's An AI For That". First Mac tools = writing assistant + doc-RAG. In `01`, `14` (Tool layer), `[OQ-45]`.
 - 2026-06-15 — Apple-stack integration (WWDC 2026), distributed by concern across `01/03/07/11/14`: MLX supersedes MLC, the zero-download/resident-model recommendation, the iOS daemon→thin-decider pivot, and Apple Silicon reframed as the **beachhead** (mission still emerging-market). Resolved `[OQ-14]`/`[OQ-26]`; opened `[OQ-41]`–`[OQ-44]`. No vendor file — content lives in the concern-owning files.
 - 2026-06-05 — added `14-architecture.md` (the structural spine: pure core + adapters/seams, the one-click pipeline, the Phase 0↔1 single-source-of-truth boundary). `07/08/10/11` reframed as the decision-content behind specific seams.

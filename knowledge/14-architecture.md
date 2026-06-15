@@ -127,21 +127,26 @@ Lifecycle (decision 6 — storage budgets, swapping, eviction) is a core concern
 
 The pitch is "other apps call Verdure via local IPC" — so the core is not single-request. Multiple apps may request inference concurrently, against possibly-different models, inside one finite memory budget. The core (not any adapter) owns the arbitration: how many models stay resident, how requests queue when a model is loading or memory is tight, fairness across callers, and per-session context. This interacts directly with lifecycle/eviction (decision 6) and with the `Executor` (a `SubprocessExecutor` can isolate concurrent workers; an `InProcessExecutor` cannot). The single-request state machine above is one lane; the arbitration model is the traffic control around it, and it is core logic so it behaves the same on every device. Tracked as `[OQ-39]`.
 
-## The Tool layer (above the seams) — deferred, data-driven, plug-n-play
+## The Tool layer (above the seams) — deferred, data-driven, port-don't-build
 
-A recommendation isn't finished until it's *running*. Above the seams sits a future **Tool** layer that turns the decider's output into a one-click, working local tool — the local answer to "There's An AI For That" (see `01-thesis.md`, "the decider that finishes the job").
+A recommendation isn't finished until it's *running*. Above the seams sits a future **Tool** layer that turns the decider's output into a one-click, working local tool — the local answer to "There's An AI For That" (`01-thesis.md`, "the decider that finishes the job"). The catalog of portable tools and their licenses is `15-port-catalog.md`.
 
-A **Tool** is a data manifest, not a codebase:
+**Verdure ports existing tools; it builds none.** A Tool is delivered one of two ways:
+1. **Standalone-app port** — install + launch an existing local app, configured for the device (transcription → Buzz; stem-separation → UVR; upscaling → Upscayl; image → ComfyUI/DiffusionBee; coding → Continue).
+2. **Assistant-config on a hosted shell** — for chat-style jobs (writing, doc-Q&A, LLM translation), Verdure ports **one** permissive open-source shell — recommended **AnythingLLM** (MIT; its REST API creates a workspace + persona + RAG fully unattended) or **Jan** (Apache) — and pushes a per-use-case **config** to it. The surface is the ported shell's; Verdure never builds one.
 
-> **Tool = engine selector (→ the decider + `Backend`) + task persona/prompt + optional local capability (RAG over a file; a bounded tool-call) + a thin use-case surface + the feasibility verdict — bound to one `(modality, task)`.**
+So a **Tool is a data manifest**, not a codebase:
 
-Disciplines that keep this from becoming app-building (and from breaking the neutral-decider moat):
+> **Tool = which existing app/shell to port + engine selector (→ the decider + `Backend`) + persona/system prompt + optional RAG + the feasibility verdict — bound to one `(modality, task)`.**
 
-- **Plug-n-play, never bespoke.** Verdure *configures and launches* tools — wrapping an existing best-in-class local app, or running the device's own model (e.g. `AppleSystemBackend` / `MlxBackend`) behind a task persona. It does not author or brand tools. A thin surface is allowed *only* where the engine is the device's own and no end-user app exists — and only as "configured chat with a persona + an I/O panel." **The test: if a tool's surface is more than persona + I/O panel + verdict, it's an app — stop.**
-- **No abstraction without a second implementation.** Build the first tool as a concrete, mostly-hardcoded path; let the *second* tool force the minimal Tool manifest. Don't design a generic Tool/Workflow abstraction for one tool.
-- **Non-agentic first.** v1 tools are single-step or retrieval-only. Autonomous multi-step agents are deferred — trust-gated (~17%) and unreliable on small local models.
+Disciplines (preserve the neutral-decider moat):
 
-**Mac MVP framing.** The first two tools are the abstraction's two implementations: (A) a **writing assistant** — a persona over the device's resident/MLX model, no agent — and (B) **"talk to my document"** — local RAG over one file. On the Apple stack the engine is already commoditized (`AppleSystemBackend` / `MlxBackend` behind `LanguageModel`), so the Tool layer stays engine-agnostic. The MVP's first deliverable *is* Tool A — the decider made runnable. Tracked as `[OQ-45]`.
+- **Never author or brand a tool.** Shipping "Verdure Transcribe" would forfeit the right to neutrally recommend a better app. We configure and launch; we can always launch a competitor's tool. **The test: if Verdure is writing application/UI logic, stop — port a tool or push a config instead.**
+- **Bundle only permissive licenses.** *Porting* (installing on the user's machine) is fine for any license; *bundling/forking* a shell requires permissive (AnythingLLM MIT; Jan / llamafile Apache). Avoid bundling AGPL / branding-locked / proprietary shells (Open WebUI, Cherry Studio, GPT4All-app, LM Studio, Msty). See `09` / `15`.
+- **No abstraction without a second implementation.** Build the first tool concretely; let the second force the minimal Tool manifest.
+- **Non-agentic first.** v1 tools are single-step or retrieval-only. Autonomous agents are deferred — trust-gated (~17%) and unreliable on small local models.
+
+**Mac MVP framing.** The first tools are the manifest's first implementations — all *ported*, all on a portable engine (Ollama / llamafile, which run on the founder's 2019 Intel Mac *today*; `AppleSystemBackend` / `MlxBackend` slot in later on Apple Silicon): (A) **writing assistant** and (B) **"talk to my document"** as AnythingLLM/Jan configs; transcription (Buzz) as the first standalone-app port. The MVP's first deliverable is the porter installing + configuring one of these in one click. Refines `[OQ-45]`; Intel-Mac shell verification is `[OQ-46]`.
 
 ## How to extend (the actual procedure)
 

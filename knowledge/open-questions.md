@@ -44,7 +44,8 @@ When a question is resolved:
 - [ ] **[OQ-40]** Model catalog/registry — who resolves a model ID to `(hash, metadata, file)`, and how it updates/versions across an always-latest website and pinned installed apps. Maybe its own seam. (Ties to `[OQ-21]`/`[OQ-22]`.) (From `14-architecture.md`.)
 - [ ] **[OQ-41]** `mlx-rs` production maturity for LLM inference vs. the Swift sidecar worker route for `MlxBackend`. (From `07-runtime-backends.md`.)
 - [ ] **[OQ-42]** `MLXLanguageModel` iOS availability — Mac-only or iPhone too? Determines whether open-weight MLX models are reachable on iOS through Apple's framework. (From `07-runtime-backends.md`.)
-- [ ] **[OQ-45]** The Tool layer — when to introduce the Tool manifest (gated on the 2nd concrete tool), the curate-vs-thin-surface boundary (the "persona + I/O panel + verdict" test, never bespoke), and which intents become the first runnable Mac tools (writing assistant + doc-RAG). (From `14-architecture.md`.)
+- [ ] **[OQ-45]** The Tool layer — when to introduce the Tool manifest (gated on the 2nd concrete tool), the two port classes (standalone-app vs assistant-config on a hosted shell), and which intents become the first runnable Mac tools (writing assistant + doc-RAG). Leading approach: port AnythingLLM/Jan and configure via API, never build a shell (see `15-port-catalog.md`). (From `14-architecture.md`.)
+- [ ] **[OQ-46]** Verify **AnythingLLM / Jan on the Intel-Mac target**, and prove the unattended REST/file config as the port mechanism for assistant-style tools. (From `15-port-catalog.md`.)
 
 ## Defer — Month 2 and later
 
