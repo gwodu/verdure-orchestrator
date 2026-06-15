@@ -26,11 +26,23 @@ Verdure binds to llama.cpp via the `llama-cpp-2` Rust crate (see `08-rust-ecosys
 
 For v1 of the Phase 1 laptop binary, ExecuTorch is not yet wired in. It becomes relevant when Phase 2 targets Android devices with NPUs.
 
-## Secondary backend: MLC LLM (Apple Silicon path)
+## Secondary backend: MLX (Apple Silicon path)
 
-**MLC LLM** uses compiled inference kernels and is among the fastest options on Apple Silicon. Potentially useful for Tier L3 macOS deployments if benchmarks justify the integration complexity.
+**MLX** is Apple's open-source ML framework, now the performance leader on Apple Silicon — reported 30–40% faster than llama.cpp on M5-generation hardware, with Metal 4 support. Ollama itself now routes through MLX on Apple Silicon. As of WWDC 2026, Apple is open-sourcing `MLXLanguageModel`, a Foundation Models–conforming wrapper that runs open-weight models from the Hugging Face mlx-community.
 
-For v1, default to llama.cpp with Metal. Revisit MLC if benchmarks show a meaningful gap that affects the user experience on M-series Macs.
+This supersedes the earlier MLC LLM consideration. `[OQ-14]` is resolved: the relevant Apple Silicon comparison is MLX vs. llama.cpp+Metal, and the gap is large enough to justify integration for Tier L3.
+
+Two integration routes for a Verdure `MlxBackend`, unresolved:
+1. **`mlx-rs` from the Rust core** — unofficial Rust bindings over Apple's `mlx-c` C API. Preserves single-binary purity. **[GAP — needs research]** production maturity of `mlx-rs` for LLM inference. Tracked as `[OQ-41]`.
+2. **Swift sidecar worker** — a small Swift binary linking MLX Swift, spawned by the supervisor and speaking the worker protocol. Requires the heterogeneous-worker `Executor` extension (see `14-architecture.md`). More moving parts, but rides Apple's first-party code path.
+
+Note `MLXLanguageModel`'s platform availability on iOS (vs. Mac-only) is unconfirmed from beta documentation. Tracked as `[OQ-42]`.
+
+## Zero-download backend: Apple system model
+
+On Apple Intelligence devices, the OS provides a resident ~3B model via the Foundation Models framework (`SystemLanguageModel`, Swift API). A Verdure `AppleSystemBackend` adapter exposes it through the `Backend` trait like any other engine — except there is nothing to download, store, or manage. See `03-model-matrix.md` (zero-download recommendation) and `14-architecture.md` (resident `ModelChoice`).
+
+Caveats: closed weights, fixed size, updated on Apple's schedule, Swift-only API (implies the sidecar route or a thin Swift shim). All Foundation Models / MLXLanguageModel APIs are iOS 27 / macOS 27 developer beta as of June 2026 — treat signatures as provisional until the fall public release.
 
 ## Long-term: pure-Rust backends
 
@@ -43,11 +55,13 @@ The user never picks a backend. Verdure detects the device and routes to the fas
 - Default: llama.cpp via `llama-cpp-2`
 - Snapdragon with Hexagon NPU (Phase 2): ExecuTorch with NPU delegation
 - MediaTek with APU (Phase 2): ExecuTorch with APU delegation
-- Apple Silicon: llama.cpp with Metal (or MLC if justified)
+- Apple Silicon (Tier L3): MLX via `MlxBackend` when justified; `AppleSystemBackend` (resident system model) for intents within its quality ceiling; llama.cpp with Metal as the universal fallback
 
 To the caller, every model speaks one API. Backend selection is invisible.
 
 ## Open questions
 
 - [OQ-13] ExecuTorch 1.0 integration specifics on Android — exact chipset coverage, packaging, NDK complexity.
-- [OQ-14] MLC LLM vs. llama.cpp+Metal benchmark gap on Apple Silicon — does the integration cost justify the speedup?
+- [OQ-14] Resolved (WWDC 2026) — superseded: MLX replaced MLC as the Apple Silicon candidate, and the 30–40% gap over llama.cpp+Metal on M5 is confirmed meaningful.
+- [OQ-41] `mlx-rs` production maturity for LLM inference — viable from the Rust core, or is the Swift sidecar worker the safer route?
+- [OQ-42] `MLXLanguageModel` platform availability — Mac-only or also iOS? Determines whether open-weight MLX models are reachable on iPhone through Apple's framework.

@@ -20,6 +20,7 @@ All footprints assume Q4_K_M quantization (the default — see `04-quantization.
 | L2-low / P2 | 6–8 GB | 1.5B–3B params | Qwen 2.5 1.5B, Llama 3.2 3B | ~1.0–2.2 GB |
 | L2-high / P3 | 8 GB | 3B–4B params | Phi-4-mini 3.8B, Gemma 3 4B | ~2.2–2.9 GB |
 | L3 | 16 GB+ | 7B+ params | Mistral Small, Llama 3.1 8B | ~4.5–5.5 GB |
+| L3 (Apple Intelligence devices) | 8 GB+ unified | Resident system model (~3B) | Apple Foundation Model | **0 GB — pre-installed by OS** |
 
 ## Expected throughput
 
@@ -42,6 +43,14 @@ Examples on an 8 GB MacBook (Tier L2-high):
 - **Quick chat / Q&A** → Llama 3.2 3B. Speed over quality; faster response feels better for short interactions.
 - **Code help** → Phi-4-mini. Reasoning-strong on technical tasks.
 - **Multilingual** → Qwen 2.5 3B. Strong across 35+ languages.
+
+## The zero-download recommendation
+
+On Apple Intelligence–capable devices (M1+ Macs, recent iPhones, on iOS 27 / macOS 27+), the OS ships a resident ~3B system model accessible via Apple's Foundation Models framework. For many everyday intents (summarize, classify, rewrite, short Q&A), the honest recommendation is: **download nothing — you already have a model.** Footprint zero, storage zero, instant availability.
+
+This matters beyond Apple devices as a principle: a decider that knows when the answer is "install nothing" is more trustworthy than one that always recommends a download (see `06-privacy-principles.md`, honest expectations). The matrix must therefore support resident models — models with no download artifact. Architectural handling is in `14-architecture.md` (resident `ModelChoice`). Backend details are in `07-runtime-backends.md` (`AppleSystemBackend`).
+
+The system model is closed-weight and fixed-size; for intents that exceed its quality ceiling (deep creative work, hard reasoning, specific domain needs), the recommendation shifts to a downloaded open-weight model per the matrix above.
 
 ## Model details
 

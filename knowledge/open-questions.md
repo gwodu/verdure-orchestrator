@@ -11,7 +11,6 @@ When a question is resolved:
 
 - [ ] **[OQ-07]** Which LLM API for Phase 0 intent classification? Evaluate Claude Haiku 4.5, Gemini Flash, GPT-5 nano, Groq Llama for latency, structured-output reliability, vendor stability. (From `05-website-spec.md`.)
 - [ ] **[OQ-09]** Phase 0 tech stack pick. Any reasonable choice works; pick one and commit. (From `05-website-spec.md`.)
-- [ ] **[OQ-26]** iOS feasibility for the daemon model. Strategic blocker for Phase 2 on iOS. (From `11-platform-deployment.md`.)
 - [ ] **[OQ-03]** Physical device access for Tier P1 / P2 / L1 testing. Blocks publishing real-world benchmarks. (From `02-hardware-tiers.md`.)
 - [ ] **[OQ-19]** Hugging Face TOS at scale — rate limits, bandwidth costs. Phase 1 blocker. (From `10-distribution.md`.)
 
@@ -43,17 +42,22 @@ When a question is resolved:
 - [ ] **[OQ-38]** Eviction policy under memory pressure — LRU, intent-priority, or pinned-plus-LRU? Core logic; needs a default before the lifecycle manager. (From `14-architecture.md`.)
 - [ ] **[OQ-39]** Concurrency & resource arbitration for the daemon — resident-model count, request queueing/fairness across concurrent callers, per-session context, interaction with eviction and the `Executor`. (From `14-architecture.md`.)
 - [ ] **[OQ-40]** Model catalog/registry — who resolves a model ID to `(hash, metadata, file)`, and how it updates/versions across an always-latest website and pinned installed apps. Maybe its own seam. (Ties to `[OQ-21]`/`[OQ-22]`.) (From `14-architecture.md`.)
+- [ ] **[OQ-41]** `mlx-rs` production maturity for LLM inference vs. the Swift sidecar worker route for `MlxBackend`. (From `07-runtime-backends.md`.)
+- [ ] **[OQ-42]** `MLXLanguageModel` iOS availability — Mac-only or iPhone too? Determines whether open-weight MLX models are reachable on iOS through Apple's framework. (From `07-runtime-backends.md`.)
 
 ## Defer — Month 2 and later
 
-- [ ] **[OQ-14]** MLC LLM vs. llama.cpp+Metal benchmark gap on Apple Silicon. (From `07-runtime-backends.md`.)
 - [ ] **[OQ-16]** `burn` current state and applicability to LLM inference. (From `08-rust-ecosystem.md`.)
 - [ ] **[OQ-17]** `tract` maturity and relevance vs. GGUF focus. (From `08-rust-ecosystem.md`.)
 - [ ] **[OQ-22]** Model metadata schema — extend HF format or roll our own. (From `10-distribution.md`.)
+- [ ] **[OQ-43]** `VerdureLanguageModel` Swift package — ship decision and phasing. Strategic distribution channel, not just engineering. (From `11-platform-deployment.md`.)
+- [ ] **[OQ-44]** Track Google/Android analog of Apple's `LanguageModel` pattern (a system model + open backend protocol in AICore) landing on the core P1/P2 market. (From `01-thesis.md`.)
 
 ## Resolved
 
 - [x] **[OQ-08]** Domain — resolved 2026-05-26: the Phase 0 site is verdureai.com. (From `05-website-spec.md`.)
+- [x] **[OQ-14]** MLC vs. llama.cpp+Metal — superseded (WWDC 2026): MLX replaced MLC as the Apple Silicon candidate; 30–40% gap over llama.cpp on M5 confirmed meaningful. See `07-runtime-backends.md`.
+- [x] **[OQ-26]** iOS daemon feasibility — resolved (WWDC 2026): daemon infeasible, confirmed; strategy pivoted to a thin decider over Apple's Foundation Models stack (the OS now ships the shared inference service). See `11-platform-deployment.md`.
 - [x] **[OQ-32]** Intent cards on Screen 1 — done 2026-06-01: six research-grounded cards (`INTENT_CARDS` in `website/lib/modality.ts`) — Everyday questions/chat, Writing & ideas, Coding & tech help, Turn recordings into text, Create images, Languages & translation — plus a free-text fallback for the long tail. Set chosen from `13-use-case-demand.md`; deliberately **no** video-generation card (lowest demand, least local-feasible). A unit test locks each card's example phrase to its `(modality, task)`. (From `05-website-spec.md`.)
 - [x] **[OQ-33]** Demand-side use-case research — done 2026-06-01: researched (4-source fan-out) and synthesized into `13-use-case-demand.md`, the demand leg of the matching brain. Key finding: local-AI demand concentrates on transcription, coding, image generation, private RAG, and roleplay/uncensored content (privacy / cost / no-filter drivers); video generation is the weakest case. Drove the Screen 1 intent cards (`[OQ-32]`). Ongoing user validation tracked by `[OQ-06]` / `[OQ-31]`. (From `01-thesis.md`.)
 - [x] **[OQ-30]** Music & video generation for non-technical users — resolved 2026-05-29: **recommend them, keeping the honest "this is hard / for comfortable users / needs ComfyUI" framing.** The friction is on-strategy: showing how difficult these are to set up yourself is exactly what demonstrates Verdure's value. Do not hide or over-soften the difficulty. (From `12-multimodal-models.md`.)

@@ -56,7 +56,18 @@ DRAM contract prices roughly doubled through 2025–2026. Mid-range phones are e
 
 This makes intelligent orchestration more valuable, not less. Generic instructions like "just run Ollama" break on these devices. Verdure designed for 4 GB targets is aligned with where the market is heading.
 
+## Market validation: Apple proved the thesis (WWDC 2026)
+
+At WWDC 2026, Apple restructured its Foundation Models framework around a public `LanguageModel` protocol — a backend abstraction that lets any conforming model (Apple's on-device system model, Private Cloud Compute, custom Core AI weights, open-weight MLX models, and third-party cloud models from Anthropic and Google) sit behind one Swift API. This is Apple independently arriving at the same conclusion Verdure encoded from day one: the runner is commoditizable; the abstraction seam is where value sits.
+
+What Apple did not build is the decider. Nothing in their stack asks "what are you trying to do?" — it answers *how to call a model*, never *which model you should run and why*. Apple is also structurally disincentivized to build a neutral decider: their framework exists to make Apple's model the default, and a model vendor cannot credibly referee its own model against competitors. Verdure's neutrality is a moat Apple cannot copy without undermining its own stack.
+
+**This makes Apple Silicon the beachhead, not a distraction.** By commoditizing the runner on Mac — a resident system model, MLX, and the `LanguageModel` protocol — Apple removed the most expensive part of Verdure's build (daemon, FFI, model distribution) *on that platform*. So Verdure ships the decider first where the runner is already solved: prove the intent-first thesis on Apple Silicon Macs at low cost, then carry it to the core market. The emerging-market mission (the RAM crisis, Tier P1/P2, billions of users) remains the destination — Mac is the entry wedge that funds and de-risks the road there, not a change of mission.
+
+The pattern to actually watch is Google shipping the analogous architecture on Android (a system model plus an open backend protocol in AICore), because that would land directly on Verdure's core Tier P1/P2 market — and there, unlike on Apple's premium hardware, the decider is the whole game. This argues for moving fast while the Android side of this pattern remains unbuilt. Tracked as `[OQ-44]`.
+
 ## Open questions
 
 - [OQ-01] Do we commit to laptops-first formally, or develop Phase 1 and Phase 2 in parallel?
 - [OQ-02] For Phase 2: Android first or iOS first?
+- [OQ-44] Track Google/Android analog risk: signs of a system model + open backend protocol in AICore that would replicate Apple's WWDC 2026 pattern on Verdure's core market.

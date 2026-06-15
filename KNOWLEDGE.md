@@ -45,6 +45,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 Each knowledge file opens with a status marker (✅ Settled, 🟡 Provisional, 🔴 Open) and ends with an "Open Questions" section where relevant. Open questions also appear in the centralized `open-questions.md` with stable `[OQ-XX]` reference codes. Cross-references between files are always explicit.
 
 ## Changelog
+- 2026-06-15 — Apple-stack integration (WWDC 2026), distributed by concern across `01/03/07/11/14`: MLX supersedes MLC, the zero-download/resident-model recommendation, the iOS daemon→thin-decider pivot, and Apple Silicon reframed as the **beachhead** (mission still emerging-market). Resolved `[OQ-14]`/`[OQ-26]`; opened `[OQ-41]`–`[OQ-44]`. No vendor file — content lives in the concern-owning files.
 - 2026-06-05 — added `14-architecture.md` (the structural spine: pure core + adapters/seams, the one-click pipeline, the Phase 0↔1 single-source-of-truth boundary). `07/08/10/11` reframed as the decision-content behind specific seams.
 - 2026-06-01 — added `13-use-case-demand.md` (the demand side); intent layer / Screen 1 cards now planned from researched use cases, not the model catalog.
 - 2026-05-29 — added `12-multimodal-models.md`; Verdure now recommends across audio/image/video, not just text. `03` scoped to text.
