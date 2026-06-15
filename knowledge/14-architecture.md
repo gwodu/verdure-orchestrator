@@ -127,6 +127,22 @@ Lifecycle (decision 6 — storage budgets, swapping, eviction) is a core concern
 
 The pitch is "other apps call Verdure via local IPC" — so the core is not single-request. Multiple apps may request inference concurrently, against possibly-different models, inside one finite memory budget. The core (not any adapter) owns the arbitration: how many models stay resident, how requests queue when a model is loading or memory is tight, fairness across callers, and per-session context. This interacts directly with lifecycle/eviction (decision 6) and with the `Executor` (a `SubprocessExecutor` can isolate concurrent workers; an `InProcessExecutor` cannot). The single-request state machine above is one lane; the arbitration model is the traffic control around it, and it is core logic so it behaves the same on every device. Tracked as `[OQ-39]`.
 
+## The Tool layer (above the seams) — deferred, data-driven, plug-n-play
+
+A recommendation isn't finished until it's *running*. Above the seams sits a future **Tool** layer that turns the decider's output into a one-click, working local tool — the local answer to "There's An AI For That" (see `01-thesis.md`, "the decider that finishes the job").
+
+A **Tool** is a data manifest, not a codebase:
+
+> **Tool = engine selector (→ the decider + `Backend`) + task persona/prompt + optional local capability (RAG over a file; a bounded tool-call) + a thin use-case surface + the feasibility verdict — bound to one `(modality, task)`.**
+
+Disciplines that keep this from becoming app-building (and from breaking the neutral-decider moat):
+
+- **Plug-n-play, never bespoke.** Verdure *configures and launches* tools — wrapping an existing best-in-class local app, or running the device's own model (e.g. `AppleSystemBackend` / `MlxBackend`) behind a task persona. It does not author or brand tools. A thin surface is allowed *only* where the engine is the device's own and no end-user app exists — and only as "configured chat with a persona + an I/O panel." **The test: if a tool's surface is more than persona + I/O panel + verdict, it's an app — stop.**
+- **No abstraction without a second implementation.** Build the first tool as a concrete, mostly-hardcoded path; let the *second* tool force the minimal Tool manifest. Don't design a generic Tool/Workflow abstraction for one tool.
+- **Non-agentic first.** v1 tools are single-step or retrieval-only. Autonomous multi-step agents are deferred — trust-gated (~17%) and unreliable on small local models.
+
+**Mac MVP framing.** The first two tools are the abstraction's two implementations: (A) a **writing assistant** — a persona over the device's resident/MLX model, no agent — and (B) **"talk to my document"** — local RAG over one file. On the Apple stack the engine is already commoditized (`AppleSystemBackend` / `MlxBackend` behind `LanguageModel`), so the Tool layer stays engine-agnostic. The MVP's first deliverable *is* Tool A — the decider made runnable. Tracked as `[OQ-45]`.
+
 ## How to extend (the actual procedure)
 
 Adding a new device we previously could not serve should be a small, bounded change:

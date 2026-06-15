@@ -44,6 +44,7 @@ When a question is resolved:
 - [ ] **[OQ-40]** Model catalog/registry — who resolves a model ID to `(hash, metadata, file)`, and how it updates/versions across an always-latest website and pinned installed apps. Maybe its own seam. (Ties to `[OQ-21]`/`[OQ-22]`.) (From `14-architecture.md`.)
 - [ ] **[OQ-41]** `mlx-rs` production maturity for LLM inference vs. the Swift sidecar worker route for `MlxBackend`. (From `07-runtime-backends.md`.)
 - [ ] **[OQ-42]** `MLXLanguageModel` iOS availability — Mac-only or iPhone too? Determines whether open-weight MLX models are reachable on iOS through Apple's framework. (From `07-runtime-backends.md`.)
+- [ ] **[OQ-45]** The Tool layer — when to introduce the Tool manifest (gated on the 2nd concrete tool), the curate-vs-thin-surface boundary (the "persona + I/O panel + verdict" test, never bespoke), and which intents become the first runnable Mac tools (writing assistant + doc-RAG). (From `14-architecture.md`.)
 
 ## Defer — Month 2 and later
 

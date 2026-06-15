@@ -38,6 +38,14 @@ This inversion is the differentiation. The runner is commoditizable; the decider
 
 **The two halves of the decider.** It must know what people *want to do* and which model *does it*. The model half lives in `03`/`12`; the demand half — what people actually use (local) AI for, by prevalence — is researched in `13-use-case-demand.md` (added 2026-06-01, resolving `[OQ-33]`). The intent layer (Screen 1 cards, the `(modality, task)` taxonomy) is planned from `13`, not from the model catalog. Key demand finding: local-AI use concentrates on transcription, coding, image generation, private document Q&A, and roleplay/uncensored content — driven by privacy, cost, and the absence of content filters.
 
+## The decider that finishes the job (plug-n-play, never bespoke)
+
+The decider's promise isn't complete at "here's the right local AI for you" — the user's next question is "okay, now make it work." Verdure closes that loop: it turns the recommendation into a **running tool, in one click.** This is the local answer to directory sites like *There's An AI For That*, which organize AI by task but stop at an outbound link to a (mostly cloud) sign-up. Nobody occupies the intersection Verdure already owns: curated + intent-organized + **local** + 1-click + for non-technical users.
+
+**Plug-n-play, never bespoke.** Verdure *configures and launches* tools — wrapping the best existing local app, or running the device's own model behind a task persona — and **never authors or brands its own tools.** The reason is the moat: the moment Verdure ships "Verdure Transcribe," it can no longer honestly say "actually, MacWhisper is better for you." Neutrality *is* the moat; building apps would destroy it (and drag Verdure onto an unbounded maintenance treadmill). A "tool" is therefore the recommendation *pre-assembled and runnable* — model + persona + optional local RAG + a thin surface + the honesty verdict — and it stays **data, not a codebase**. The architecture of this layer is in `14-architecture.md` (the Tool layer).
+
+**Phasing the tools.** Ship the decider first; then turn the highest-demand, *non-agentic* intents into runnable tools (writing, doc-Q&A, transcription). Autonomous, multi-step **agents** (the travel/tax-assistant vision) stay deferred and aspirational — only ~17% of people trust AI to act for them, and small local models are unreliable at multi-step tool-calling. We earn that with reliability and a confirm-not-autonomous UX before shipping it.
+
 ## Phasing strategy
 
 Verdure ships in three phases. The orchestration brain — this knowledge base — is constant across all of them. Only the delivery surface changes.
