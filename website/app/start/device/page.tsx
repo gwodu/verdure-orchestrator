@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { DEVICE_CARDS, type DeviceCard } from '@/lib/tiers';
+import { DEVICE_CARDS, type DeviceCard } from '@verdure/decider';
 import { getIntent, saveDevice } from '@/lib/session';
 
 export default function DeviceScreen() {

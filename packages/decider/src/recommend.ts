@@ -15,8 +15,6 @@
 import type { Tier } from './tiers';
 import { taskLabel, type Classification, type Modality, type TextTask } from './modality';
 import { decide, deviceClass, type DeviceClass, type Decision } from './matrix';
-
-export type { Feasibility } from './matrix';
 import type { Feasibility } from './matrix';
 
 // An install path the user can actually follow — a friendly app wherever one

@@ -1,0 +1,14 @@
+{
+  "name": "verdure-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Verdure — the user's local AI conductor. Surfaces (website funnel + desktop porter) over one shared brain (@verdure/decider).",
+  "workspaces": [
+    "packages/*",
+    "website",
+    "app"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present"
+  }
+}

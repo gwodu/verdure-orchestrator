@@ -6,12 +6,66 @@ on:
   pull_request:
     branches: ["*"]
 
+# Monorepo CI. Two jobs:
+#   - decider-web: the shared decider + the website (Linux, cheap)
+#   - porter: the MVP desktop porter — compiles the Rust backend, runs its unit
+#     tests, AND exercises the real `brew install --cask buzz` recipe on a macOS
+#     runner (the end-to-end check that doesn't fit on the founder's machine).
+#
+# Both jobs currently run on every push. Path-filtering (run macOS only when
+# app/ or packages/ change) is a deliberate follow-up to save macOS minutes —
+# see knowledge/open-questions.md [OQ-27]. The long-term Rust core (src/) is a
+# scaffold with a malformed manifest and intentionally has NO job yet; it gets
+# one when it becomes real (skills/testing.md "add its CI job in the same change
+# that adds the component").
+
 jobs:
-  test:
+  decider-web:
+    name: Decider + website
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install workspaces
+        run: npm ci
+      - name: Decider tests (the single source of truth)
+        run: npm test --workspace @verdure/decider
+      - name: Website tests
+        run: npm test --workspace nextjs
+      - name: Website production build
+        run: npm run build --workspace nextjs
+
+  porter:
+    name: Desktop porter (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      - name: Run tests
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('app/src-tauri/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
+      - name: Install workspaces
+        run: npm ci
+      - name: Frontend typecheck + build
+        # Produces app/dist, which tauri's generate_context! embeds at compile time.
+        run: npm run build --workspace @verdure/porter-app
+      - name: Porter Rust unit tests (compiles the Tauri backend)
+        working-directory: app/src-tauri
         run: cargo test
+      - name: Verify the Buzz install recipe really works
+        # This is the porter's actual install command. If the cask token or
+        # recipe were wrong, this fails — proving the one-click path end-to-end
+        # (minus the GUI launch, which needs a desktop session).
+        run: brew install --cask buzz

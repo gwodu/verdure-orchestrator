@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { saveIntent } from '@/lib/session';
-import { INTENT_CARDS, type IntentCard } from '@/lib/modality';
+import { INTENT_CARDS, type IntentCard } from '@verdure/decider';
 
 export default function IntentScreen() {
   const [text, setText] = useState('');

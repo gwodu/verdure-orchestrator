@@ -10,7 +10,7 @@
 // All accessors are SSR-safe: they return null on the server (where
 // sessionStorage doesn't exist) and clients call them from useEffect anyway.
 
-import { findCard, type Tier } from './tiers';
+import { findCard, type Tier } from '@verdure/decider';
 
 const INTENT_KEY = 'verdure.flow.intent';
 const DEVICE_KEY = 'verdure.flow.device'; // the chosen DeviceCard id

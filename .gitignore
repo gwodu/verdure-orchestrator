@@ -1,6 +1,18 @@
 # Rust
 /target/
+**/target/
 **/*.rs.bk
+
+# Tauri / Vite app build artifacts
+app/dist/
+app/src-tauri/gen/
+
+# Screenshot review artifacts (regenerate with app/scripts/shots.mjs)
+app/screenshots/
+
+# Vite/Next build output
+.next/
+dist/
 
 # macOS
 .DS_Store

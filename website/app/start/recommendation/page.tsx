@@ -4,9 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getIntent, getTier } from '@/lib/session';
-import type { Tier } from '@/lib/tiers';
-import { classifyIntent } from '@/lib/intent';
-import { recommend, type Recommendation, type InstallOption } from '@/lib/recommend';
+import { classifyIntent, recommend, type Tier, type Recommendation, type InstallOption } from '@verdure/decider';
 
 export default function RecommendationScreen() {
   const router = useRouter();

@@ -28,11 +28,18 @@ A small **Tauri desktop app** (Rust backend + web UI) that:
 - **`src/`** (the pure-Rust core + seams daemon, `14`) is the **long-term** architecture, **not** the MVP — the MVP's Rust backend is a thin porter that grows toward it.
 
 ## Build steps for the first slice
-1. Scaffold the Tauri app in `app/` (Rust + web).
-2. Frontend: drop in the intent cards + `decide()` (from `website/lib`) → user picks intent → app shows the recommended tool.
-3. Catalog: a manifest entry for **Buzz** (`15`) — its official install recipe (DMG / Homebrew cask) + how to launch it.
-4. Rust backend (the porter): execute the install recipe unattended, then launch Buzz. (For tools needing a model engine, install Ollama/llamafile + pull the model.)
-5. Verify the loop end-to-end on the Intel Mac.
+1. ✅ Scaffold the Tauri app in `app/` (Rust + web — Vite + vanilla TS frontend, Tauri v2 backend).
+2. ✅ Frontend: intent cards + `recommend()` from the shared decider → user picks intent → app shows the recommended tool. Device is **detected, not asked** (`app/src-tauri/src/device.rs`), removing the website's device-picker screen.
+3. ✅ Catalog: a manifest entry for **Buzz** as **data** (`app/src-tauri/src/catalog.rs`) — install recipe = Homebrew cask `buzz`; launch = `open -a Buzz`.
+4. ✅ Rust backend (the porter, `app/src-tauri/src/porter.rs`): locate `brew` (Finder-PATH-safe), check-if-installed → install → launch, streaming progress to the UI. Written + unit-tested.
+5. 🟡 Verify the loop end-to-end on the Intel Mac — **blocked on Xcode Command Line Tools** (no `cc`/linker → Tauri/Rust can't compile). Everything else verified (decider 64 tests, website 9 + build, frontend typecheck/build/screenshots). See FEATURE_LOG.md "The Buzz slice".
+
+**Build status (2026-06-16):** the whole app exists and the loop is proven in a browser preview (the Tauri calls degrade to a simulation when there's no backend — `app/src/bridge.ts`). The only thing between here and a real Buzz-installs-on-the-Mac run is installing Xcode CLT (`xcode-select --install`), then `cd app && npm run tauri dev`. Disk is tight (~3 GB free after clearing the npm cache) — the Tauri build + CLT may need a cleanup first.
+
+## Decided while building (was open)
+- **Stack & location** (`app/`, Tauri v2): Rust backend + a small Vite + vanilla-TS frontend (no React — two screens, keep deps light).
+- **Decider sharing = shared package, not copy.** Extracted `website/lib` → `packages/decider/` (`@verdure/decider`); website + porter both import it via npm workspaces. Ships TS source (consumed by Next `transpilePackages`, Vite, Vitest). Resolves `[OQ-49]`.
+- **Catalog is data.** A `Tool` = `InstallMethod` + `LaunchMethod` enums; command construction is pure (testable), execution is isolated. Adding a port is a data entry, per `15`.
 
 ## What it becomes (roadmap)
 - **v1.1 — connect tools (composition).** User-directed, deterministic 2-tool chains (e.g. Buzz → AnythingLLM), typed I/O ports + the 3-field pipe contract, hard-capped at 2 nodes. See `14` (composition layer).
@@ -57,4 +64,5 @@ Read `KNOWLEDGE.md` → `CLAUDE.md` → `01-thesis.md` → `14-architecture.md` 
 - `09`/`12` mention a possible "Verdure redistributes models" future — the porter installs from official sources instead; redistribution is a deferred maybe.
 
 ## Open questions
-- [OQ-49] Confirm the MVP app's exact stack/location (`app/`, Tauri) and how it shares the decider with `website/lib` (shared package vs copy) before scaffolding. (From `17-build-plan.md`.)
+- ~~[OQ-49]~~ **Resolved 2026-06-16:** stack = Tauri v2 in `app/` (Vite + vanilla TS frontend); decider shared via a **workspace package** `@verdure/decider` (`packages/decider/`), imported by both website and porter. See "Decided while building" above.
+- [OQ-50] (new) End-to-end verification on the Intel Mac is pending Xcode Command Line Tools + a possible disk cleanup. Once CLT is in, run `cd app && npm run tauri dev`, port Buzz, and confirm install+launch; then log the result in TEST_REPORT.md.

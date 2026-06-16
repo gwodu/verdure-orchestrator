@@ -6,7 +6,7 @@ Verdure is the user's **local AI conductor** — a neutral *decider* + *porter* 
 
 This file is an orientation index, not a content store. Knowledge lives in the `knowledge/` subfolder as numbered, modular files. Claude should read this file at the start of every session, then load only the knowledge files relevant to the current task.
 
-This knowledge base is shared across the monorepo: it informs the Phase 0 website (`website/`, the decider/funnel), the **MVP desktop porter** (the near-term build — see `17`), and the long-term Rust core (`src/`). The website's recommendation engine is this knowledge operationalized in code — see `CLAUDE.md` ("Repository layout").
+This knowledge base is shared across the monorepo: it informs the Phase 0 website (`website/`, the decider/funnel), the **MVP desktop porter** (`app/`, the near-term build — see `17`), and the long-term Rust core (`src/`). The recommendation engine is this knowledge operationalized in code — now a shared workspace package, **`@verdure/decider`** (`packages/decider/`), imported by both the website and the porter so the decision can never differ between surfaces. See `CLAUDE.md` ("Repository layout").
 
 For perspective — *who Claude is while working on this project* — see `CLAUDE.md`.
 
@@ -53,6 +53,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 Each knowledge file opens with a status marker (✅ Settled, 🟡 Provisional, 🔴 Open) and ends with an "Open Questions" section where relevant. Open questions also appear in the centralized `open-questions.md` with stable `[OQ-XX]` reference codes. Cross-references between files are always explicit.
 
 ## Changelog
+- 2026-06-16 — **built the MVP first slice (the Buzz port).** Scaffolded the Tauri porter in `app/`; extracted the decider into a shared workspace package `@verdure/decider` (`packages/decider/`) imported by both website and porter (resolves `[OQ-49]`: shared package, not copy). Catalog-as-data + a pure-then-execute porter (`app/src-tauri/`). Loop proven in browser preview; real on-Mac run pending Xcode CLT (`[OQ-50]`). See `17-build-plan.md`, FEATURE_LOG.md, TEST_REPORT.md.
 - 2026-06-16 — alignment pass + handoff: added `17-build-plan.md` (the MVP = a Tauri porter on a portable engine, first slice Buzz; + roadmap). Reframed the orientation files to the **conductor/porter** identity (not "orchestration moat"); reconciled phasing (Phase 1 = the Tauri MVP, not the Rust daemon); added an `OllamaBackend` note. `[OQ-49]`.
 - 2026-06-16 — `16-growth-asset.md`: ASSET as a *lens* with deliberate divergence. Atomic unit = **one OSS tool installed & running** (the Uber-"ride"), not a persona. **Reject** the data-harvesting moat (off-mission, `06`) and don't chase a network effect — Verdure is a **utility that empowers users**; north star = the user's **local AI conductor** (recommend + set up + connect tools, on-device, owned by them). Seed supply from the OSS ecosystem; mission over moat. `[OQ-48]`.
 - 2026-06-16 — designed the **composition layer**: user-directed, deterministic 2-tool chaining (transcription → writing) via typed I/O ports + a 3-field pipe contract; bright line "wire existing I/O, never build a missing surface"; hard-capped at 2 nodes (not n8n); deferred after the single-tool MVP. `14` + `15` (pipeability) + `[OQ-47]`.

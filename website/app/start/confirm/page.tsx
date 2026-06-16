@@ -3,9 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getIntent, getDevice } from '@/lib/session';
-import { findCard, type DeviceCard } from '@/lib/tiers';
-import { classifyIntent } from '@/lib/intent';
-import { taskLabel } from '@/lib/modality';
+import { findCard, type DeviceCard, classifyIntent, taskLabel } from '@verdure/decider';
 
 export default function ConfirmScreen() {
   const router = useRouter();

@@ -47,7 +47,7 @@ When a question is resolved:
 - [ ] **[OQ-45]** The Tool layer — when to introduce the Tool manifest (gated on the 2nd concrete tool), the two port classes (standalone-app vs assistant-config on a hosted shell), and which intents become the first runnable Mac tools (writing assistant + doc-RAG). Leading approach: port AnythingLLM/Jan and configure via API, never build a shell (see `15-port-catalog.md`). (From `14-architecture.md`.)
 - [ ] **[OQ-46]** Verify **AnythingLLM / Jan on the Intel-Mac target**, and prove the unattended REST/file config as the port mechanism for assistant-style tools. (From `15-port-catalog.md`.)
 - [ ] **[OQ-47]** Composition layer (pluggable tools) — build the first concrete chain (**Buzz → AnythingLLM**, watch-folder → REST), then a second (**whisper.cpp → Ollama**) to earn the typed-port / 3-field pipe contract. Hard cap at 2 nodes — no branches, transforms, or model-directed routing (that's the deferred agentic line). GUI-only tools (UVR) need a headless equivalent ported. (From `14-architecture.md`.)
-- [ ] **[OQ-49]** Confirm the MVP app's exact stack/location (`app/`, Tauri) and how it shares the decider with `website/lib` (a shared package vs a copy of `matrix.ts`/`modality.ts`) before scaffolding. (From `17-build-plan.md`.)
+- [ ] **[OQ-50]** End-to-end verify the porter on the Intel Mac (`cd app && npm run tauri dev` → port Buzz → confirm install+launch). Blocked on Xcode Command Line Tools (no `cc`/linker) + likely a disk cleanup (~3 GB free). Then log the result in TEST_REPORT.md. (From `17-build-plan.md`.)
 - [ ] **[OQ-48]** Does a privacy-preserving, user-controlled **persona-sharing** layer ever get built (the only candidate network effect), or does Verdure stay a pure utility? Optional and far-future; the data-harvesting moat is rejected outright (`06`). Atomic unit = one OSS tool installed & running. (From `16-growth-asset.md`.)
 
 ## Defer — Month 2 and later
@@ -60,6 +60,7 @@ When a question is resolved:
 
 ## Resolved
 
+- [x] **[OQ-49]** MVP app stack/location + decider sharing — resolved 2026-06-16: **Tauri v2 in `app/`** (Vite + vanilla-TS frontend), decider shared as a **workspace package `@verdure/decider`** (`packages/decider/`), imported by both website and porter (not a copy). Ships TS source; npm workspaces symlink it. See `17-build-plan.md` "Decided while building". (From `17-build-plan.md`.)
 - [x] **[OQ-08]** Domain — resolved 2026-05-26: the Phase 0 site is verdureai.com. (From `05-website-spec.md`.)
 - [x] **[OQ-14]** MLC vs. llama.cpp+Metal — superseded (WWDC 2026): MLX replaced MLC as the Apple Silicon candidate; 30–40% gap over llama.cpp on M5 confirmed meaningful. See `07-runtime-backends.md`.
 - [x] **[OQ-26]** iOS daemon feasibility — resolved (WWDC 2026): daemon infeasible, confirmed; strategy pivoted to a thin decider over Apple's Foundation Models stack (the OS now ships the shared inference service). See `11-platform-deployment.md`.
