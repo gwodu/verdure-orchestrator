@@ -10,7 +10,7 @@ mod catalog;
 mod device;
 mod porter;
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Runtime};
 
 /// Return the detected hardware tier as a decider `Tier` string (e.g. "L2-high").
 /// The frontend feeds this straight into `recommend()` from @verdure/decider.
@@ -23,7 +23,10 @@ fn detect_device() -> String {
 /// so it runs on a blocking thread and streams progress to the UI via the
 /// `porter:progress` event.
 #[tauri::command]
-async fn port_tool(app: AppHandle, tool_id: String) -> Result<porter::PortOutcome, String> {
+async fn port_tool<R: Runtime>(
+    app: AppHandle<R>,
+    tool_id: String,
+) -> Result<porter::PortOutcome, String> {
     let tool = catalog::find(&tool_id).ok_or_else(|| format!("Unknown tool: {tool_id}"))?;
     let app_for_progress = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
