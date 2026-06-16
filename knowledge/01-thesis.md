@@ -46,6 +46,8 @@ The decider's promise isn't complete at "here's the right local AI for you" — 
 
 **Phasing the tools.** Ship the decider first; then turn the highest-demand, *non-agentic* intents into runnable tools (writing, doc-Q&A, transcription). Autonomous, multi-step **agents** (the travel/tax-assistant vision) stay deferred and aspirational — only ~17% of people trust AI to act for them, and small local models are unreliable at multi-step tool-calling. We earn that with reliability and a confirm-not-autonomous UX before shipping it.
 
+How this grows into a network-effect business — the atomic unit (a tool/persona), seeding supply from the open-source ecosystem, and the ASSET roadmap — is in `16-growth-asset.md`.
+
 ## Phasing strategy
 
 Verdure ships in three phases. The orchestration brain — this knowledge base — is constant across all of them. Only the delivery surface changes.

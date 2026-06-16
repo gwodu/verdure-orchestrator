@@ -27,6 +27,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 - `knowledge/11-platform-deployment.md` — code signing, app stores, OS specifics
 - `knowledge/14-architecture.md` ★ — the structural spine: pure core + replaceable adapters (seams), the one-click pipeline, the Phase 0↔1 boundary, the Tool layer. Composes 07/08/10/11.
 - `knowledge/15-port-catalog.md` ★ — the supply-side database: portable free/open-source local tools by use case, the two port classes, and the "port AnythingLLM, don't build a shell" decision.
+- `knowledge/16-growth-asset.md` — the growth / network-effect roadmap (Eva Lau's ASSET framework): atomic unit, seed supply, scale demand, network effect, proprietary insights.
 - `knowledge/open-questions.md` — master open-questions list, organized by urgency
 
 ## Where to start by task
@@ -40,6 +41,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 - Platform-specific deployment → `11`
 - How the binary is structured / adding a device or engine / the one-click pipeline → `14`
 - Which existing tool to port for a use case (the local-tool database) → `15` (+ `13` demand, `09` licensing)
+- Growth / how the network effect compounds / where to seed supply → `16`
 - Tracking what is still open → `open-questions.md`
 
 ## Conventions
@@ -47,6 +49,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 Each knowledge file opens with a status marker (✅ Settled, 🟡 Provisional, 🔴 Open) and ends with an "Open Questions" section where relevant. Open questions also appear in the centralized `open-questions.md` with stable `[OQ-XX]` reference codes. Cross-references between files are always explicit.
 
 ## Changelog
+- 2026-06-16 — adopted the **ASSET growth roadmap** (Eva Lau / Two Small Fish) as `16-growth-asset.md`. Atomic unit = a Tool (esp. a user-creatable **persona**); seed supply from the open-source ecosystem (Verdure's "20,000 public-domain books") via the catalog manifest; persona library = the network-effect engine; proprietary insight = the "what local AI people use, by device" map (opt-in only). `[OQ-48]`.
 - 2026-06-16 — designed the **composition layer**: user-directed, deterministic 2-tool chaining (transcription → writing) via typed I/O ports + a 3-field pipe contract; bright line "wire existing I/O, never build a missing surface"; hard-capped at 2 nodes (not n8n); deferred after the single-tool MVP. `14` + `15` (pipeability) + `[OQ-47]`.
 - 2026-06-15 — added `15-port-catalog.md` (the supply-side local-tool database) + the two port classes; decided to **port AnythingLLM/Jan as the configurable shell rather than build one**; aligned `14`'s Tool layer to "port, never build." Seed from OSS lists (TAAFT is ~95% cloud). `[OQ-46]`.
 - 2026-06-15 — adopted "the decider that finishes the job": a deferred, data-driven, **plug-n-play Tool layer** (configure & launch existing local tools / the device's own model, **never build bespoke apps**) — the local answer to "There's An AI For That". First Mac tools = writing assistant + doc-RAG. In `01`, `14` (Tool layer), `[OQ-45]`.

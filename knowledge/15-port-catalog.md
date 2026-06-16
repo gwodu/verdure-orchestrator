@@ -4,6 +4,8 @@
 
 This is the **supply side of the porter**: the curated registry of free, open-source, *locally-runnable* AI tools Verdure can **port** (install + configure) onto a user's device. It pairs with `13-use-case-demand.md` (what people want), is gated by `02`/`03`/`12` (what the device can run) and `09` (licensing), and is the "what we can actually deliver" half of *the decider that finishes the job* (`01`, `14`).
 
+This catalog is also the **seed supply** for growth — Verdure's "20,000 public-domain books" (the existing open-source ecosystem we bootstrap from). See `16-growth-asset.md` (the ASSET framework, stage "S — seed the supply side").
+
 ## Why not seed from "There's An AI For That"
 TAAFT and the AI-tool directories are **~95%+ cloud SaaS** — they filter by price, not license, and an open engine (Whisper, Stable Diffusion) appears only as a hosted wrapper, not the portable project. So directories are useful **only as the demand taxonomy** (which jobs people search for), never as a source of portable tools. Seed the catalog from the open-source-local ecosystem instead: `janhq/awesome-local-ai`, **Pinokio**'s app catalog, **AlternativeTo** (Open-Source + Self-Hosted filters), LocalAlternative.io, r/LocalLLaMA tooling lists.
 
