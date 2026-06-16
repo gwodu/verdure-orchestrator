@@ -31,6 +31,11 @@ jobs:
       porter: ${{ steps.filter.outputs.porter }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so paths-filter can diff the actual push (before..after)
+          # on branch pushes; a shallow clone leaves it no base and it falls back
+          # to treating everything as changed. (PRs diff against the base branch.)
+          fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
         with:
