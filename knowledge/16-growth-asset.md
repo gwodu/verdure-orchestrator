@@ -14,10 +14,12 @@ Source: Eva Lau, *The ASSET Framework* — https://twosmallfish.vc/what-is-the-a
 - **T — Track proprietary insights** — harvest user-behavior data into a moat and adjacent opportunities. Wattpad's data on which stories had entertainment potential turned it into an entertainment company (TV/film).
 - Coefficient: *network effect ≈ users × attention × connections.*
 
-## A — Atomic unit: a **Tool**
-Verdure's atomic unit is a **Tool** — the installable unit of local AI capability, bound to one `(modality, task)`. Two kinds (`15`): a **ported app** (Buzz, Upscayl…) and — crucially — a **persona**: a config (model + system prompt + optional RAG) that runs on the ported shell (AnythingLLM/Jan), exactly like a custom GPT but **local**. The persona is the *user-creatable, shareable* atomic unit — Verdure's "story." When many tools/personas exist and users create + share them, Verdure is a two-sided network (creators ↔ users), not just a utility.
+## A — Atomic unit: the 1-click value loop
+Verdure's atomic unit is the **core value loop**: *tell us what you want to do → the decider picks the right local tool → it's installed and running on your device, in one click.* That intent→install→run action is the irreducible unit of value, and proving it is the MVP.
 
-> The MVP delivers ONE atomic unit end-to-end (intent → installed → running, local, 1-click). That proves the unit; it does not yet create the network. The strategic MVP unit is a **persona** (e.g. a local writing agent), because it's the unit that later scales into supply.
+*(Precision on the term: in Eva Lau's framework the atomic unit is the OBJECT users congregate around — Wattpad's "a story," with reading and writing as the two sides. Verdure's object is a **Tool** in the catalog. But a ported Tool (Buzz, Upscayl…) is **not user-generated**, so — unlike a Wattpad story — it doesn't form a network on its own. So for the MVP we center the value loop above, not an object.)*
+
+**Mind the Wattpad analogy — it has real limits.** Wattpad is a UGC content network; its stories are user-created, which is the whole engine. Verdure's MVP is a **utility** — it installs third-party tools — and a utility has **no network effect by default**. Whether Verdure becomes a network-effect business is a deliberate later choice (below), not something to force by stretching the analogy.
 
 ## S — Seed the supply side (where tools come from)
 Wattpad's lesson: bootstrap from **existing free resources**, don't wait for creators. Verdure's "20,000 public-domain books" is the **existing open-source local-AI ecosystem**:
@@ -30,14 +32,18 @@ Wattpad's lesson: bootstrap from **existing free resources**, don't wait for cre
 ## S — Scale the demand side
 Reduce friction to users. Verdure already has the pieces: the website funnel (intent cards), 1-click install, "runs on the device you already have — private, free, no jargon." Wattpad's "mobile apps everywhere" = Verdure's "no new hardware, no cloud, no setup." Demand scales after the supply is seeded and the atomic unit works.
 
-## E — Enlarge the network effect
-The flywheel turns when users can **create and share personas** (and discover/rate tools): creators make personas → more users → more creators. The **persona library is the network-effect engine** — which is *why* persona-GPTs are strategically central, not just a feature. Deferred until the atomic unit + seed are proven.
+## E — The network-effect question (deferred — choose deliberately, don't force it)
+A utility has no network effect by default. Verdure has two honest paths from utility to network, to pick *later*, not in the MVP:
+1. **Data network effect — the natural fit for a decider.** Every opt-in recommendation + outcome (intent + device → which tool → did it stick) makes the decider smarter and the catalog better-ranked for the *next* person. More use → better recommendations → more users. This is the **T → A** loop; it needs no user-generated content and is the most defensible fit for "the decider." Opt-in only, never default telemetry (`06`).
+2. **UGC marketplace (the genuine Wattpad analog, optional).** If users can create + share **personas** (custom-GPT-style local configs), supply becomes user-generated and a creators ↔ users flywheel forms. The persona is the *supply object* here — **not** the atomic unit — and this is an optional later layer, with real risk of over-fitting Wattpad.
+
+The MVP commits to neither; it proves the utility loop. Which path (or both), and when, is `[OQ-48]`.
 
 ## T — Track proprietary insights
 Verdure's proprietary dataset: **which use cases → which tools/personas actually work on which devices** — the "what local AI real people use, by intent and device" map that no one else has. It's the demand × feasibility data (`13` + the matrix), grown by real usage; the moat and the source of adjacent opportunities. Always **opt-in only, never default telemetry** (`06-privacy-principles.md`) — refusing to share never produces a worse experience.
 
 ## Where we are: the A stage
-The MVP *is* the atomic unit (one persona/tool, 1-click, local). Supply seeding is minimal and curated; the network-effect stages (E, T) come after the unit and seed are proven. Sequence: **prove the unit → seed supply from the OSS ecosystem + starter personas → scale demand via the funnel → open persona creation/sharing (network effect) → harvest the usage map (insights).**
+The MVP *is* the atomic unit — the 1-click intent→install→run loop, proven for one use case. It is a **utility** at this stage. Supply seeding is minimal and curated; the network-effect choice (data vs UGC personas) is deliberate and deferred. Sequence: **prove the loop → seed supply from the OSS ecosystem → scale demand via the funnel → choose a network-effect path → harvest the usage map.**
 
 ## Open questions
 - [OQ-48] Define the atomic unit precisely and the **persona create/share mechanism** (the network-effect engine): is a persona a first-class shareable artifact, and from what phase? (From `16-growth-asset.md`.)
