@@ -90,16 +90,13 @@ mod ipc_tests {
 
     #[test]
     fn detect_device_is_invokable_over_ipc() {
-        use tauri::Manager;
         let app = create_app(tauri::test::mock_builder());
-        // Reuse the configured "main" window if the build created it; otherwise
-        // make one with the same label so the capability (windows: ["main"])
-        // authorizes it.
-        let webview = app.get_webview_window("main").unwrap_or_else(|| {
-            tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
-                .build()
-                .expect("mock webview builds")
-        });
+        // Create the "main" webview exactly as Tauri's own test docs do — a
+        // freshly built webview is wired into the runtime authority that
+        // authorizes IPC (app commands are allowed by default on all webviews).
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("mock webview builds");
 
         let res = tauri::test::get_ipc_response(
             &webview,
