@@ -6,22 +6,52 @@ on:
   pull_request:
     branches: ["*"]
 
-# Monorepo CI. Two jobs:
-#   - decider-web: the shared decider + the website (Linux, cheap)
-#   - porter: the MVP desktop porter — compiles the Rust backend, runs its unit
-#     tests, AND exercises the real `brew install --cask buzz` recipe on a macOS
-#     runner (the end-to-end check that doesn't fit on the founder's machine).
+# Monorepo CI, path-filtered so each surface only runs when it (or something it
+# depends on) changes. The shared decider (packages/decider) is a dependency of
+# BOTH surfaces, so a decider change triggers everything; the root workspace
+# files and this workflow are common triggers too.
 #
-# Both jobs currently run on every push. Path-filtering (run macOS only when
-# app/ or packages/ change) is a deliberate follow-up to save macOS minutes —
-# see knowledge/open-questions.md [OQ-27]. The long-term Rust core (src/) is a
-# scaffold with a malformed manifest and intentionally has NO job yet; it gets
-# one when it becomes real (skills/testing.md "add its CI job in the same change
-# that adds the component").
+#   - changes:     detect which areas changed (cheap, always runs)
+#   - decider-web: the shared decider + the website (Linux)
+#   - porter:      the MVP desktop porter on a macOS runner — compiles the Rust
+#                  backend, runs cargo test, and runs the real
+#                  `brew install --cask buzz` recipe. Gated so macOS minutes are
+#                  spent only when app/ or the decider change.
+#
+# The long-term Rust core (src/) is a scaffold with a malformed manifest and
+# intentionally has NO job yet; it gets one when it becomes real
+# (skills/testing.md "add its CI job in the same change that adds the component").
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      decider_web: ${{ steps.filter.outputs.decider_web }}
+      porter: ${{ steps.filter.outputs.porter }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            common: &common
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+            decider_web:
+              - *common
+              - 'packages/decider/**'
+              - 'website/**'
+            porter:
+              - *common
+              - 'packages/decider/**'
+              - 'app/**'
+
   decider-web:
     name: Decider + website
+    needs: changes
+    if: ${{ needs.changes.outputs.decider_web == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +69,8 @@ jobs:
 
   porter:
     name: Desktop porter (macOS)
+    needs: changes
+    if: ${{ needs.changes.outputs.porter == 'true' }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
