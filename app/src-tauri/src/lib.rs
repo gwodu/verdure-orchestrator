@@ -44,7 +44,9 @@ async fn port_tool<R: Runtime>(
 // (e.g. _EMBED_INFO_PLIST on macOS) that may be defined only ONCE per crate, so
 // run() and the IPC tests both go through this one function rather than calling
 // the macro twice (which fails to link with "symbol already defined").
-fn build_context() -> tauri::Context {
+// Generic over the runtime so it serves both Wry (run) and MockRuntime (tests):
+// Context is Context<R>, and a single concrete context can't satisfy both.
+fn build_context<R: Runtime>() -> tauri::Context<R> {
     tauri::generate_context!()
 }
 
