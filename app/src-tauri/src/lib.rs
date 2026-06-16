@@ -40,11 +40,19 @@ async fn port_tool<R: Runtime>(
     .map_err(|e| e.to_string())
 }
 
+// The single place generate_context! is expanded. It emits platform statics
+// (e.g. _EMBED_INFO_PLIST on macOS) that may be defined only ONCE per crate, so
+// run() and the IPC tests both go through this one function rather than calling
+// the macro twice (which fails to link with "symbol already defined").
+fn build_context() -> tauri::Context {
+    tauri::generate_context!()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![detect_device, port_tool])
-        .run(tauri::generate_context!())
+        .run(build_context())
         .expect("error while running the Verdure porter");
 }
 
@@ -67,7 +75,7 @@ mod ipc_tests {
     fn create_app<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::App<R> {
         builder
             .invoke_handler(tauri::generate_handler![super::detect_device, super::port_tool])
-            .build(tauri::generate_context!())
+            .build(super::build_context())
             .expect("the app builds with the real config + both commands registered")
     }
 

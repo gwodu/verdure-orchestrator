@@ -19,6 +19,9 @@ pub struct Tool {
     /// Human name shown in the UI.
     pub name: &'static str,
     /// One plain-language line about what it does (jargon-free; skills/design.md).
+    /// Not yet surfaced by the backend (the frontend has its own copy); kept as
+    /// tool metadata for when the porter exposes a catalog listing.
+    #[allow(dead_code)]
     pub blurb: &'static str,
     pub install: InstallMethod,
     pub launch: LaunchMethod,
