@@ -2,9 +2,11 @@
 
 **Status:** 🟡 Provisional — adopted 2026-06-16 as the growth / network-effect roadmap.
 
-This file maps Verdure's growth onto the **ASSET framework** by Eva Lau (Two Small Fish Ventures; *"network effect = assets"*), to build Verdure as a defensible, network-based business rather than a one-shot utility. It sequences the two sides of the network that the product files define: `13-use-case-demand.md` (demand) and `15-port-catalog.md` (supply).
+This file uses the **ASSET framework** by Eva Lau (Two Small Fish Ventures; *"network effect = assets"*) as a **lens** for growth — and is explicit about where Verdure **deliberately diverges**, because Verdure optimizes for **user agency and benefit, not a defensible data/network moat**. We adopt A and the two S's; we reject the network-effect/data-harvesting end (E and especially T) as off-mission. Pairs with `13-use-case-demand.md` (demand) and `15-port-catalog.md` (supply).
 
 Source: Eva Lau, *The ASSET Framework* — https://twosmallfish.vc/what-is-the-asset-framework (she scaled Wattpad's community before founding Two Small Fish).
+
+**Mission over moat.** Verdure wins by being the most useful and trustworthy way for a non-technical person to run real local AI — not by locking in a network or hoarding data. Differentiation (neutral, private, agency-giving) is a *consequence* of maximizing user benefit, not the goal. The north star: a **base local AI that recommends, sets up, and connects your tools — on your device, owned by you** (see `01-thesis.md`).
 
 ## The framework (Wattpad's playbook)
 - **A — Atomic unit** — the smallest unit users congregate around. Wattpad = a *story*. It defines the kind of network you're building.
@@ -14,12 +16,10 @@ Source: Eva Lau, *The ASSET Framework* — https://twosmallfish.vc/what-is-the-a
 - **T — Track proprietary insights** — harvest user-behavior data into a moat and adjacent opportunities. Wattpad's data on which stories had entertainment potential turned it into an entertainment company (TV/film).
 - Coefficient: *network effect ≈ users × attention × connections.*
 
-## A — Atomic unit: the 1-click value loop
-Verdure's atomic unit is the **core value loop**: *tell us what you want to do → the decider picks the right local tool → it's installed and running on your device, in one click.* That intent→install→run action is the irreducible unit of value, and proving it is the MVP.
+## A — Atomic unit: one OSS tool installed & running
+Verdure's atomic unit is **a user getting one real local AI tool working, from their intent** — the core value transaction: *tell us what you want to do → the decider picks the right **OSS tool** → it's installed and running on your device, in one click.* That's the Uber-"ride" of Verdure (Uber's atomic unit is a completed ride, not a driver profile). The **first** atomic unit is an existing **open-source tool** (e.g. Buzz) — not a persona. A persona is just one *flavor* of tool, and leading with it over-indexes on differentiation; lead with the simplest, highest-benefit thing instead.
 
-*(Precision on the term: in Eva Lau's framework the atomic unit is the OBJECT users congregate around — Wattpad's "a story," with reading and writing as the two sides. Verdure's object is a **Tool** in the catalog. But a ported Tool (Buzz, Upscayl…) is **not user-generated**, so — unlike a Wattpad story — it doesn't form a network on its own. So for the MVP we center the value loop above, not an object.)*
-
-**Mind the Wattpad analogy — it has real limits.** Wattpad is a UGC content network; its stories are user-created, which is the whole engine. Verdure's MVP is a **utility** — it installs third-party tools — and a utility has **no network effect by default**. Whether Verdure becomes a network-effect business is a deliberate later choice (below), not something to force by stretching the analogy.
+**Mind the Wattpad analogy — it has real limits.** Wattpad is a UGC content network; its stories are user-created, which is the whole engine. A ported OSS tool (Buzz, Upscayl…) is **not** user-generated, so it doesn't form a network the way a story does. Verdure is a **utility that empowers the user** — and that's the point, not a deficiency. We are not trying to manufacture a network effect.
 
 ## S — Seed the supply side (where tools come from)
 Wattpad's lesson: bootstrap from **existing free resources**, don't wait for creators. Verdure's "20,000 public-domain books" is the **existing open-source local-AI ecosystem**:
@@ -32,18 +32,16 @@ Wattpad's lesson: bootstrap from **existing free resources**, don't wait for cre
 ## S — Scale the demand side
 Reduce friction to users. Verdure already has the pieces: the website funnel (intent cards), 1-click install, "runs on the device you already have — private, free, no jargon." Wattpad's "mobile apps everywhere" = Verdure's "no new hardware, no cloud, no setup." Demand scales after the supply is seeded and the atomic unit works.
 
-## E — The network-effect question (deferred — choose deliberately, don't force it)
-A utility has no network effect by default. Verdure has two honest paths from utility to network, to pick *later*, not in the MVP:
-1. **Data network effect — the natural fit for a decider.** Every opt-in recommendation + outcome (intent + device → which tool → did it stick) makes the decider smarter and the catalog better-ranked for the *next* person. More use → better recommendations → more users. This is the **T → A** loop; it needs no user-generated content and is the most defensible fit for "the decider." Opt-in only, never default telemetry (`06`).
-2. **UGC marketplace (the genuine Wattpad analog, optional).** If users can create + share **personas** (custom-GPT-style local configs), supply becomes user-generated and a creators ↔ users flywheel forms. The persona is the *supply object* here — **not** the atomic unit — and this is an optional later layer, with real risk of over-fitting Wattpad.
+## E — We deliberately don't chase a network effect
+Verdure is content to be a utility that *empowers* users; growth comes from being genuinely useful + word of mouth, not from lock-in. We explicitly reject the two standard paths:
+- **A data network effect** (the decider improving from harvested usage) is **off-mission** — it makes Verdure's value depend on accumulating user data, the opposite of "your data never leaves your device" (`06`). **Killed.**
+- **A UGC persona marketplace** (Wattpad-like) is at most a *possible far-future* layer if users ever want to share local persona-configs — **not a goal, not a focus**, and never a reason to centralize or harvest anything. A persona is one flavor of tool, not the strategy. `[OQ-48]`.
 
-The MVP commits to neither; it proves the utility loop. Which path (or both), and when, is `[OQ-48]`.
-
-## T — Track proprietary insights
-Verdure's proprietary dataset: **which use cases → which tools/personas actually work on which devices** — the "what local AI real people use, by intent and device" map that no one else has. It's the demand × feasibility data (`13` + the matrix), grown by real usage; the moat and the source of adjacent opportunities. Always **opt-in only, never default telemetry** (`06-privacy-principles.md`) — refusing to share never produces a worse experience.
+## T — We do NOT harvest proprietary insights from users
+ASSET's final stage turns user-behavior data into a moat. **Verdure rejects this outright** — it is incompatible with `06-privacy-principles.md` and with the mission of giving people agency, not mining them. Our durable asset is *public and open*: the curated knowledge base (`02`/`03`/`12`/`13`) and the tool catalog (`15`) — knowledge we research and write down, not data we extract from users. The decider improves because *we* do the research, not because we watch you. **No data conglomerate.**
 
 ## Where we are: the A stage
-The MVP *is* the atomic unit — the 1-click intent→install→run loop, proven for one use case. It is a **utility** at this stage. Supply seeding is minimal and curated; the network-effect choice (data vs UGC personas) is deliberate and deferred. Sequence: **prove the loop → seed supply from the OSS ecosystem → scale demand via the funnel → choose a network-effect path → harvest the usage map.**
+The MVP *is* the atomic unit — **one OSS tool installed & running**, from the user's intent, in one click. Verdure is a **utility that empowers users**, and that is the goal — not a stepping stone to a data/network moat. Sequence: **prove the loop with one OSS tool → seed more supply from the OSS ecosystem → scale demand via the funnel (the website + word of mouth) → connect tools (`14` composition, v1.1).** There is no usage-harvesting stage.
 
 ## Open questions
 - [OQ-48] Define the atomic unit precisely and the **persona create/share mechanism** (the network-effect engine): is a persona a first-class shareable artifact, and from what phase? (From `16-growth-asset.md`.)

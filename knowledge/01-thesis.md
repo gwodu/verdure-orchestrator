@@ -30,6 +30,8 @@ Every recommendation Verdure produces is the result of seven sequential decision
 
 User opens Verdure → picks a model (or accepts the recommended default) → clicks install → uses it. No technical setup. No model size discussions. No quantization choices. No backend configuration.
 
+The deeper north star: Verdure is the user's **local AI conductor** — it recommends the right tools, sets them up, and connects them together (see `14-architecture.md`, the composition layer), all on the user's own device, owned by them. This is about **giving people agency over their own AI**, not building a platform that mines them. Verdure optimizes for user benefit, never a data moat — see `16-growth-asset.md`.
+
 ## The moat: intent-first orchestration
 
 Every existing tool (Ollama, LM Studio, Jan, Hugging Face) starts with "browse the model library." They answer *how do I run a model?* Verdure starts with *what are you trying to do?* and answers *which model should you run, and why?*

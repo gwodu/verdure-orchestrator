@@ -47,7 +47,7 @@ When a question is resolved:
 - [ ] **[OQ-45]** The Tool layer — when to introduce the Tool manifest (gated on the 2nd concrete tool), the two port classes (standalone-app vs assistant-config on a hosted shell), and which intents become the first runnable Mac tools (writing assistant + doc-RAG). Leading approach: port AnythingLLM/Jan and configure via API, never build a shell (see `15-port-catalog.md`). (From `14-architecture.md`.)
 - [ ] **[OQ-46]** Verify **AnythingLLM / Jan on the Intel-Mac target**, and prove the unattended REST/file config as the port mechanism for assistant-style tools. (From `15-port-catalog.md`.)
 - [ ] **[OQ-47]** Composition layer (pluggable tools) — build the first concrete chain (**Buzz → AnythingLLM**, watch-folder → REST), then a second (**whisper.cpp → Ollama**) to earn the typed-port / 3-field pipe contract. Hard cap at 2 nodes — no branches, transforms, or model-directed routing (that's the deferred agentic line). GUI-only tools (UVR) need a headless equivalent ported. (From `14-architecture.md`.)
-- [ ] **[OQ-48]** The network-effect path — a **data network effect** (the decider improving from opt-in usage; the natural fit for a decider), a **UGC persona marketplace** (Wattpad-like), or both, and from what phase? The MVP is a utility (atomic unit = the 1-click value loop); this is the deliberate later choice. (From `16-growth-asset.md`.)
+- [ ] **[OQ-48]** Does a privacy-preserving, user-controlled **persona-sharing** layer ever get built (the only candidate network effect), or does Verdure stay a pure utility? Optional and far-future; the data-harvesting moat is rejected outright (`06`). Atomic unit = one OSS tool installed & running. (From `16-growth-asset.md`.)
 
 ## Defer — Month 2 and later
 
