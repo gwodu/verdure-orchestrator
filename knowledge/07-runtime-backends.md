@@ -16,7 +16,7 @@ This file documents the inference runtime backends Verdure uses or routes to for
 - Apple Silicon via Metal
 - Cross-platform GPU via Vulkan
 
-Verdure binds to llama.cpp via the `llama-cpp-2` Rust crate (see `08-rust-ecosystem.md`). This is the workhorse for v1 of the Phase 1 binary.
+Verdure binds to llama.cpp via the `llama-cpp-2` Rust crate (see `08-rust-ecosystem.md`) — this is the engine for the **later Rust daemon**. The **MVP**, however, ships a *portable* engine — **Ollama** (MIT; "llama.cpp with batteries" + a local REST API) or **llamafile** (Apache, single-file) — because it runs on today's hardware including **Intel Macs** with no FFI build (see `17-build-plan.md`). llama.cpp-direct is the daemon path, not the MVP path.
 
 ## Secondary backend: ExecuTorch (Android NPU path)
 

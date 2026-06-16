@@ -4,7 +4,7 @@
 
 ## What Verdure is
 
-Verdure is the orchestration layer for local AI. Given any device, Verdure detects what it can run, picks the right model, downloads it, configures the right backend, and exposes a unified inference interface. The user picks a model and uses it — everything else is invisible.
+Verdure is the user's **local AI conductor** — a neutral *decider* + *porter*. Given any device, it figures out what you're trying to do, picks the right existing local tool (and the model it needs), installs and sets it up, and (later) connects your tools together — all on your own device, owned by you. The user says what they want and uses the result; everything else is invisible. **Verdure ports existing tools; it never builds its own** (see `15-port-catalog.md`, `14-architecture.md`).
 
 ## What Verdure recommends
 
@@ -36,7 +36,7 @@ The deeper north star: Verdure is the user's **local AI conductor** — it recom
 
 Every existing tool (Ollama, LM Studio, Jan, Hugging Face) starts with "browse the model library." They answer *how do I run a model?* Verdure starts with *what are you trying to do?* and answers *which model should you run, and why?*
 
-This inversion is the differentiation. The runner is commoditizable; the decider is not. Phase 0 plants the flag on this position before competitors notice the gap.
+This inversion is the point: the runner is commoditizable; the *decider + porter* is the value. But the goal is **user benefit, not a moat** — we win by being the most useful, trustworthy way to run local AI, and we deliberately forgo the data / network-effect playbook (see `16-growth-asset.md`).
 
 **The two halves of the decider.** It must know what people *want to do* and which model *does it*. The model half lives in `03`/`12`; the demand half — what people actually use (local) AI for, by prevalence — is researched in `13-use-case-demand.md` (added 2026-06-01, resolving `[OQ-33]`). The intent layer (Screen 1 cards, the `(modality, task)` taxonomy) is planned from `13`, not from the model catalog. Key demand finding: local-AI use concentrates on transcription, coding, image generation, private document Q&A, and roleplay/uncensored content — driven by privacy, cost, and the absence of content filters.
 
@@ -56,7 +56,7 @@ Verdure ships in three phases. The orchestration brain — this knowledge base �
 
 **Phase 0 — the recommendation website.** A public site at verdureai.com that takes the user through a 60-second flow and produces a personalized recommendation with honest performance expectations and tiered install paths. No binary. No installation. See `05-website-spec.md`.
 
-**Phase 1 — the laptop binary.** A Rust daemon on macOS / Windows / Linux. No app sandbox. Other processes call Verdure via local socket. Closes the loop from recommendation to one-click install and run.
+**Phase 1 — the desktop porter (the current build).** A small Tauri app (Rust + web UI) that reuses the Phase 0 decider, then installs & runs the right open-source tool in one click, on a **portable engine (Ollama / llamafile)** that works on today's hardware (incl. Intel Macs). The multi-caller **Rust daemon** (pure core + adapter seams, `14-architecture.md`) and the Apple-Silicon / MLX path are *later evolutions* of this, **not** the MVP. See `17-build-plan.md`.
 
 **Phase 2 — phones.** Android first (larger emerging-market footprint), iOS second if feasible. Verdure as a system-permissioned app whose background daemon serves inference to other apps via local IPC.
 

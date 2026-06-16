@@ -10,10 +10,11 @@ You always test what you build. You always document what you learn. You are a bu
 
 ## Repository layout
 
-Verdure is a single private monorepo — two surfaces over one brain:
+Verdure is a single private monorepo — surfaces over one brain:
 
-- `src/`, `tests/`, `Cargo.toml` — the Phase 1 Rust orchestration binary (the brain, compiled).
-- `website/` — the Phase 0 recommendation website (Next.js + TypeScript), deployed at verdureai.com. The brain, exposed publicly.
+- `app/` — **the MVP: the desktop porter** (Tauri = Rust backend + web UI). Reuses the decider from `website/lib` (`matrix.ts`, `modality.ts`); the Rust backend installs + launches OSS tools in one click on a portable engine (Ollama/llamafile). **This is the current build — see `knowledge/17-build-plan.md`.** (To be scaffolded.)
+- `src/`, `tests/`, `Cargo.toml` — the **long-term** pure-Rust core + adapter seams (the multi-caller daemon, `knowledge/14-architecture.md`). *Not* the MVP; the porter grows toward it.
+- `website/` — the Phase 0 recommendation website (Next.js + TypeScript), deployed at verdureai.com. The decider/funnel, exposed publicly.
 - `knowledge/` — the propositional knowledge base, **shared by both**. The website's recommendation engine is this knowledge operationalized in code.
 - `skills/` — procedural skills (how to work), shared by both.
 - `FEATURE_LOG.md`, `TEST_REPORT.md` — project-wide living logs at the root (canonical), organized by component.
