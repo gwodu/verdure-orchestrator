@@ -60,25 +60,36 @@ pub fn run() {
 // and its install recipe is verified separately by the CI `brew install` step.
 #[cfg(test)]
 mod ipc_tests {
+    // Build the mock app with the REAL context (generate_context!) rather than a
+    // bare mock_context — so the actual capabilities/default.json loads and the
+    // "main" window is authorized for IPC, exactly as in the shipped app. This
+    // also validates that tauri.conf.json, the capabilities, and the icons parse.
     fn create_app<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::App<R> {
         builder
             .invoke_handler(tauri::generate_handler![super::detect_device, super::port_tool])
-            .build(tauri::test::mock_context(tauri::test::noop_assets()))
-            .expect("the app builds with detect_device + port_tool registered")
+            .build(tauri::generate_context!())
+            .expect("the app builds with the real config + both commands registered")
     }
 
     #[test]
     fn app_builds_with_both_commands_registered() {
-        // Proves generate_handler! accepts both commands and the runtime builds.
+        // Proves generate_handler! accepts both commands, the real config parses,
+        // and the runtime builds.
         let _app = create_app(tauri::test::mock_builder());
     }
 
     #[test]
     fn detect_device_is_invokable_over_ipc() {
+        use tauri::Manager;
         let app = create_app(tauri::test::mock_builder());
-        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
-            .build()
-            .expect("mock webview builds");
+        // Reuse the configured "main" window if the build created it; otherwise
+        // make one with the same label so the capability (windows: ["main"])
+        // authorizes it.
+        let webview = app.get_webview_window("main").unwrap_or_else(|| {
+            tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+                .build()
+                .expect("mock webview builds")
+        });
 
         let res = tauri::test::get_ipc_response(
             &webview,
@@ -93,9 +104,9 @@ mod ipc_tests {
             },
         );
 
-        // Ok means: the command is registered, reachable via IPC, ran, and
-        // serialized a return value — the exact path the frontend's
-        // invoke('detect_device') exercises.
+        // Ok means: the command is registered, the window is authorized, the call
+        // routed to the handler, ran, and serialized a return value — the exact
+        // path the frontend's invoke('detect_device') exercises.
         assert!(
             res.is_ok(),
             "detect_device should be reachable via IPC and return Ok, got: {res:?}"
