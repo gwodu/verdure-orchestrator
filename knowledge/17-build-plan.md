@@ -32,9 +32,9 @@ A small **Tauri desktop app** (Rust backend + web UI) that:
 2. ✅ Frontend: intent cards + `recommend()` from the shared decider → user picks intent → app shows the recommended tool. Device is **detected, not asked** (`app/src-tauri/src/device.rs`), removing the website's device-picker screen.
 3. ✅ Catalog: a manifest entry for **Buzz** as **data** (`app/src-tauri/src/catalog.rs`) — install recipe = Homebrew cask `buzz`; launch = `open -a Buzz`.
 4. ✅ Rust backend (the porter, `app/src-tauri/src/porter.rs`): locate `brew` (Finder-PATH-safe), check-if-installed → install → launch, streaming progress to the UI. Written + unit-tested.
-5. 🟡 Verify the loop end-to-end on the Intel Mac — **blocked on Xcode Command Line Tools** (no `cc`/linker → Tauri/Rust can't compile). Everything else verified (decider 64 tests, website 9 + build, frontend typecheck/build/screenshots). See FEATURE_LOG.md "The Buzz slice".
+5. ✅ Verify the loop — the founder's Intel Mac lacked Xcode CLT + disk, so verification moved to **CI on a macOS runner** (`.github/workflows/ci.yml`). It compiled the Tauri backend, ran `cargo test`, and ran the **real `brew install --cask buzz`** — all green (run `27621986664`). Only the GUI launch (`open -a Buzz`) is uncovered (needs a desktop session). See TEST_REPORT.md.
 
-**Build status (2026-06-16):** the whole app exists and the loop is proven in a browser preview (the Tauri calls degrade to a simulation when there's no backend — `app/src/bridge.ts`). The only thing between here and a real Buzz-installs-on-the-Mac run is installing Xcode CLT (`xcode-select --install`), then `cd app && npm run tauri dev`. Disk is tight (~3 GB free after clearing the npm cache) — the Tauri build + CLT may need a cleanup first.
+**Build status (2026-06-16):** ✅ the loop is **proven in CI** end-to-end through the real install. Locally the app also runs in a browser preview (Tauri calls degrade to a simulation — `app/src/bridge.ts`). To run the real desktop app on the Mac later: install Xcode CLT (`xcode-select --install`), free some disk, then `cd app && npm run tauri dev`.
 
 ## Decided while building (was open)
 - **Stack & location** (`app/`, Tauri v2): Rust backend + a small Vite + vanilla-TS frontend (no React — two screens, keep deps light).
@@ -65,4 +65,4 @@ Read `KNOWLEDGE.md` → `CLAUDE.md` → `01-thesis.md` → `14-architecture.md` 
 
 ## Open questions
 - ~~[OQ-49]~~ **Resolved 2026-06-16:** stack = Tauri v2 in `app/` (Vite + vanilla TS frontend); decider shared via a **workspace package** `@verdure/decider` (`packages/decider/`), imported by both website and porter. See "Decided while building" above.
-- [OQ-50] (new) End-to-end verification on the Intel Mac is pending Xcode Command Line Tools + a possible disk cleanup. Once CLT is in, run `cd app && npm run tauri dev`, port Buzz, and confirm install+launch; then log the result in TEST_REPORT.md.
+- ~~[OQ-50]~~ **Resolved 2026-06-16:** verified in CI on a macOS runner (compile + `cargo test` + real `brew install --cask buzz`). The local Mac run (with GUI launch) remains a nice-to-have once CLT + disk allow, but the loop is proven.

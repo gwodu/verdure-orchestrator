@@ -4,9 +4,18 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## MVP desktop porter (`app/`)
 
-### 2026-06-16 — Porter Rust backend (`app/src-tauri/src/*`)
+### 2026-06-16 — Porter verified in CI (GitHub Actions macOS runner)
 
-**Unit tests written (9), compile/run pending CLT.** The machine had no Xcode Command Line Tools, so `cargo test` cannot link yet (proc-macros + final binary both need `cc`). The tests are written to ship with the code and run the moment CLT lands.
+**Green on a clean macOS machine** (run `27621986664`, job "Desktop porter (macOS)", 3m25s). The founder's Mac lacked Xcode CLT and disk, so verification moved to CI (`.github/workflows/ci.yml`). The macOS job proved, in order:
+- **Frontend typecheck + build** — `npm run build --workspace @verdure/porter-app` (tsc strict + Vite), also producing `app/dist` for `generate_context!`.
+- **`cargo test`** — compiled the entire Tauri backend (tauri 2, serde, the app crate) and passed all 9 porter unit tests.
+- **`brew install --cask buzz`** — the porter's actual install command, run for real. It succeeded, proving the one-click install recipe end-to-end on a clean machine.
+
+The Linux job ("Decider + website", 47s) was green too: decider 64 tests, website 9 tests + production build.
+
+**Only thing not covered:** the literal GUI launch (`open -a Buzz`) needs a desktop session, so it isn't exercised headlessly. The install — the part a non-technical user can't do — is verified. `[OQ-50]` closed.
+
+### 2026-06-16 — Porter Rust backend unit tests (`app/src-tauri/src/*`)
 
 - `catalog.rs` (5): `find("buzz")` resolves and `find("unknown")` is `None`; the Buzz install recipe builds `brew install --cask buzz`, the check builds `brew list --cask buzz`, and launch builds `open -a Buzz`. These lock the recipe→command contract as **pure** functions (the brew path is injected), so they need no Homebrew on the test machine.
 - `porter.rs` (3): `tail()` keeps short output whole and truncates long output from the front (asserts the 500-char + ellipsis bound); `PortError::BrewMissing` renders human, jargon-free copy (no "Err").

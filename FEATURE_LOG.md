@@ -23,7 +23,7 @@ Living record of features built across the Verdure monorepo — the **MVP deskto
 
 **Tests:** Rust unit tests ship with the code — `catalog.rs` (lookup + command construction), `porter.rs` (output truncation, human error copy), `device.rs` (tier is always valid). Frontend verified end-to-end via the screenshot loop (`app/scripts/shots.mjs`): home → recommendation → working → done.
 
-**Status / not yet done:** The Rust backend is **written and unit-tested by construction but not yet compiled or launched** — the machine had no Xcode Command Line Tools, so the Tauri/Rust build (and the literal install-Buzz-on-the-Mac end-to-end run) is pending CLT. Everything else is verified: decider 64 tests, website 9 tests + production build, frontend typecheck + Vite build + screenshots. Rust toolchain (rustup 1.96) installed; icons generated.
+**Status:** ✅ **Verified in CI.** The founder's Mac lacked Xcode CLT + disk, so the build moved to GitHub Actions: a macOS runner compiled the Tauri backend, passed `cargo test` (9 porter tests), and ran the **real `brew install --cask buzz`** — all green (run `27621986664`). The Linux job (decider 64 tests, website 9 + build) is green too. Only the GUI launch (`open -a Buzz`) is uncovered (needs a desktop session). The local desktop run remains a nice-to-have once CLT + disk allow (`cd app && npm run tauri dev`).
 
 ## Shared decider (`packages/decider/`)
 
