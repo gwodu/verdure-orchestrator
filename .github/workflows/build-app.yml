@@ -18,14 +18,9 @@ jobs:
   build:
     name: Package Verdure (.app + .dmg)
     runs-on: macos-latest # Apple Silicon — available immediately; we cross-build
-    env:
-      # whisper.cpp's ggml uses std::filesystem (needs macOS 10.15+). cargo forces
-      # the x86_64 target's default 10.13 min and ignores MACOSX_DEPLOYMENT_TARGET,
-      # so we override via cc-rs's target-specific C/C++ flags (appended last, so
-      # the later -mmacosx-version-min wins). 10.15 is safe — the Mac is far newer.
-      MACOSX_DEPLOYMENT_TARGET: "10.15"
-      CFLAGS_x86_64_apple_darwin: "-mmacosx-version-min=10.15"
-      CXXFLAGS_x86_64_apple_darwin: "-mmacosx-version-min=10.15"
+    # Deployment target (10.15, for whisper.cpp's std::filesystem) is forced in
+    # app/src-tauri/.cargo/config.toml so it can't be overridden by cargo's
+    # per-target default.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

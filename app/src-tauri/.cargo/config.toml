@@ -1,0 +1,8 @@
+# whisper.cpp's ggml uses std::filesystem, which requires a macOS 10.15+ target.
+# When cross-compiling to x86_64, cargo forces the target's default 10.13
+# deployment minimum onto build scripts (overriding a plain MACOSX_DEPLOYMENT_TARGET
+# env), so whisper-rs-sys compiles against 10.13 and fails. `force = true` makes
+# cargo set 10.15 for the build script's environment, so cc-rs/cmake compile
+# whisper.cpp against 10.15. The founder's Mac runs far newer, so this is safe.
+[env]
+MACOSX_DEPLOYMENT_TARGET = { value = "10.15", force = true }

@@ -77,13 +77,8 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.porter == 'true' }}
     runs-on: macos-latest
-    env:
-      # Match the release build: whisper.cpp's ggml needs std::filesystem (macOS
-      # 10.15+). cargo forces the x86_64 target's 10.13 min, so override via
-      # cc-rs target-specific flags (appended last, later -mmacosx-version-min wins).
-      MACOSX_DEPLOYMENT_TARGET: "10.15"
-      CFLAGS_x86_64_apple_darwin: "-mmacosx-version-min=10.15"
-      CXXFLAGS_x86_64_apple_darwin: "-mmacosx-version-min=10.15"
+    # Deployment target (10.15, for whisper.cpp's std::filesystem) is forced in
+    # app/src-tauri/.cargo/config.toml.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
