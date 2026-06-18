@@ -2,27 +2,44 @@
 //! wrapped directly inside the Verdure shell (knowledge/18). No external app:
 //! whisper.cpp is compiled into this binary and runs locally on the CPU. Audio
 //! never leaves the machine.
-//!
-//! This is the de-risk increment. The biggest unknown in the pivot is whether
-//! whisper.cpp's C++ cross-compiles to x86_64 (the founder's Intel Mac) on the
-//! Apple-Silicon CI runner. Referencing `whisper-rs` here forces that C++ to
-//! build for the target, so CI proves it before we invest in the full
-//! decode → resample → transcribe pipeline and the UI.
 
-/// Returns true once whisper.cpp is linked in. Constructing a whisper-rs type
-/// forces the bundled C++ engine to compile + link for the build target — the
-/// exact thing we're de-risking. Replaced by the real `transcribe()` next.
-pub fn engine_linked() -> bool {
-    let _params = whisper_rs::WhisperContextParameters::default();
-    true
-}
+use std::path::Path;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-    #[test]
-    fn whisper_engine_links() {
-        assert!(engine_linked());
+/// Transcribe 16 kHz mono f32 PCM (see `audio::decode_to_mono_16k`) using the
+/// ggml model at `model_path`. Pure CPU, fully local. Returns the plain text.
+pub fn transcribe(model_path: &Path, samples: &[f32]) -> Result<String, String> {
+    let path_str = model_path
+        .to_str()
+        .ok_or_else(|| "model path is not valid text".to_string())?;
+
+    let ctx = WhisperContext::new_with_params(path_str, WhisperContextParameters::default())
+        .map_err(|e| format!("couldn't load the speech model: {e}"))?;
+    let mut state = ctx
+        .create_state()
+        .map_err(|e| format!("couldn't start transcription: {e}"))?;
+
+    // Greedy decoding, English, quiet (no stdout spew from whisper.cpp).
+    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_language(Some("en"));
+    params.set_print_special(false);
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    params.set_print_timestamps(false);
+
+    state
+        .full(params, samples)
+        .map_err(|e| format!("transcription failed: {e}"))?;
+
+    let mut text = String::new();
+    let n = state.full_n_segments();
+    for i in 0..n {
+        if let Some(segment) = state.get_segment(i) {
+            if let Ok(s) = segment.to_str() {
+                text.push_str(s);
+            }
+        }
     }
+    Ok(text.trim().to_string())
 }

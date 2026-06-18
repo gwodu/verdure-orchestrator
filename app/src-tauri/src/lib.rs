@@ -6,6 +6,7 @@
 //!
 //! Everything tool-specific lives in catalog.rs (data) and porter.rs (execution).
 
+mod audio;
 mod catalog;
 mod device;
 mod porter;
