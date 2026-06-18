@@ -31,7 +31,7 @@ await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForSelector(".grid .card");
 await page.screenshot({ path: join(outDir, "1-home.png") });
 
-// Screen 2 — recommendation for "Turn recordings into text" (the Buzz slice).
+// Screen 2 — the in-app transcription panel (the pivot, knowledge/18).
 const cards = page.locator(".grid .card");
 const count = await cards.count();
 for (let i = 0; i < count; i++) {
@@ -41,17 +41,8 @@ for (let i = 0; i < count; i++) {
     break;
   }
 }
-await page.waitForSelector(".answer-name");
-await page.screenshot({ path: join(outDir, "2-recommendation.png") });
-
-// Screen 2b — the setup "working" / progress state (simulated in browser).
-await page.locator(".primary").click();
-await page.waitForTimeout(900);
-await page.screenshot({ path: join(outDir, "3-setup-working.png") });
-
-// Screen 2c — the success state.
-await page.waitForSelector(".done-check", { timeout: 5000 });
-await page.screenshot({ path: join(outDir, "4-done.png") });
+await page.waitForSelector(".dropzone");
+await page.screenshot({ path: join(outDir, "2-transcribe.png") });
 
 await browser.close();
 console.log("Wrote screenshots to", outDir);

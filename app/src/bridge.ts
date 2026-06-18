@@ -46,6 +46,48 @@ export async function portTool(
   }
 }
 
+/** Transcribe an audio file on-device, streaming progress lines to the UI. */
+export async function transcribeAudio(
+  path: string,
+  onProgress: ProgressFn,
+): Promise<string> {
+  if (!inTauri) return simulateTranscribe(onProgress);
+
+  const { invoke } = await import("@tauri-apps/api/core");
+  const { listen } = await import("@tauri-apps/api/event");
+  const unlisten = await listen<string>("transcribe:progress", (e) =>
+    onProgress(e.payload),
+  );
+  try {
+    return await invoke<string>("transcribe_audio", { path });
+  } finally {
+    unlisten();
+  }
+}
+
+/**
+ * Listen for files dropped onto the window. Returns an unlisten function.
+ * In the browser preview there's no native drag-drop with real paths, so this
+ * is a no-op there (the panel shows a desktop-only note instead).
+ */
+export async function onAudioDrop(
+  onFiles: (paths: string[]) => void,
+  onHover?: (hovering: boolean) => void,
+): Promise<() => void> {
+  if (!inTauri) return () => {};
+  const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+  const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+    const p = event.payload;
+    if (p.type === "enter" || p.type === "over") onHover?.(true);
+    else if (p.type === "leave") onHover?.(false);
+    else if (p.type === "drop") {
+      onHover?.(false);
+      onFiles(p.paths);
+    }
+  });
+  return unlisten;
+}
+
 // Browser-only: walk the same progress stages the real porter emits, so the UI
 // can be reviewed end-to-end without a backend. Marked clearly in the message.
 async function simulatePort(onProgress: ProgressFn): Promise<PortOutcome> {
@@ -62,4 +104,13 @@ async function simulatePort(onProgress: ProgressFn): Promise<PortOutcome> {
     message:
       "Buzz is set up and open. (Browser preview — nothing was actually installed.)",
   };
+}
+
+async function simulateTranscribe(onProgress: ProgressFn): Promise<string> {
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  onProgress("Reading the audio…");
+  await wait(700);
+  onProgress("Transcribing — this runs on your computer…");
+  await wait(1200);
+  return "(Browser preview — transcription runs only in the desktop app.) This is where your transcript would appear.";
 }

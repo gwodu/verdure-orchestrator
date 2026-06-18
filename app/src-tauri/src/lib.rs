@@ -1,18 +1,22 @@
-//! Verdure desktop porter — Tauri application wiring.
+//! Verdure desktop — Tauri application wiring.
 //!
-//! The web UI (the reused decider + intent cards) calls two commands:
-//!   - `detect_device` → which hardware tier this machine is (no question asked)
-//!   - `port_tool`     → install (if needed) + launch the chosen OSS tool
+//! The web UI calls these commands:
+//!   - `detect_device`    → which hardware tier this machine is (no question asked)
+//!   - `transcribe_audio` → run Whisper on a dropped audio file, IN-APP (the pivot,
+//!                          knowledge/18 — wrap the model, no separate app)
+//!   - `port_tool`        → (legacy) install + launch an OSS app; kept while other
+//!                          modalities are still being wrapped
 //!
-//! Everything tool-specific lives in catalog.rs (data) and porter.rs (execution).
+//! Model work lives in audio.rs (decode), model.rs (weights), transcribe.rs (run).
 
 mod audio;
 mod catalog;
 mod device;
+mod model;
 mod porter;
 mod transcribe;
 
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 /// Return the detected hardware tier as a decider `Tier` string (e.g. "L2-high").
 /// The frontend feeds this straight into `recommend()` from @verdure/decider.
@@ -42,6 +46,31 @@ async fn port_tool<R: Runtime>(
     .map_err(|e| e.to_string())
 }
 
+/// Transcribe a dropped audio file entirely on-device: ensure the model →
+/// decode the audio → run Whisper → return the text. Long-running, so it runs on
+/// a blocking thread and streams stage updates via the `transcribe:progress`
+/// event. This is the first model wrapped directly in the Verdure UI (knowledge/18).
+#[tauri::command]
+async fn transcribe_audio<R: Runtime>(app: AppHandle<R>, path: String) -> Result<String, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    let app_for_progress = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let progress = |msg: &str| {
+            let _ = app_for_progress.emit("transcribe:progress", msg);
+        };
+        let model = model::ensure_model(&data_dir, &progress)?;
+        progress("Reading the audio…");
+        let samples = audio::decode_to_mono_16k(std::path::Path::new(&path))?;
+        progress("Transcribing — this runs on your computer and can take a little while…");
+        transcribe::transcribe(&model, &samples)
+    })
+    .await
+    .map_err(|e| format!("the transcription task could not run: {e}"))?
+}
+
 // The single place generate_context! is expanded. It emits platform statics
 // (e.g. _EMBED_INFO_PLIST on macOS) that may be defined only ONCE per crate, so
 // run() and the IPC tests both go through this one function rather than calling
@@ -55,7 +84,11 @@ fn build_context<R: Runtime>() -> tauri::Context<R> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![detect_device, port_tool])
+        .invoke_handler(tauri::generate_handler![
+            detect_device,
+            transcribe_audio,
+            port_tool
+        ])
         .run(build_context())
         .expect("error while running the Verdure porter");
 }
@@ -80,7 +113,11 @@ mod command_tests {
     // it fails if the config, capabilities, or icons are malformed.
     fn create_app<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::App<R> {
         builder
-            .invoke_handler(tauri::generate_handler![super::detect_device, super::port_tool])
+            .invoke_handler(tauri::generate_handler![
+                super::detect_device,
+                super::transcribe_audio,
+                super::port_tool
+            ])
             .build(super::build_context())
             .expect("the app builds with the real config + both commands registered")
     }

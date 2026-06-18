@@ -15,8 +15,21 @@ import {
   type IntentCard,
   type Tier,
 } from "@verdure/decider";
-import { detectDevice, portTool, type PortOutcome } from "./bridge";
+import {
+  detectDevice,
+  portTool,
+  transcribeAudio,
+  onAudioDrop,
+  inTauri,
+  type PortOutcome,
+} from "./bridge";
 import "./styles.css";
+
+// Modalities now wrapped *inside* Verdure (knowledge/18 — run the model here, no
+// separate app). Transcription is the first. Others still fall back to the
+// legacy recommendation/porter view until they're wrapped too.
+const WRAPPED = new Set(["audio:transcription"]);
+const AUDIO_EXTS = ["mp3", "m4a", "wav", "flac", "aac", "mp4", "ogg", "aiff", "caf"];
 
 // The MVP's wired ports: which catalog tool backs which classification, and the
 // name to SHOW the user. Only transcription→Buzz is one-click in v1.0
@@ -35,12 +48,22 @@ const PORTABLE: Record<string, PortableTool> = {
 const root = document.querySelector<HTMLDivElement>("#app")!;
 let tier: Tier = "L2-high"; // replaced by detection on boot
 
+// Active window drag-drop listener (transcription panel). Cleaned up on nav.
+let dropUnlisten: (() => void) | null = null;
+function clearDrop(): void {
+  if (dropUnlisten) {
+    dropUnlisten();
+    dropUnlisten = null;
+  }
+}
+
 function classKey(c: IntentCard["classification"]): string {
   return `${c.modality}:${c.task}`;
 }
 
 // --- Screen 1: pick an intent ----------------------------------------------
 function renderHome(): void {
+  clearDrop();
   root.innerHTML = "";
   root.appendChild(brandBar());
 
@@ -71,12 +94,103 @@ function intentCard(card: IntentCard): HTMLElement {
     <span class="card-title">${escapeHtml(card.title)}</span>
     <span class="card-desc">${escapeHtml(card.description)}</span>
   `;
-  btn.addEventListener("click", () => renderRecommendation(card));
+  btn.addEventListener("click", () => {
+    if (WRAPPED.has(classKey(card.classification))) renderTranscribe();
+    else renderRecommendation(card);
+  });
   return btn;
 }
 
-// --- Screen 2: the recommendation + one-click setup -------------------------
+// --- Screen 2a: transcription, wrapped IN-APP (the pivot, knowledge/18) ------
+function renderTranscribe(): void {
+  clearDrop();
+  root.innerHTML = "";
+  root.appendChild(brandBar());
+  root.appendChild(backButton(renderHome));
+
+  const panel = el("section", "panel");
+  panel.appendChild(el("h1", "title", "Turn a recording into text"));
+  panel.appendChild(
+    el(
+      "p",
+      "subtitle",
+      "Drop an audio file below. It's transcribed right on your computer — private, free, no account. The first time, Verdure downloads a small speech model (~140 MB).",
+    ),
+  );
+
+  const zone = el("div", "dropzone");
+  zone.innerHTML = `<span class="dropzone-emoji" aria-hidden="true">🎙️</span>
+    <span class="dropzone-text">Drop an audio file here</span>
+    <span class="dropzone-hint">mp3, m4a, wav, and more</span>`;
+  panel.appendChild(zone);
+
+  const status = el("p", "status");
+  panel.appendChild(status);
+
+  const result = document.createElement("textarea");
+  result.className = "transcript";
+  result.readOnly = true;
+  result.placeholder = "Your transcript will appear here.";
+  result.style.display = "none";
+  panel.appendChild(result);
+
+  const actions = el("div", "transcript-actions");
+  actions.style.display = "none";
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "secondary";
+  copyBtn.type = "button";
+  copyBtn.textContent = "Copy text";
+  copyBtn.addEventListener("click", () => {
+    result.select();
+    void navigator.clipboard?.writeText(result.value).catch(() => {});
+    copyBtn.textContent = "Copied ✓";
+    setTimeout(() => (copyBtn.textContent = "Copy text"), 1500);
+  });
+  actions.appendChild(copyBtn);
+  panel.appendChild(actions);
+
+  root.appendChild(panel);
+
+  let busy = false;
+  const run = async (path: string) => {
+    if (busy) return;
+    busy = true;
+    zone.classList.add("working");
+    result.style.display = "none";
+    actions.style.display = "none";
+    status.textContent = "Starting…";
+    try {
+      const text = await transcribeAudio(path, (msg) => (status.textContent = msg));
+      status.textContent = text.trim() ? "Done — transcript below." : "Done — but no speech was found.";
+      result.value = text;
+      result.style.display = "block";
+      actions.style.display = text.trim() ? "flex" : "none";
+    } catch (err) {
+      status.textContent = String(err);
+      zone.classList.add("failed");
+    } finally {
+      busy = false;
+      zone.classList.remove("working");
+    }
+  };
+
+  if (inTauri) {
+    onAudioDrop(
+      (paths) => {
+        const audio = paths.find((p) => AUDIO_EXTS.includes(p.split(".").pop()?.toLowerCase() ?? ""));
+        if (audio) void run(audio);
+        else status.textContent = "That doesn't look like an audio file — try an mp3, m4a, or wav.";
+      },
+      (hovering) => zone.classList.toggle("hover", hovering),
+    ).then((un) => (dropUnlisten = un));
+  } else {
+    status.textContent = "Drag-and-drop transcription runs in the desktop app.";
+  }
+}
+
+// --- Screen 2b: the recommendation + one-click setup (legacy, un-wrapped) ----
 function renderRecommendation(card: IntentCard): void {
+  clearDrop();
   const rec = recommend(tier, card.classification);
   const portable = PORTABLE[classKey(card.classification)];
 
@@ -181,6 +295,15 @@ function renderDone(tool: PortableTool, outcome: PortOutcome): void {
 }
 
 // --- small DOM helpers ------------------------------------------------------
+function backButton(onClick: () => void): HTMLElement {
+  const back = document.createElement("button");
+  back.className = "back";
+  back.type = "button";
+  back.textContent = "← Back";
+  back.addEventListener("click", onClick);
+  return back;
+}
+
 function brandBar(): HTMLElement {
   const bar = el("div", "brand");
   bar.appendChild(el("span", "brand-dot", ""));
