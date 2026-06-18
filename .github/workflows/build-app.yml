@@ -1,13 +1,14 @@
 name: Build desktop app (Intel macOS)
 
-# On-demand packaging: build a runnable .app/.dmg on an INTEL macOS runner so it
-# runs natively on the founder's x86_64 Mac (GitHub's default macОС runner is now
-# Apple Silicon). This is how we ship a runnable app WITHOUT compiling locally —
-# no Xcode, no Command Line Tools, no disk for a toolchain. Download the artifact
-# and run it. See app/README.md.
+# On-demand packaging: build a runnable .app/.dmg targeting x86_64 so it runs
+# natively on the founder's Intel Mac — WITHOUT compiling locally (no Xcode, no
+# Command Line Tools, no toolchain disk). We build on the Apple-Silicon runner
+# (macos-latest, plentiful) and CROSS-COMPILE to x86_64-apple-darwin, because
+# GitHub's Intel runners (macos-13) are scarce and can sit queued for hours.
+# Download the artifact and run it. See app/README.md.
 on:
   # workflow_dispatch works once this is on the default branch. Until then, push
-  # a tag like `app-build-1` to trigger a one-shot build from any branch.
+  # a tag like `app-build-2` to trigger a one-shot build from any branch.
   workflow_dispatch:
   push:
     tags:
@@ -16,28 +17,30 @@ on:
 jobs:
   build:
     name: Package Verdure (.app + .dmg)
-    runs-on: macos-13 # Intel runner → x86_64 build for the founder's 2019 Mac
+    runs-on: macos-latest # Apple Silicon — available immediately; we cross-build
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install Rust
+      - name: Install Rust (with the Intel target)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
       - name: Install workspaces
         run: npm ci
-      - name: Build the app bundle
-        # tauri build runs beforeBuildCommand (npm run build) to produce the
-        # frontend, then compiles the Rust backend and packages .app + .dmg.
+      - name: Build the Intel app bundle
+        # tauri build runs beforeBuildCommand (npm run build) for the frontend,
+        # then cross-compiles the Rust backend to x86_64 and packages .app + .dmg.
         # Unsigned (no Apple Developer cert) — first launch needs the quarantine
-        # flag cleared; see the job summary / app/README.md.
+        # flag cleared (xattr -cr); see app/README.md.
         working-directory: app
-        run: npx tauri build
+        run: npx tauri build --target x86_64-apple-darwin
       - name: Upload the runnable app
         uses: actions/upload-artifact@v4
         with:
           name: verdure-porter-macos-intel
           path: |
-            app/src-tauri/target/release/bundle/dmg/*.dmg
-            app/src-tauri/target/release/bundle/macos/*.app
+            app/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+            app/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app
           if-no-files-found: error
