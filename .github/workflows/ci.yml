@@ -82,8 +82,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install Rust
+      - name: Install Rust (native + Intel cross target)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
       - name: Cache cargo build
         uses: actions/cache@v4
         with:
@@ -101,6 +103,11 @@ jobs:
       - name: Porter Rust unit tests (compiles the Tauri backend)
         working-directory: app/src-tauri
         run: cargo test
+      - name: Cross-compile check for the founder's Intel Mac
+        # whisper.cpp (via whisper-rs) is C++ — confirm it compiles for x86_64
+        # here (fast) before the full bundle build. This is the pivot's main risk.
+        working-directory: app/src-tauri
+        run: cargo check --target x86_64-apple-darwin
       - name: Verify the Buzz download URLs are reachable
         # The porter now downloads Buzz's official .dmg directly (no Homebrew, so
         # no Xcode CLT needed on the user's machine). Confirm both arch URLs in

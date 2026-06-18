@@ -28,6 +28,11 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Transcription engine: whisper.cpp compiled into this binary (knowledge/18 —
+# wrap the model, not a separate app). default-features = false keeps it plain
+# CPU (no Metal/CUDA) — right for the founder's Intel Mac and clean to
+# cross-compile. Needs cmake at build time (present on CI macOS runners).
+whisper-rs = { version = "0.16", default-features = false }
 
 [dev-dependencies]
 # The `test` feature exposes tauri::test (MockRuntime, mock_builder,

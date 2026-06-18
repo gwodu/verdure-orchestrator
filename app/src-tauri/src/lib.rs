@@ -9,6 +9,7 @@
 mod catalog;
 mod device;
 mod porter;
+mod transcribe;
 
 use tauri::{AppHandle, Emitter, Runtime};
 
