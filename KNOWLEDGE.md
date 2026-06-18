@@ -1,8 +1,10 @@
 # Verdure — KNOWLEDGE.md
 
-Verdure is the user's **local AI conductor** — a neutral *decider* + *porter* that recommends the right local tools, installs/sets them up, and (later) connects them, all on the user's own device, owned by them. It starts from "what are you trying to do?", picks an existing open-source tool, and ports it onto your machine in one click. **Agency, not extraction:** Verdure ports existing tools, never builds its own; mission over moat; no data harvesting.
+Verdure is the **cheapest, safest, and easiest way to use AI in daily life** — the user's **local AI conductor**: **one simple interface that runs the right local model** for whatever the user wants to do, on their own device, owned by them. Cheapest (free, local), safest (on-device, no data leaves), easiest (one interface — no new apps or workflows to learn). It starts from "what are you trying to do?", picks the right local model, and runs it behind a single Verdure UI. **Agency, not extraction:** Verdure conducts existing OSS models/engines, never builds its own; mission over moat; no data harvesting.
 
-> **👉 Here to build? Start at `knowledge/17-build-plan.md`** — the MVP (a Tauri porter on a portable engine) and the roadmap, in one place.
+> **👉 Here to build? Start at `knowledge/18-unified-interface.md`** — the 2026-06-18 pivot: **one interface over local models** (not a launcher of apps). Then `17` for what carries over.
+
+> **Note:** As of 2026-06-18 Verdure pivoted from a *launcher that installs separate apps* (the "porter", `15`/`17`) to **one interface that drives headless model engines directly** (`18`). Files `01/14/15/16/17` predate the pivot and are being reconciled — read them through the lens of `18`.
 
 This file is an orientation index, not a content store. Knowledge lives in the `knowledge/` subfolder as numbered, modular files. Claude should read this file at the start of every session, then load only the knowledge files relevant to the current task.
 
@@ -30,7 +32,8 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 - `knowledge/14-architecture.md` ★ — the structural spine: pure core + replaceable adapters (seams), the one-click pipeline, the Phase 0↔1 boundary, the Tool layer. Composes 07/08/10/11.
 - `knowledge/15-port-catalog.md` ★ — the supply-side database: portable free/open-source local tools by use case, the two port classes, and the "port AnythingLLM, don't build a shell" decision.
 - `knowledge/16-growth-asset.md` — the growth lens (Eva Lau's ASSET): adopts atomic-unit + seed-supply; **explicitly rejects** the data/network-effect moat as off-mission.
-- `knowledge/17-build-plan.md` ★ — **the build plan**: the MVP (a Tauri porter on a portable engine, first slice = Buzz) and the roadmap. Start here to build.
+- `knowledge/17-build-plan.md` ★ — the (pre-pivot) build plan: the Tauri MVP + roadmap. Superseded as the *primary* surface by `18`; still the reference for what carries over (decider, shell, CI, install machinery).
+- `knowledge/18-unified-interface.md` ★ — **the current direction (2026-06-18 pivot): one interface over local models, not a launcher of apps.** The mission, the doctrine shift (build one surface over headless engines), the architecture, and the first slice. **Start here to build.**
 - `knowledge/open-questions.md` — master open-questions list, organized by urgency
 
 ## Where to start by task
@@ -45,7 +48,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 - How the binary is structured / adding a device or engine / the one-click pipeline → `14`
 - Which existing tool to port for a use case (the local-tool database) → `15` (+ `13` demand, `09` licensing)
 - Growth lens / where to seed supply / why we reject the data moat → `16`
-- **What we're building now (the MVP) and the roadmap → `17`**
+- **What we're building now and why (the 2026-06-18 pivot) → `18`** (then `17` for carryover)
 - Tracking what is still open → `open-questions.md`
 
 ## Conventions
@@ -53,6 +56,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 Each knowledge file opens with a status marker (✅ Settled, 🟡 Provisional, 🔴 Open) and ends with an "Open Questions" section where relevant. Open questions also appear in the centralized `open-questions.md` with stable `[OQ-XX]` reference codes. Cross-references between files are always explicit.
 
 ## Changelog
+- 2026-06-18 — **major pivot (`18-unified-interface.md`): one interface over local models, not a launcher of apps.** Triggered by the Buzz handoff friction (separate UI + Homebrew→Xcode-CLT prompt + 512 MB). Verdure becomes a single shell that drives **headless OSS engines** (Ollama, whisper.cpp, …) behind one consistent UI — *conduct models, not apps*. **Doctrine reversed:** never build a model/engine, but **do** build the one unified surface. Mission sharpened: **the cheapest, safest, easiest way to use AI in daily life.** Atomic unit redefined: one everyday task done with a local model, in one place. Decider + shell + CI carry over; standalone-app porting (Buzz-as-app) demoted → transcription will run on whisper.cpp inside the shell. v1 surfaces are dead-simple ("drop audio → text"). `[OQ-52]`/`[OQ-53]`.
 - 2026-06-16 — **built the MVP first slice (the Buzz port).** Scaffolded the Tauri porter in `app/`; extracted the decider into a shared workspace package `@verdure/decider` (`packages/decider/`) imported by both website and porter (resolves `[OQ-49]`: shared package, not copy). Catalog-as-data + a pure-then-execute porter (`app/src-tauri/`). Loop proven in browser preview; real on-Mac run pending Xcode CLT (`[OQ-50]`). See `17-build-plan.md`, FEATURE_LOG.md, TEST_REPORT.md.
 - 2026-06-16 — alignment pass + handoff: added `17-build-plan.md` (the MVP = a Tauri porter on a portable engine, first slice Buzz; + roadmap). Reframed the orientation files to the **conductor/porter** identity (not "orchestration moat"); reconciled phasing (Phase 1 = the Tauri MVP, not the Rust daemon); added an `OllamaBackend` note. `[OQ-49]`.
 - 2026-06-16 — `16-growth-asset.md`: ASSET as a *lens* with deliberate divergence. Atomic unit = **one OSS tool installed & running** (the Uber-"ride"), not a persona. **Reject** the data-harvesting moat (off-mission, `06`) and don't chase a network effect — Verdure is a **utility that empowers users**; north star = the user's **local AI conductor** (recommend + set up + connect tools, on-device, owned by them). Seed supply from the OSS ecosystem; mission over moat. `[OQ-48]`.
