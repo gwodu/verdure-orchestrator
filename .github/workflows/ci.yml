@@ -79,8 +79,11 @@ jobs:
     runs-on: macos-latest
     env:
       # Match the release build: whisper.cpp's ggml needs std::filesystem (macOS
-      # 10.15+); the x86_64 cross-build otherwise defaults to 10.13 and fails.
+      # 10.15+). cargo forces the x86_64 target's 10.13 min, so override via
+      # cc-rs target-specific flags (appended last, later -mmacosx-version-min wins).
       MACOSX_DEPLOYMENT_TARGET: "10.15"
+      CFLAGS_x86_64_apple_darwin: "-mmacosx-version-min=10.15"
+      CXXFLAGS_x86_64_apple_darwin: "-mmacosx-version-min=10.15"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
