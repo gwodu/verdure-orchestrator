@@ -28,8 +28,9 @@ pub fn detect_tier() -> &'static str {
 
 /// True on Apple Silicon. `sysctl hw.optional.arm64` is "1" there, absent/"0"
 /// on Intel. sysctl lives at a fixed path, so this works under the minimal PATH
-/// a Finder-launched app inherits.
-fn is_apple_silicon() -> bool {
+/// a Finder-launched app inherits. Also used by the porter to pick the right
+/// architecture's download (x64 vs ARM64).
+pub(crate) fn is_apple_silicon() -> bool {
     Command::new("/usr/sbin/sysctl")
         .args(["-n", "hw.optional.arm64"])
         .output()

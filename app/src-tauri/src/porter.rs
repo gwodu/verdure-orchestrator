@@ -1,13 +1,13 @@
 //! The porter — execute a tool's recipe: install it (if needed), then launch it.
 //!
 //! This is the "one click" in "ports it in one click" (knowledge/17). It knows
-//! how to RUN recipes; the recipes themselves (and their command construction)
-//! live in catalog.rs. Keeping execution here and construction there means the
-//! testable logic (what command to run) is pure, and this file only does I/O.
+//! how to RUN recipes; the recipes (catalog.rs) say what to run. For a macOS
+//! .dmg port the steps are: download the official .dmg, mount it, copy the .app
+//! into /Applications, unmount, clear the quarantine flag, launch.
 //!
-//! macOS reality this file exists to handle: an app launched from Finder gets a
-//! minimal PATH that usually excludes Homebrew, so we must locate `brew`
-//! explicitly rather than trust PATH.
+//! Everything here uses only base-macOS tools at fixed paths (curl, hdiutil, cp,
+//! xattr, open) — NO Homebrew and NO Xcode Command Line Tools. A Finder-launched
+//! app gets a minimal PATH, so absolute paths matter.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -31,9 +31,7 @@ pub struct PortOutcome {
 /// Everything that can go wrong, in language we can show a non-technical user.
 #[derive(Debug)]
 pub enum PortError {
-    /// Homebrew isn't installed — the one prerequisite for cask ports today.
-    BrewMissing,
-    /// The install step ran but failed; carries the captured stderr tail.
+    /// A step of the install (download / mount / copy) failed; carries detail.
     InstallFailed(String),
     /// The launch step failed.
     LaunchFailed(String),
@@ -42,13 +40,7 @@ pub enum PortError {
 impl std::fmt::Display for PortError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PortError::BrewMissing => write!(
-                f,
-                "Homebrew is needed to set this up automatically. You can install it from brew.sh, then try again."
-            ),
-            PortError::InstallFailed(detail) => {
-                write!(f, "Setup didn't finish. {detail}")
-            }
+            PortError::InstallFailed(detail) => write!(f, "Setup didn't finish. {detail}"),
             PortError::LaunchFailed(detail) => {
                 write!(f, "It installed, but couldn't open automatically. {detail}")
             }
@@ -58,47 +50,81 @@ impl std::fmt::Display for PortError {
 
 impl std::error::Error for PortError {}
 
-/// Locate the `brew` executable without relying on PATH. Checks the two standard
-/// Homebrew prefixes (Apple Silicon, then Intel), then falls back to PATH.
-pub fn find_brew() -> Option<PathBuf> {
-    const KNOWN: [&str; 2] = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"];
-    for candidate in KNOWN {
-        let p = PathBuf::from(candidate);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-    // Last resort: trust PATH (covers non-standard installs).
-    Command::new("brew")
-        .arg("--version")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|_| PathBuf::from("brew"))
+/// Where an installed .app lives, by its bundle name.
+fn installed_app_path(app_name: &str) -> PathBuf {
+    PathBuf::from("/Applications").join(format!("{app_name}.app"))
 }
 
-/// Is the tool already installed? Runs the recipe's check command; exit 0 ⇒ yes.
-fn is_installed(tool: &Tool, brew: &Path) -> bool {
-    let (prog, args) = tool.install.check_command(brew);
-    Command::new(prog)
-        .args(args)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+/// Is the tool already installed? For a .dmg port: does its .app exist?
+fn is_installed(tool: &Tool) -> bool {
+    installed_app_path(tool.launch.app_name()).exists()
 }
 
-/// Run the install recipe. Captures stderr so a failure can be explained.
-fn install(tool: &Tool, brew: &Path) -> Result<(), PortError> {
-    let (prog, args) = tool.install.install_command(brew);
-    let output = Command::new(prog)
+/// Run a base-macOS command, mapping any failure to InstallFailed with context.
+fn run(label: &str, program: &str, args: &[&str]) -> Result<(), PortError> {
+    let output = Command::new(program)
         .args(args)
         .output()
-        .map_err(|e| PortError::InstallFailed(e.to_string()))?;
+        .map_err(|e| PortError::InstallFailed(format!("{label}: {e}")))?;
     if output.status.success() {
         Ok(())
     } else {
-        Err(PortError::InstallFailed(tail(&output.stderr)))
+        Err(PortError::InstallFailed(format!("{label}: {}", tail(&output.stderr))))
     }
+}
+
+/// Download + mount + copy + unmount + de-quarantine. `is_arm64` picks the build.
+fn install<F: Fn(&str)>(tool: &Tool, is_arm64: bool, progress: &F) -> Result<(), PortError> {
+    let app = tool.launch.app_name();
+    let url = tool.install.download_url(is_arm64);
+    let tmp = std::env::temp_dir();
+    let dmg = tmp.join(format!("verdure-{}.dmg", tool.id));
+    let mnt = tmp.join(format!("verdure-mnt-{}", tool.id));
+
+    let dmg_s = dmg.to_string_lossy().to_string();
+    let mnt_s = mnt.to_string_lossy().to_string();
+
+    progress(&format!(
+        "Downloading {app} — this is a big file and can take a few minutes…"
+    ));
+    run(
+        "download",
+        "/usr/bin/curl",
+        &["-fL", "--retry", "3", "-o", &dmg_s, url],
+    )?;
+
+    progress(&format!("Installing {app}…"));
+    // Clean any leftover mountpoint from a previous attempt.
+    let _ = Command::new("/usr/bin/hdiutil").args(["detach", &mnt_s, "-force"]).output();
+    run(
+        "mount",
+        "/usr/bin/hdiutil",
+        &["attach", &dmg_s, "-nobrowse", "-noverify", "-mountpoint", &mnt_s],
+    )?;
+
+    // Copy the .app out of the mounted image into /Applications (replace any
+    // partial leftover first so cp doesn't merge into a stale bundle).
+    let src = mnt.join(format!("{app}.app"));
+    let dest = installed_app_path(app);
+    let _ = std::fs::remove_dir_all(&dest);
+    let copy_result = run(
+        "copy",
+        "/bin/cp",
+        &["-R", &src.to_string_lossy(), "/Applications/"],
+    );
+
+    // Always try to unmount, even if the copy failed.
+    let _ = Command::new("/usr/bin/hdiutil").args(["detach", &mnt_s, "-force"]).output();
+    let _ = std::fs::remove_file(&dmg);
+    copy_result?;
+
+    // Clear the quarantine flag so the unsigned-by-us downloaded app opens
+    // without a Gatekeeper prompt. Best-effort; never fail the port for it.
+    let _ = Command::new("/usr/bin/xattr")
+        .args(["-cr", &dest.to_string_lossy()])
+        .output();
+
+    Ok(())
 }
 
 /// Run the launch recipe.
@@ -115,22 +141,18 @@ fn launch(tool: &Tool) -> Result<(), PortError> {
     }
 }
 
-/// The full one-click port: check → (install) → launch, reporting each stage to
-/// `progress` so the UI can keep the user informed (skills/design.md "Feedback").
+/// The full one-click port: check → (download + install) → launch, reporting
+/// each stage to `progress` so the UI keeps the user informed (skills/design.md).
 pub fn port<F: Fn(&str)>(tool: &Tool, progress: F) -> Result<PortOutcome, PortError> {
-    let brew = find_brew().ok_or(PortError::BrewMissing)?;
+    let is_arm64 = crate::device::is_apple_silicon();
 
     progress(&format!("Checking if {} is already set up…", tool.name));
-    let already = is_installed(tool, &brew);
+    let already = is_installed(tool);
 
     let installed_now = if already {
         false
     } else {
-        progress(&format!(
-            "Setting up {} — downloading and installing. This can take a minute…",
-            tool.name
-        ));
-        install(tool, &brew)?;
+        install(tool, is_arm64, &progress)?;
         true
     };
 
@@ -168,6 +190,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn installed_app_path_is_in_applications() {
+        assert_eq!(
+            installed_app_path("Buzz"),
+            PathBuf::from("/Applications/Buzz.app")
+        );
+    }
+
+    #[test]
     fn tail_keeps_short_text_whole() {
         assert_eq!(tail(b"  boom  "), "boom");
     }
@@ -181,9 +211,9 @@ mod tests {
     }
 
     #[test]
-    fn brew_missing_message_is_human() {
-        let msg = PortError::BrewMissing.to_string();
-        assert!(msg.contains("Homebrew"));
-        assert!(!msg.contains("Err")); // no Rust jargon leaking to the user
+    fn errors_render_human() {
+        let msg = PortError::InstallFailed("network down".into()).to_string();
+        assert!(msg.contains("Setup didn't finish"));
+        assert!(!msg.contains("Err"));
     }
 }

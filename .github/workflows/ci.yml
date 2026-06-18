@@ -101,8 +101,14 @@ jobs:
       - name: Porter Rust unit tests (compiles the Tauri backend)
         working-directory: app/src-tauri
         run: cargo test
-      - name: Verify the Buzz install recipe really works
-        # This is the porter's actual install command. If the cask token or
-        # recipe were wrong, this fails — proving the one-click path end-to-end
-        # (minus the GUI launch, which needs a desktop session).
-        run: brew install --cask buzz
+      - name: Verify the Buzz download URLs are reachable
+        # The porter now downloads Buzz's official .dmg directly (no Homebrew, so
+        # no Xcode CLT needed on the user's machine). Confirm both arch URLs in
+        # the catalog actually resolve — if a release URL rots, this fails.
+        run: |
+          for url in \
+            "https://github.com/chidiwilliams/buzz/releases/download/v1.4.4/Buzz-1.4.4-mac-X64.dmg" \
+            "https://github.com/chidiwilliams/buzz/releases/download/v1.4.4/Buzz-1.4.4-mac-ARM64.dmg"; do
+            echo "checking $url"
+            curl -fsSL -I "$url" >/dev/null
+          done
