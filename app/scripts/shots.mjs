@@ -44,5 +44,12 @@ for (let i = 0; i < count; i++) {
 await page.waitForSelector(".dropzone");
 await page.screenshot({ path: join(outDir, "2-transcribe.png") });
 
+// Screen 3 — the global Storage screen.
+await page.goto(BASE, { waitUntil: "networkidle" });
+await page.waitForSelector(".footer .link");
+await page.locator(".footer .link").click();
+await page.waitForSelector(".model-list");
+await page.screenshot({ path: join(outDir, "3-storage.png") });
+
 await browser.close();
 console.log("Wrote screenshots to", outDir);

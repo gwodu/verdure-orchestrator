@@ -319,6 +319,60 @@ html, body {
 .link-danger:hover { text-decoration: underline; }
 .link-danger:disabled { color: #b89; cursor: default; text-decoration: none; }
 
+/* Home footer link */
+.footer {
+  margin-top: 26px;
+  display: flex;
+  justify-content: center;
+}
+.link {
+  background: none;
+  border: none;
+  color: var(--green-deep);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 6px 8px;
+}
+.link:hover { text-decoration: underline; }
+
+/* Storage screen */
+.model-list {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.model-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.model-name { font-size: 15.5px; font-weight: 600; }
+.model-meta { font-size: 13px; color: var(--ink-soft); }
+.model-empty {
+  font-size: 14.5px;
+  color: var(--ink-soft);
+  background: #f1f4f1;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 0;
+}
+.model-total {
+  margin-top: 16px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  text-align: right;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card { transition: none; }
   .dropzone { transition: none; }

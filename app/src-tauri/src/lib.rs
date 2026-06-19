@@ -61,7 +61,7 @@ async fn transcribe_audio<R: Runtime>(app: AppHandle<R>, path: String) -> Result
         let progress = |msg: &str| {
             let _ = app_for_progress.emit("transcribe:progress", msg);
         };
-        let model = model::ensure_model(&data_dir, &progress)?;
+        let model = model::ensure(&data_dir, &model::WHISPER_BASE_EN, &progress)?;
         progress("Reading the audio…");
         let samples = audio::decode_to_mono_16k(std::path::Path::new(&path))?;
         progress("Transcribing — this runs on your computer and can take a little while…");
@@ -71,25 +71,25 @@ async fn transcribe_audio<R: Runtime>(app: AppHandle<R>, path: String) -> Result
     .map_err(|e| format!("the transcription task could not run: {e}"))?
 }
 
-/// Report whether the speech model is downloaded and its size (for the UI's
-/// storage row).
+/// List every model with whether it's downloaded and its size — for the
+/// transcribe panel's storage row and the global Storage screen.
 #[tauri::command]
-fn model_status<R: Runtime>(app: AppHandle<R>) -> Result<model::ModelStatus, String> {
+fn list_models<R: Runtime>(app: AppHandle<R>) -> Result<Vec<model::ModelEntry>, String> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
-    Ok(model::status(&dir))
+    Ok(model::list(&dir))
 }
 
-/// Completely remove the downloaded speech model, reclaiming the disk space.
+/// Completely remove a downloaded model by id, reclaiming the disk space.
 #[tauri::command]
-fn remove_model<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+fn remove_model<R: Runtime>(app: AppHandle<R>, id: String) -> Result<(), String> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
-    model::remove(&dir)
+    model::remove(&dir, &id)
 }
 
 // The single place generate_context! is expanded. It emits platform statics
@@ -108,7 +108,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             detect_device,
             transcribe_audio,
-            model_status,
+            list_models,
             remove_model,
             port_tool
         ])
@@ -139,7 +139,7 @@ mod command_tests {
             .invoke_handler(tauri::generate_handler![
                 super::detect_device,
                 super::transcribe_audio,
-                super::model_status,
+                super::list_models,
                 super::remove_model,
                 super::port_tool
             ])

@@ -20,11 +20,14 @@ import {
   portTool,
   transcribeAudio,
   onAudioDrop,
-  modelStatus,
+  listModels,
   removeModel,
   inTauri,
   type PortOutcome,
 } from "./bridge";
+
+const WHISPER_MODEL_ID = "whisper-base-en";
+const fmtMb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1_048_576))} MB`;
 import "./styles.css";
 
 // Modalities now wrapped *inside* Verdure (knowledge/18 — run the model here, no
@@ -85,6 +88,87 @@ function renderHome(): void {
     grid.appendChild(intentCard(card));
   }
   root.appendChild(grid);
+
+  // Footer link to the global Storage screen (manage downloaded models / space).
+  const footer = el("div", "footer");
+  const storageLink = document.createElement("button");
+  storageLink.className = "link";
+  storageLink.type = "button";
+  storageLink.textContent = "Manage storage";
+  storageLink.addEventListener("click", renderStorage);
+  footer.appendChild(storageLink);
+  root.appendChild(footer);
+}
+
+// --- Storage screen: every downloaded model, with size + Remove --------------
+function renderStorage(): void {
+  clearDrop();
+  root.innerHTML = "";
+  root.appendChild(brandBar());
+  root.appendChild(backButton(renderHome));
+
+  const panel = el("section", "panel");
+  panel.appendChild(el("h1", "title", "Storage"));
+  panel.appendChild(
+    el(
+      "p",
+      "subtitle",
+      "Models you've downloaded live on your computer so they work offline. Remove any to free up space — Verdure re-downloads it next time you need it.",
+    ),
+  );
+
+  const listEl = el("div", "model-list");
+  panel.appendChild(listEl);
+  root.appendChild(panel);
+
+  const refresh = async () => {
+    const models = await listModels();
+    const downloaded = models.filter((m) => m.installed);
+    listEl.innerHTML = "";
+
+    if (!inTauri) {
+      listEl.appendChild(el("p", "subtitle", "Storage is managed in the desktop app."));
+      return;
+    }
+    if (downloaded.length === 0) {
+      listEl.appendChild(
+        el("p", "model-empty", "Nothing downloaded yet — nothing taking up space."),
+      );
+      return;
+    }
+
+    const total = downloaded.reduce((sum, m) => sum + m.sizeBytes, 0);
+    panel.querySelector(".model-total")?.remove();
+
+    for (const m of downloaded) {
+      const row = el("div", "model-row");
+      const info = el("div", "model-info");
+      info.appendChild(el("span", "model-name", m.name));
+      info.appendChild(el("span", "model-meta", `${m.modality} · ${fmtMb(m.sizeBytes)}`));
+      row.appendChild(info);
+
+      const remove = document.createElement("button");
+      remove.className = "link-danger";
+      remove.type = "button";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", async () => {
+        remove.disabled = true;
+        remove.textContent = "Removing…";
+        try {
+          await removeModel(m.id);
+        } finally {
+          await refresh();
+        }
+      });
+      row.appendChild(remove);
+      listEl.appendChild(row);
+    }
+
+    const totalEl = el("p", "model-total", `Total on this computer: ${fmtMb(total)}`);
+    panel.appendChild(totalEl);
+  };
+
+  void refresh();
 }
 
 function intentCard(card: IntentCard): HTMLElement {
@@ -158,14 +242,14 @@ function renderTranscribe(): void {
   panel.appendChild(storage);
 
   const refreshStorage = async () => {
-    const s = await modelStatus();
-    if (!s.installed) {
+    const models = await listModels();
+    const whisper = models.find((m) => m.id === WHISPER_MODEL_ID);
+    if (!whisper?.installed) {
       storage.style.display = "none";
       return;
     }
-    const mb = Math.max(1, Math.round(s.sizeBytes / 1_048_576));
     storage.style.display = "flex";
-    storage.innerHTML = `<span class="storage-label">Speech model on this computer · ${mb} MB</span>`;
+    storage.innerHTML = `<span class="storage-label">Speech model on this computer · ${fmtMb(whisper.sizeBytes)}</span>`;
     const remove = document.createElement("button");
     remove.className = "link-danger";
     remove.type = "button";
@@ -174,7 +258,7 @@ function renderTranscribe(): void {
       remove.disabled = true;
       remove.textContent = "Removing…";
       try {
-        await removeModel();
+        await removeModel(whisper.id);
       } finally {
         await refreshStorage();
       }

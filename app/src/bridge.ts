@@ -65,20 +65,26 @@ export async function transcribeAudio(
   }
 }
 
-export type ModelStatus = { installed: boolean; sizeBytes: number };
+export type ModelEntry = {
+  id: string;
+  name: string;
+  modality: string;
+  installed: boolean;
+  sizeBytes: number;
+};
 
-/** Whether the speech model is downloaded, and its size (for the storage row). */
-export async function modelStatus(): Promise<ModelStatus> {
-  if (!inTauri) return { installed: false, sizeBytes: 0 };
+/** Every known model, with whether it's downloaded and its size. */
+export async function listModels(): Promise<ModelEntry[]> {
+  if (!inTauri) return [];
   const { invoke } = await import("@tauri-apps/api/core");
-  return await invoke<ModelStatus>("model_status");
+  return await invoke<ModelEntry[]>("list_models");
 }
 
-/** Completely remove the downloaded speech model, reclaiming the space. */
-export async function removeModel(): Promise<void> {
+/** Completely remove a downloaded model by id, reclaiming the space. */
+export async function removeModel(id: string): Promise<void> {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("remove_model");
+  await invoke("remove_model", { id });
 }
 
 /**
