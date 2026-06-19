@@ -293,6 +293,32 @@ html, body {
   background: #d9efe1;
 }
 
+/* Storage row */
+.storage {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.storage-label {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+.link-danger {
+  background: none;
+  border: none;
+  color: #a3341f;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.link-danger:hover { text-decoration: underline; }
+.link-danger:disabled { color: #b89; cursor: default; text-decoration: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .card { transition: none; }
   .dropzone { transition: none; }

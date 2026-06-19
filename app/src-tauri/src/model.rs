@@ -5,6 +5,43 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use serde::Serialize;
+
+/// Whether the speech model is on disk, and how much space it uses — so the UI
+/// can show the size and offer a one-click Remove (space management is
+/// first-class; knowledge/18, "cheapest" + the founder's tight disk).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelStatus {
+    pub installed: bool,
+    pub size_bytes: u64,
+}
+
+/// Report whether the model is present and its size.
+pub fn status(data_dir: &Path) -> ModelStatus {
+    match std::fs::metadata(model_path(data_dir)) {
+        Ok(meta) => ModelStatus {
+            installed: true,
+            size_bytes: meta.len(),
+        },
+        Err(_) => ModelStatus {
+            installed: false,
+            size_bytes: 0,
+        },
+    }
+}
+
+/// Completely remove the downloaded model (and any interrupted .part file),
+/// fully reclaiming the space. The next transcription re-downloads it.
+pub fn remove(data_dir: &Path) -> Result<(), String> {
+    let path = model_path(data_dir);
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("couldn't remove the model: {e}"))?;
+    }
+    let _ = std::fs::remove_file(path.with_extension("part"));
+    Ok(())
+}
+
 /// base.en: a good speed/quality balance for English on a CPU. Official
 /// whisper.cpp weights on Hugging Face. [OQ-51]: pick by device tier later.
 const MODEL_URL: &str =

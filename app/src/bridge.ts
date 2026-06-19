@@ -65,6 +65,22 @@ export async function transcribeAudio(
   }
 }
 
+export type ModelStatus = { installed: boolean; sizeBytes: number };
+
+/** Whether the speech model is downloaded, and its size (for the storage row). */
+export async function modelStatus(): Promise<ModelStatus> {
+  if (!inTauri) return { installed: false, sizeBytes: 0 };
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<ModelStatus>("model_status");
+}
+
+/** Completely remove the downloaded speech model, reclaiming the space. */
+export async function removeModel(): Promise<void> {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("remove_model");
+}
+
 /**
  * Listen for files dropped onto the window. Returns an unlisten function.
  * In the browser preview there's no native drag-drop with real paths, so this

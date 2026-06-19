@@ -71,6 +71,27 @@ async fn transcribe_audio<R: Runtime>(app: AppHandle<R>, path: String) -> Result
     .map_err(|e| format!("the transcription task could not run: {e}"))?
 }
 
+/// Report whether the speech model is downloaded and its size (for the UI's
+/// storage row).
+#[tauri::command]
+fn model_status<R: Runtime>(app: AppHandle<R>) -> Result<model::ModelStatus, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    Ok(model::status(&dir))
+}
+
+/// Completely remove the downloaded speech model, reclaiming the disk space.
+#[tauri::command]
+fn remove_model<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    model::remove(&dir)
+}
+
 // The single place generate_context! is expanded. It emits platform statics
 // (e.g. _EMBED_INFO_PLIST on macOS) that may be defined only ONCE per crate, so
 // run() and the IPC tests both go through this one function rather than calling
@@ -87,6 +108,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             detect_device,
             transcribe_audio,
+            model_status,
+            remove_model,
             port_tool
         ])
         .run(build_context())
@@ -116,6 +139,8 @@ mod command_tests {
             .invoke_handler(tauri::generate_handler![
                 super::detect_device,
                 super::transcribe_audio,
+                super::model_status,
+                super::remove_model,
                 super::port_tool
             ])
             .build(super::build_context())

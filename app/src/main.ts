@@ -20,6 +20,8 @@ import {
   portTool,
   transcribeAudio,
   onAudioDrop,
+  modelStatus,
+  removeModel,
   inTauri,
   type PortOutcome,
 } from "./bridge";
@@ -149,7 +151,39 @@ function renderTranscribe(): void {
   actions.appendChild(copyBtn);
   panel.appendChild(actions);
 
+  // Storage row — shows the downloaded model's size with a one-click Remove, so
+  // space can be reclaimed anytime (knowledge/18, the floor user's tight disk).
+  const storage = el("div", "storage");
+  storage.style.display = "none";
+  panel.appendChild(storage);
+
+  const refreshStorage = async () => {
+    const s = await modelStatus();
+    if (!s.installed) {
+      storage.style.display = "none";
+      return;
+    }
+    const mb = Math.max(1, Math.round(s.sizeBytes / 1_048_576));
+    storage.style.display = "flex";
+    storage.innerHTML = `<span class="storage-label">Speech model on this computer · ${mb} MB</span>`;
+    const remove = document.createElement("button");
+    remove.className = "link-danger";
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", async () => {
+      remove.disabled = true;
+      remove.textContent = "Removing…";
+      try {
+        await removeModel();
+      } finally {
+        await refreshStorage();
+      }
+    });
+    storage.appendChild(remove);
+  };
+
   root.appendChild(panel);
+  void refreshStorage();
 
   let busy = false;
   const run = async (path: string) => {
@@ -171,6 +205,7 @@ function renderTranscribe(): void {
     } finally {
       busy = false;
       zone.classList.remove("working");
+      void refreshStorage(); // the model now exists — show its size + Remove
     }
   };
 
