@@ -110,14 +110,13 @@ jobs:
         # here (fast) before the full bundle build. This is the pivot's main risk.
         working-directory: app/src-tauri
         run: cargo check --target x86_64-apple-darwin
-      - name: Verify the Buzz download URLs are reachable
-        # The porter now downloads Buzz's official .dmg directly (no Homebrew, so
-        # no Xcode CLT needed on the user's machine). Confirm both arch URLs in
-        # the catalog actually resolve — if a release URL rots, this fails.
+      - name: Verify the model download URLs resolve
+        # The models are downloaded on first use from these URLs (model.rs). If a
+        # release URL rots, this fails here instead of on a user's machine.
         run: |
           for url in \
-            "https://github.com/chidiwilliams/buzz/releases/download/v1.4.4/Buzz-1.4.4-mac-X64.dmg" \
-            "https://github.com/chidiwilliams/buzz/releases/download/v1.4.4/Buzz-1.4.4-mac-ARM64.dmg"; do
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin" \
+            "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"; do
             echo "checking $url"
             curl -fsSL -I "$url" >/dev/null
           done

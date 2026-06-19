@@ -22,6 +22,7 @@ import {
   portTool,
   transcribeAudio,
   onAudioDrop,
+  chatSend,
   listModels,
   removeModel,
   deviceSpec,
@@ -208,10 +209,88 @@ function intentCard(card: IntentCard): HTMLElement {
     <span class="card-desc">${escapeHtml(card.description)}</span>
   `;
   btn.addEventListener("click", () => {
-    if (WRAPPED.has(classKey(card.classification))) renderTranscribe();
+    const key = classKey(card.classification);
+    if (key === "text:general") renderChat();
+    else if (WRAPPED.has(key)) renderTranscribe();
     else renderRecommendation(card);
   });
   return btn;
+}
+
+// --- Chat: the conversational front door (knowledge/18) ---------------------
+function renderChat(): void {
+  clearDrop();
+  root.innerHTML = "";
+  root.appendChild(brandBar());
+  root.appendChild(backButton(renderHome));
+
+  const panel = el("section", "panel");
+  panel.appendChild(el("h1", "title", "Chat"));
+  panel.appendChild(
+    el(
+      "p",
+      "subtitle",
+      "Ask anything — it runs entirely on your computer, private and free. The first time, Verdure downloads a small chat model (~1 GB).",
+    ),
+  );
+
+  const thread = el("div", "chat-thread");
+  panel.appendChild(thread);
+
+  const status = el("p", "status");
+  panel.appendChild(status);
+
+  const rowEl = el("div", "chat-input-row");
+  const input = document.createElement("textarea");
+  input.className = "chat-input";
+  input.rows = 2;
+  input.placeholder = "Type a message…";
+  const send = document.createElement("button");
+  send.className = "primary chat-send";
+  send.type = "button";
+  send.textContent = "Send";
+  rowEl.appendChild(input);
+  rowEl.appendChild(send);
+  panel.appendChild(rowEl);
+
+  root.appendChild(panel);
+
+  const addMsg = (who: "user" | "ai", text: string) => {
+    const m = el("div", `msg ${who}`, text);
+    thread.appendChild(m);
+    thread.scrollTop = thread.scrollHeight;
+  };
+
+  let busy = false;
+  const submit = async () => {
+    const text = input.value.trim();
+    if (!text || busy) return;
+    busy = true;
+    send.disabled = true;
+    input.value = "";
+    addMsg("user", text);
+    status.textContent = "Thinking…";
+    try {
+      const reply = await chatSend(text, (msg) => (status.textContent = msg));
+      status.textContent = "";
+      addMsg("ai", reply || "(no reply)");
+    } catch (err) {
+      status.textContent = String(err);
+    } finally {
+      busy = false;
+      send.disabled = false;
+      input.focus();
+    }
+  };
+
+  send.addEventListener("click", () => void submit());
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void submit();
+    }
+  });
+  input.focus();
 }
 
 // --- Screen 2a: transcription, wrapped IN-APP (the pivot, knowledge/18) ------

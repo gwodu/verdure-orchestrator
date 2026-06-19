@@ -37,8 +37,20 @@ pub const WHISPER_BASE_EN: ModelInfo = ModelInfo {
     approx_mb: 142,
 };
 
+/// The chat model behind the conversational front door (knowledge/18). Qwen2.5
+/// 1.5B Instruct (Q4_K_M GGUF) — good chat + tool-calling for its size, ~1 GB,
+/// usable on a CPU. [OQ-55].
+pub const QWEN_CHAT: ModelInfo = ModelInfo {
+    id: "qwen2.5-1.5b-instruct",
+    name: "Chat model (Qwen2.5 1.5B)",
+    modality: "Chat",
+    file: "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+    url: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+    approx_mb: 1100,
+};
+
 /// Every model Verdure can download today.
-pub const MODELS: &[ModelInfo] = &[WHISPER_BASE_EN];
+pub const MODELS: &[ModelInfo] = &[WHISPER_BASE_EN, QWEN_CHAT];
 
 /// Look up a model by id.
 pub fn find(id: &str) -> Option<&'static ModelInfo> {

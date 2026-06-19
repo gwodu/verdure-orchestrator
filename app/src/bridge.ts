@@ -52,6 +52,28 @@ export async function portTool(
   }
 }
 
+/** Send a chat message to the local model, streaming a status line. */
+export async function chatSend(
+  message: string,
+  onProgress: ProgressFn,
+): Promise<string> {
+  if (!inTauri) {
+    onProgress("Thinking…");
+    await new Promise((r) => setTimeout(r, 800));
+    return "(Browser preview — chat runs only in the desktop app.)";
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  const { listen } = await import("@tauri-apps/api/event");
+  const unlisten = await listen<string>("chat:progress", (e) =>
+    onProgress(e.payload),
+  );
+  try {
+    return await invoke<string>("chat", { message });
+  } finally {
+    unlisten();
+  }
+}
+
 /** The machine's specs, for the performance predictor. */
 export async function deviceSpec(): Promise<DeviceSpec> {
   if (!inTauri) return { arch: "intel", cores: 4, ramGb: 8 };

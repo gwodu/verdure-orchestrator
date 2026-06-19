@@ -98,6 +98,28 @@ async fn transcribe_audio<R: Runtime>(
     .map_err(|e| format!("the transcription task could not run: {e}"))?
 }
 
+/// The conversational front door: ensure the chat model → generate a reply.
+/// Long-running, so it runs on a blocking thread and streams a "Thinking…" stage
+/// via the `chat:progress` event (knowledge/18). Tool-calling lands next.
+#[tauri::command]
+async fn chat<R: Runtime>(app: AppHandle<R>, message: String) -> Result<String, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    let app_for_progress = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let progress = |msg: &str| {
+            let _ = app_for_progress.emit("chat:progress", msg);
+        };
+        let model = model::ensure(&data_dir, &model::QWEN_CHAT, &progress)?;
+        progress("Thinking…");
+        llm::chat(&model, &message)
+    })
+    .await
+    .map_err(|e| format!("the chat task could not run: {e}"))?
+}
+
 /// List every model with whether it's downloaded and its size — for the
 /// transcribe panel's storage row and the global Storage screen.
 #[tauri::command]
@@ -136,6 +158,7 @@ pub fn run() {
             detect_device,
             device_spec,
             transcribe_audio,
+            chat,
             list_models,
             remove_model,
             port_tool
@@ -168,6 +191,7 @@ mod command_tests {
                 super::detect_device,
                 super::device_spec,
                 super::transcribe_audio,
+                super::chat,
                 super::list_models,
                 super::remove_model,
                 super::port_tool
