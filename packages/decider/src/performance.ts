@@ -64,11 +64,13 @@ export function deviceScore(spec: DeviceSpec): number {
   return perCore * Math.max(1, effectiveCores);
 }
 
-// Anchor: a 4-core Intel laptop running `base` at ~3× real-time (RTF ≈ 0.33),
-// grounded in published whisper.cpp CPU benchmarks. PROVISIONAL — calibrated by
-// real measurements over time.
-const REF_SCORE = deviceScore({ arch: "intel", cores: 4, ramGb: 8 });
-const REF_RTF_BASE = 0.33;
+// REAL anchor (2026-06-19): the founder's 2019 Intel Mac (8 logical cores)
+// measured at RTF ≈ 0.254 — 59s of audio in 15s, ~3.9× real-time — for base.en.
+// This replaces the earlier published-benchmark guess: predictions now scale
+// from a measured point. More opt-in measurements will refine it ([OQ-03]).
+const REF_SPEC: DeviceSpec = { arch: "intel", cores: 8, ramGb: 8 };
+const REF_SCORE = deviceScore(REF_SPEC);
+const REF_RTF_BASE = 0.254;
 
 /** Predicted real-time factor (processing ÷ audio duration). Lower = faster. */
 function predictRtf(spec: DeviceSpec, size: WhisperSize): number {
@@ -80,9 +82,9 @@ function roundFactor(x: number): number {
 }
 
 function categorize(rtf: number): SpeedCategory {
-  if (rtf <= 0.25) return "fast"; // ≥ ~4× real-time
-  if (rtf <= 0.6) return "comfortable";
-  if (rtf <= 1.2) return "slow";
+  if (rtf <= 0.3) return "fast"; // ≳ 3.3× real-time — feels quick (matches the founder's ~3.9×)
+  if (rtf <= 0.7) return "comfortable";
+  if (rtf <= 1.5) return "slow";
   return "very-slow";
 }
 

@@ -14,6 +14,9 @@ Verdure estimates how well a local model will run **from the device's specs**, b
 
 This resolves the data gap behind **[OQ-51]** (which model per device — see `bestModelFor`) and **[OQ-03]** (device anchors).
 
+### Anchors (real measurements)
+- **2026-06-19 — founder's 2019 Intel Mac (8 logical cores), `base.en`: 59s of audio in 15s → RTF ≈ 0.254 (~3.9× real-time).** The formula is now anchored to this (replacing the earlier published-benchmark guess of ~0.33). Insight: the machine has ~8 logical cores but Whisper effectively used ~4 (default thread count), so the spec-only estimate over-counted cores — the real anchor corrects it. Threads are a future speed lever (relevant to dictation latency).
+
 ## Whispr/Wispr Flow — what it is (researched 2026-06-19)
 The fast-dictation product people compare us to is **cloud-based** (audio leaves the device; no offline mode) and pairs **proprietary ASR with an LLM that rewrites speech in real time**. It does **not** use Whisper. ([Wikipedia](https://en.wikipedia.org/wiki/Wispr_Flow))
 
