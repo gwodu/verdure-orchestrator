@@ -12,6 +12,7 @@
 mod audio;
 mod catalog;
 mod device;
+mod llm;
 mod model;
 mod porter;
 mod transcribe;

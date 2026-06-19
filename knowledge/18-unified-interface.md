@@ -51,6 +51,20 @@ Wrap **one** modality end-to-end in the shell, dead-simple, to prove "a local mo
 - **Candidate A — Transcription via whisper.cpp.** Tiny models (~75–150 MB), CPU-only, no heavy runtime — best fit for "cheapest/easiest" + tight disk; directly replaces the Buzz handoff; proves the *hard* non-chat case early.
 - **Candidate B — Chat/LLM via Ollama.** Highest demand (`13`); the natural home of model-swapping; but LLMs are 1–4 GB (disk) and need the Ollama runtime.
 
+## The conversational front door (decided 2026-06-19)
+The interface becomes **chat-first**: the user talks to Verdure ("I need to dictate some notes") and a small **local chat LLM orchestrates** — it picks the capability to set up, Verdure confirms, then runs it. This makes the *conductor* literal and is the strongest "easiest" play. The chat model is also the everyday-questions modality. Founder chose **LLM-driven tool-calling** (over deterministic routing).
+
+Small local models misfire at agentic tool-calling, so we engineer for reliability (and respect the "no autonomous agents until reliable" line — `17`):
+- **Grammar-constrained decoding (GBNF)** so tool calls are always well-formed JSON — removes the malformed-call failure mode entirely. The model only chooses *which* tool, never *whether it parses*.
+- **A tool-calling-capable small model** — Qwen 2.5 / Llama 3.2 **3B Instruct**, not a generic 1B; the predictor (`19`) picks the size per device, stepping down if 3B is too slow.
+- **A tiny, closed tool set** (e.g. `set_up_transcription`, `answer_in_chat`).
+- **Deterministic cross-check + confirm** — `intent.ts` runs alongside as a confidence signal; Verdure confirms before any irreversible action (a model download). Human in the loop.
+- **Discoverability** — a few suggested starters (the old intent cards become example prompts), so it's never a blank box.
+
+**Runtime:** llama.cpp compiled into the app (a Rust crate, the way `whisper-rs` is), small **GGUF model downloaded on first use** (not bundled — disk), removable via the Storage screen. The x86_64 cross-compile deployment-target fix (`.cargo/config.toml`) already applies. This is the **LLM modality** the pivot needed; it also becomes how every other capability (incl. dictation) gets invoked.
+
+**Sequencing:** the front door comes before live dictation — dictation gets reached *through* it ("set up dictation").
+
 ## Open questions
 - [OQ-52] Reconcile `01`, `14`, `15`, `16`, `17` to this pivot (bright line, atomic unit, Tool layer → "engine layer", port-classes). Big edit; do before deep build.
 - [OQ-53] Confirm the first wrapped slice (A whisper.cpp vs B Ollama) and the shell's panel/navigation model for spanning modalities.
