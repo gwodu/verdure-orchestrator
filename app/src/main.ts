@@ -29,13 +29,28 @@ import {
   type PortOutcome,
 } from "./bridge";
 
-// Render a SpeedEstimate as a short, honest line.
-function speedLine(e: SpeedEstimate, measured: boolean): string {
-  if (e.category === "wont-fit") return e.note;
+// The pre-run prediction line (from device specs).
+function predictionLine(e: SpeedEstimate): string {
+  if (e.category === "wont-fit") return `Estimate: ${e.note}`;
   const [lo, hi] = e.realtimeFactor!;
   const range = lo === hi ? `${lo}×` : `${lo}–${hi}×`;
-  const lead = measured ? "Measured" : "On your computer";
-  return `${lead}: ${e.note} (about ${range} faster than real-time${measured ? "" : " — estimate"}).`;
+  return `Estimate: ${e.note} (about ${range} faster than real-time).`;
+}
+
+// Audio length as m:ss (or Ns under a minute).
+function fmtDuration(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
+}
+
+// The post-run measured line, with the raw timing (our real calibration anchor).
+function measuredLine(audioSeconds: number, processingSeconds: number): string {
+  const factor = audioSeconds / processingSeconds;
+  const shown = factor >= 2 ? Math.round(factor) : Math.round(factor * 10) / 10;
+  return `Measured on your computer: ${fmtDuration(audioSeconds)} of audio in ${Math.round(
+    processingSeconds,
+  )}s — about ${shown}× faster than real-time.`;
 }
 
 const WHISPER_MODEL_ID = "whisper-base-en";
@@ -222,6 +237,12 @@ function renderTranscribe(): void {
   perf.style.display = "none";
   panel.appendChild(perf);
 
+  // Separate, persistent line for the real measured speed after a run (so the
+  // estimate above stays visible — predicted vs actual).
+  const measured = el("p", "perf measured");
+  measured.style.display = "none";
+  panel.appendChild(measured);
+
   const zone = el("div", "dropzone");
   zone.innerHTML = `<span class="dropzone-emoji" aria-hidden="true">🎙️</span>
     <span class="dropzone-text">Drop an audio file here</span>
@@ -292,7 +313,7 @@ function renderTranscribe(): void {
     const spec = await deviceSpec();
     const est = estimateTranscriptionSpeed(spec, "base");
     perf.style.display = "block";
-    perf.textContent = speedLine(est, false);
+    perf.textContent = predictionLine(est);
   };
   void showPrediction();
 
@@ -311,12 +332,10 @@ function renderTranscribe(): void {
       result.value = r.text;
       result.style.display = "block";
       actions.style.display = hasText ? "flex" : "none";
-      // Calibrate: replace the estimate with the real measured speed.
+      // Show the real measured speed alongside the estimate (predicted vs actual).
       if (r.audioSeconds > 0 && r.processingSeconds > 0) {
-        const measuredRtf = r.processingSeconds / r.audioSeconds;
-        const spec = await deviceSpec();
-        perf.style.display = "block";
-        perf.textContent = speedLine(estimateTranscriptionSpeed(spec, "base", measuredRtf), true);
+        measured.style.display = "block";
+        measured.textContent = measuredLine(r.audioSeconds, r.processingSeconds);
       }
     } catch (err) {
       status.textContent = String(err);
