@@ -46,12 +46,31 @@ async fn port_tool<R: Runtime>(
     .map_err(|e| e.to_string())
 }
 
-/// Transcribe a dropped audio file entirely on-device: ensure the model →
-/// decode the audio → run Whisper → return the text. Long-running, so it runs on
-/// a blocking thread and streams stage updates via the `transcribe:progress`
-/// event. This is the first model wrapped directly in the Verdure UI (knowledge/18).
+/// The detected machine specs the frontend feeds to the performance predictor.
 #[tauri::command]
-async fn transcribe_audio<R: Runtime>(app: AppHandle<R>, path: String) -> Result<String, String> {
+fn device_spec() -> device::DeviceSpec {
+    device::detect_spec()
+}
+
+/// A finished transcription plus the timing that calibrates the predictor: how
+/// long the audio was vs how long it took (→ the real "× real-time" factor).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Transcription {
+    text: String,
+    audio_seconds: f64,
+    processing_seconds: f64,
+}
+
+/// Transcribe a dropped audio file entirely on-device: ensure the model →
+/// decode the audio → run Whisper → return the text + timing. Long-running, so it
+/// runs on a blocking thread and streams stage updates via `transcribe:progress`.
+/// First model wrapped directly in the Verdure UI (knowledge/18).
+#[tauri::command]
+async fn transcribe_audio<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+) -> Result<Transcription, String> {
     let data_dir = app
         .path()
         .app_data_dir()
@@ -64,8 +83,15 @@ async fn transcribe_audio<R: Runtime>(app: AppHandle<R>, path: String) -> Result
         let model = model::ensure(&data_dir, &model::WHISPER_BASE_EN, &progress)?;
         progress("Reading the audio…");
         let samples = audio::decode_to_mono_16k(std::path::Path::new(&path))?;
+        let audio_seconds = samples.len() as f64 / 16_000.0;
         progress("Transcribing — this runs on your computer and can take a little while…");
-        transcribe::transcribe(&model, &samples)
+        let started = std::time::Instant::now();
+        let text = transcribe::transcribe(&model, &samples)?;
+        Ok(Transcription {
+            text,
+            audio_seconds,
+            processing_seconds: started.elapsed().as_secs_f64(),
+        })
     })
     .await
     .map_err(|e| format!("the transcription task could not run: {e}"))?
@@ -107,6 +133,7 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             detect_device,
+            device_spec,
             transcribe_audio,
             list_models,
             remove_model,
@@ -138,6 +165,7 @@ mod command_tests {
         builder
             .invoke_handler(tauri::generate_handler![
                 super::detect_device,
+                super::device_spec,
                 super::transcribe_audio,
                 super::list_models,
                 super::remove_model,

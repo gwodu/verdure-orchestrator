@@ -6,7 +6,13 @@
 // that and degrade to a sensible default tier and a simulated port. The
 // simulation NEVER installs anything; it only exercises the UI states.
 
-import type { Tier } from "@verdure/decider";
+import type { Tier, DeviceSpec } from "@verdure/decider";
+
+export type Transcription = {
+  text: string;
+  audioSeconds: number;
+  processingSeconds: number;
+};
 
 export type ProgressFn = (msg: string) => void;
 
@@ -46,11 +52,18 @@ export async function portTool(
   }
 }
 
+/** The machine's specs, for the performance predictor. */
+export async function deviceSpec(): Promise<DeviceSpec> {
+  if (!inTauri) return { arch: "intel", cores: 4, ramGb: 8 };
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<DeviceSpec>("device_spec");
+}
+
 /** Transcribe an audio file on-device, streaming progress lines to the UI. */
 export async function transcribeAudio(
   path: string,
   onProgress: ProgressFn,
-): Promise<string> {
+): Promise<Transcription> {
   if (!inTauri) return simulateTranscribe(onProgress);
 
   const { invoke } = await import("@tauri-apps/api/core");
@@ -59,7 +72,7 @@ export async function transcribeAudio(
     onProgress(e.payload),
   );
   try {
-    return await invoke<string>("transcribe_audio", { path });
+    return await invoke<Transcription>("transcribe_audio", { path });
   } finally {
     unlisten();
   }
@@ -128,11 +141,15 @@ async function simulatePort(onProgress: ProgressFn): Promise<PortOutcome> {
   };
 }
 
-async function simulateTranscribe(onProgress: ProgressFn): Promise<string> {
+async function simulateTranscribe(onProgress: ProgressFn): Promise<Transcription> {
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
   onProgress("Reading the audio…");
   await wait(700);
   onProgress("Transcribing — this runs on your computer…");
   await wait(1200);
-  return "(Browser preview — transcription runs only in the desktop app.) This is where your transcript would appear.";
+  return {
+    text: "(Browser preview — transcription runs only in the desktop app.) This is where your transcript would appear.",
+    audioSeconds: 60,
+    processingSeconds: 15,
+  };
 }

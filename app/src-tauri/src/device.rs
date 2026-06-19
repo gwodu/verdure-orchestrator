@@ -13,6 +13,45 @@
 
 use std::process::Command;
 
+use serde::Serialize;
+
+/// The detected machine specs the performance predictor needs (mirrors the
+/// decider's `DeviceSpec`). Detected, never asked (skills/design.md).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceSpec {
+    /// "apple-silicon" | "intel" (a Mac is one of these).
+    pub arch: String,
+    /// Logical CPU cores.
+    pub cores: u32,
+    /// Total RAM in GB.
+    pub ram_gb: u32,
+}
+
+/// Detect this machine's specs for the performance predictor.
+pub fn detect_spec() -> DeviceSpec {
+    DeviceSpec {
+        arch: if is_apple_silicon() {
+            "apple-silicon".to_string()
+        } else {
+            "intel".to_string()
+        },
+        cores: sysctl_int("hw.logicalcpu").unwrap_or(4) as u32,
+        ram_gb: sysctl_int("hw.memsize")
+            .map(|b| (b as f64 / 1_073_741_824.0).round() as u32)
+            .unwrap_or(8),
+    }
+}
+
+/// Read an integer sysctl value (fixed path, PATH-independent).
+fn sysctl_int(key: &str) -> Option<u64> {
+    Command::new("/usr/sbin/sysctl")
+        .args(["-n", key])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+}
+
 /// Detect the device's tier as a decider `Tier` string. Always returns a safe,
 /// real tier — never fails to the user.
 pub fn detect_tier() -> &'static str {

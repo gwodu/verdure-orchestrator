@@ -12,8 +12,10 @@
 import {
   INTENT_CARDS,
   recommend,
+  estimateTranscriptionSpeed,
   type IntentCard,
   type Tier,
+  type SpeedEstimate,
 } from "@verdure/decider";
 import {
   detectDevice,
@@ -22,9 +24,19 @@ import {
   onAudioDrop,
   listModels,
   removeModel,
+  deviceSpec,
   inTauri,
   type PortOutcome,
 } from "./bridge";
+
+// Render a SpeedEstimate as a short, honest line.
+function speedLine(e: SpeedEstimate, measured: boolean): string {
+  if (e.category === "wont-fit") return e.note;
+  const [lo, hi] = e.realtimeFactor!;
+  const range = lo === hi ? `${lo}×` : `${lo}–${hi}×`;
+  const lead = measured ? "Measured" : "On your computer";
+  return `${lead}: ${e.note} (about ${range} faster than real-time${measured ? "" : " — estimate"}).`;
+}
 
 const WHISPER_MODEL_ID = "whisper-base-en";
 const fmtMb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1_048_576))} MB`;
@@ -204,6 +216,12 @@ function renderTranscribe(): void {
     ),
   );
 
+  // Performance prediction (before any download) — honest expectation from the
+  // machine's specs, calibrated to a real number after the first transcription.
+  const perf = el("p", "perf");
+  perf.style.display = "none";
+  panel.appendChild(perf);
+
   const zone = el("div", "dropzone");
   zone.innerHTML = `<span class="dropzone-emoji" aria-hidden="true">🎙️</span>
     <span class="dropzone-text">Drop an audio file here</span>
@@ -269,6 +287,15 @@ function renderTranscribe(): void {
   root.appendChild(panel);
   void refreshStorage();
 
+  // Predict the speed from this machine's specs (before any download).
+  const showPrediction = async () => {
+    const spec = await deviceSpec();
+    const est = estimateTranscriptionSpeed(spec, "base");
+    perf.style.display = "block";
+    perf.textContent = speedLine(est, false);
+  };
+  void showPrediction();
+
   let busy = false;
   const run = async (path: string) => {
     if (busy) return;
@@ -278,11 +305,19 @@ function renderTranscribe(): void {
     actions.style.display = "none";
     status.textContent = "Starting…";
     try {
-      const text = await transcribeAudio(path, (msg) => (status.textContent = msg));
-      status.textContent = text.trim() ? "Done — transcript below." : "Done — but no speech was found.";
-      result.value = text;
+      const r = await transcribeAudio(path, (msg) => (status.textContent = msg));
+      const hasText = r.text.trim().length > 0;
+      status.textContent = hasText ? "Done — transcript below." : "Done — but no speech was found.";
+      result.value = r.text;
       result.style.display = "block";
-      actions.style.display = text.trim() ? "flex" : "none";
+      actions.style.display = hasText ? "flex" : "none";
+      // Calibrate: replace the estimate with the real measured speed.
+      if (r.audioSeconds > 0 && r.processingSeconds > 0) {
+        const measuredRtf = r.processingSeconds / r.audioSeconds;
+        const spec = await deviceSpec();
+        perf.style.display = "block";
+        perf.textContent = speedLine(estimateTranscriptionSpeed(spec, "base", measuredRtf), true);
+      }
     } catch (err) {
       status.textContent = String(err);
       zone.classList.add("failed");

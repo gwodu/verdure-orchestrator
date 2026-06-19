@@ -293,6 +293,17 @@ html, body {
   background: #d9efe1;
 }
 
+/* Performance prediction line */
+.perf {
+  margin: 16px 0 0;
+  font-size: 13.5px;
+  color: var(--green-deep);
+  background: var(--green-tint);
+  border-radius: 10px;
+  padding: 10px 14px;
+  line-height: 1.5;
+}
+
 /* Storage row */
 .storage {
   margin-top: 20px;

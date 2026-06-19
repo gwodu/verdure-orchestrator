@@ -9,6 +9,7 @@ When a question is resolved:
 
 ## Critical — resolve this week
 
+- [ ] **[OQ-54]** Live on-device dictation (`19`): mic-capture crate + permission, VAD choice, chunk/segment strategy, and the optional local-LLM cleanup pass (needs the LLM modality). The next build after the performance predictor. (From `19-performance-and-dictation.md`.)
 - [ ] **[OQ-53]** Confirm the first wrapped slice for the unified interface (`18`): transcription via **whisper.cpp** (light, fixes the Buzz handoff) vs chat via **Ollama** (highest demand, heavier). Plus the shell's panel/navigation model for spanning model families. (From `18-unified-interface.md`.)
 - [ ] **[OQ-52]** Reconcile `01`/`14`/`15`/`16`/`17` to the 2026-06-18 pivot (`18`): the reversed bright line (build one surface over headless engines, never build a model/engine), the redefined atomic unit, Tool layer → "engine layer". Do before deep build. (From `18-unified-interface.md`.)
 - [ ] **[OQ-07]** Which LLM API for Phase 0 intent classification? Evaluate Claude Haiku 4.5, Gemini Flash, GPT-5 nano, Groq Llama for latency, structured-output reliability, vendor stability. (From `05-website-spec.md`.)

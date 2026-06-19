@@ -21,3 +21,4 @@ export * from './modality';
 export * from './matrix';
 export * from './intent';
 export * from './recommend';
+export * from './performance';
