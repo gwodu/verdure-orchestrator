@@ -14,7 +14,11 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, LlamaModel, Special};
 use llama_cpp_2::sampling::LlamaSampler;
 
-const N_CTX: u32 = 4096;
+// Kept modest on purpose: ggml aborts the whole process on a failed allocation,
+// and the floor target is an 8 GB machine where the WebView already uses ~1.5 GB.
+// 2048 ctx + a 512 batch keeps the KV + compute buffers small. [OQ-55]
+const N_CTX: u32 = 2048;
+const N_BATCH: u32 = 512;
 const MAX_NEW_TOKENS: i32 = 512;
 
 // The tool surface, as a grammar: output is EITHER the transcription tool call
@@ -52,7 +56,9 @@ pub fn decide(model_path: &Path, user_message: &str) -> Result<ToolDecision, Str
         LlamaBackend::init().map_err(|e| format!("couldn't start the chat engine: {e}"))?;
     let model = LlamaModel::load_from_file(&backend, model_path, &LlamaModelParams::default())
         .map_err(|e| format!("couldn't load the chat model: {e}"))?;
-    let ctx_params = LlamaContextParams::default().with_n_ctx(NonZeroU32::new(N_CTX));
+    let ctx_params = LlamaContextParams::default()
+        .with_n_ctx(NonZeroU32::new(N_CTX))
+        .with_n_batch(N_BATCH);
     let mut ctx = model
         .new_context(&backend, ctx_params)
         .map_err(|e| format!("couldn't start a chat session: {e}"))?;

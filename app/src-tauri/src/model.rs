@@ -100,8 +100,18 @@ pub fn ensure<F: Fn(&str)>(
     progress: &F,
 ) -> Result<PathBuf, String> {
     let path = model_path(data_dir, info);
+    // A truncated/corrupt model makes the inference engine (ggml) ABORT the whole
+    // process, not return an error — so we validate the size (≥70% of expected)
+    // before trusting an existing file, and re-download if it looks wrong.
+    let min_bytes = (info.approx_mb as u64) * 1024 * 1024 * 7 / 10;
     if path.exists() {
-        return Ok(path);
+        let ok = std::fs::metadata(&path)
+            .map(|m| m.len() >= min_bytes)
+            .unwrap_or(false);
+        if ok {
+            return Ok(path);
+        }
+        let _ = std::fs::remove_file(&path); // incomplete/corrupt — start over
     }
 
     std::fs::create_dir_all(data_dir)
@@ -131,6 +141,18 @@ pub fn ensure<F: Fn(&str)>(
     }
 
     std::fs::rename(&part, &path).map_err(|e| format!("couldn't save the model: {e}"))?;
+
+    // Verify the finished file is a plausible size; a truncated download would
+    // otherwise crash the inference engine.
+    let actual = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    if actual < min_bytes {
+        let _ = std::fs::remove_file(&path);
+        return Err(format!(
+            "the download looks incomplete ({} MB of ~{} MB). Please check your connection and try again.",
+            actual / 1024 / 1024,
+            info.approx_mb
+        ));
+    }
     Ok(path)
 }
 
