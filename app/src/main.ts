@@ -13,6 +13,7 @@ import {
   INTENT_CARDS,
   recommend,
   estimateTranscriptionSpeed,
+  classifyIntent,
   type IntentCard,
   type Tier,
   type SpeedEstimate,
@@ -259,6 +260,20 @@ function renderChat(): void {
     const m = el("div", `msg ${who}`, text);
     thread.appendChild(m);
     thread.scrollTop = thread.scrollHeight;
+    return m;
+  };
+
+  // An AI message that offers to run a capability — the human confirms before
+  // Verdure acts (knowledge/18/20: tools the model invokes, human in the loop).
+  const addActionMsg = (text: string, label: string, run: () => void) => {
+    const m = addMsg("ai", text);
+    const btn = document.createElement("button");
+    btn.className = "primary chat-action";
+    btn.type = "button";
+    btn.textContent = label;
+    btn.addEventListener("click", run);
+    m.appendChild(btn);
+    thread.scrollTop = thread.scrollHeight;
   };
 
   let busy = false;
@@ -271,9 +286,22 @@ function renderChat(): void {
     addMsg("user", text);
     status.textContent = "Thinking…";
     try {
-      const reply = await chatSend(text, (msg) => (status.textContent = msg));
+      const decision = await chatSend(text, (msg) => (status.textContent = msg));
       status.textContent = "";
-      addMsg("ai", reply || "(no reply)");
+      // Cross-check the model's pick with our deterministic classifier.
+      const cls = classifyIntent(text);
+      const wantsTranscription =
+        decision.action === "set_up_transcription" ||
+        (cls.modality === "audio" && cls.task === "transcription");
+      if (wantsTranscription) {
+        addActionMsg(
+          decision.reply || "I can set you up to turn recordings into text.",
+          "Set it up →",
+          renderTranscribe,
+        );
+      } else {
+        addMsg("ai", decision.reply || "(no reply)");
+      }
     } catch (err) {
       status.textContent = String(err);
     } finally {

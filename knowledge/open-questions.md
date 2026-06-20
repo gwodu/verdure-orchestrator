@@ -9,6 +9,8 @@ When a question is resolved:
 
 ## Critical — resolve this week
 
+- [ ] **[OQ-57]** AI-first dictation (`20`): a system-wide dictation/command button (accessibility surface) that feeds transcription→personal-context AND commands→Verdure — voice as a command channel, not just a text field. The Wispr Flow disruptor, AI-first. Builds on tool-calling (`[OQ-55]`) + the context store (`[OQ-56]`). (From `20-personal-ai.md`.)
+- [ ] **[OQ-56]** The personal context core (`20`): a local, user-owned store of the user's dictations/preferences/history that every model + agent reads and writes, keeping the user at the center of context. Shape, privacy model (`06`), portability. (From `20-personal-ai.md`.)
 - [ ] **[OQ-55]** Conversational front door (`18`): the LLM modality (llama.cpp-in-binary crate + GGUF model download), grammar-constrained (GBNF) tool-calling over a small closed tool set, a tool-calling-capable small model (Qwen 2.5 / Llama 3.2 3B), deterministic cross-check + confirm, and the chat-first UI. The interface through which capabilities (incl. dictation) get invoked. (From `18`.)
 - [ ] **[OQ-54]** Live on-device dictation (`19`): mic-capture crate + permission, VAD choice, chunk/segment strategy, and the optional local-LLM cleanup pass (needs the LLM modality). The next build after the performance predictor. (From `19-performance-and-dictation.md`.)
 - [ ] **[OQ-53]** Confirm the first wrapped slice for the unified interface (`18`): transcription via **whisper.cpp** (light, fixes the Buzz handoff) vs chat via **Ollama** (highest demand, heavier). Plus the shell's panel/navigation model for spanning model families. (From `18-unified-interface.md`.)

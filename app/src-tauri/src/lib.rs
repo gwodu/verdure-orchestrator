@@ -102,7 +102,7 @@ async fn transcribe_audio<R: Runtime>(
 /// Long-running, so it runs on a blocking thread and streams a "Thinking…" stage
 /// via the `chat:progress` event (knowledge/18). Tool-calling lands next.
 #[tauri::command]
-async fn chat<R: Runtime>(app: AppHandle<R>, message: String) -> Result<String, String> {
+async fn chat<R: Runtime>(app: AppHandle<R>, message: String) -> Result<llm::ToolDecision, String> {
     let data_dir = app
         .path()
         .app_data_dir()
@@ -114,7 +114,7 @@ async fn chat<R: Runtime>(app: AppHandle<R>, message: String) -> Result<String, 
         };
         let model = model::ensure(&data_dir, &model::QWEN_CHAT, &progress)?;
         progress("Thinking…");
-        llm::chat(&model, &message)
+        llm::decide(&model, &message)
     })
     .await
     .map_err(|e| format!("the chat task could not run: {e}"))?

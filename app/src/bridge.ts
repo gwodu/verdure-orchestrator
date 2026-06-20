@@ -52,15 +52,28 @@ export async function portTool(
   }
 }
 
+/** The model's decision: answer, or invoke a tool (grammar-locked). */
+export type ChatDecision = { action: string; reply: string };
+
 /** Send a chat message to the local model, streaming a status line. */
 export async function chatSend(
   message: string,
   onProgress: ProgressFn,
-): Promise<string> {
+): Promise<ChatDecision> {
   if (!inTauri) {
     onProgress("Thinking…");
     await new Promise((r) => setTimeout(r, 800));
-    return "(Browser preview — chat runs only in the desktop app.)";
+    // Browser preview: mimic the tool decision so the flow is reviewable.
+    if (/dictat|transcri|record|voice note|audio|meeting/i.test(message)) {
+      return {
+        action: "set_up_transcription",
+        reply: "I can set you up to turn recordings into text.",
+      };
+    }
+    return {
+      action: "answer",
+      reply: "(Browser preview — chat runs only in the desktop app.)",
+    };
   }
   const { invoke } = await import("@tauri-apps/api/core");
   const { listen } = await import("@tauri-apps/api/event");
@@ -68,7 +81,7 @@ export async function chatSend(
     onProgress(e.payload),
   );
   try {
-    return await invoke<string>("chat", { message });
+    return await invoke<ChatDecision>("chat", { message });
   } finally {
     unlisten();
   }
