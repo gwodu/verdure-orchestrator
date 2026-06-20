@@ -231,7 +231,7 @@ function renderChat(): void {
     el(
       "p",
       "subtitle",
-      "Ask anything — it runs entirely on your computer, private and free. The first time, Verdure downloads a small chat model (~1 GB).",
+      "Ask anything — it runs entirely on your computer, private and free. The first time, Verdure downloads a small chat model sized to your computer (about 0.4–1 GB).",
     ),
   );
 

@@ -112,7 +112,10 @@ async fn chat<R: Runtime>(app: AppHandle<R>, message: String) -> Result<llm::Too
         let progress = |msg: &str| {
             let _ = app_for_progress.emit("chat:progress", msg);
         };
-        let model = model::ensure(&data_dir, &model::QWEN_CHAT, &progress)?;
+        // Pick the chat model that fits this machine's RAM (a 1.5B model OOMs on
+        // an 8 GB Mac next to the WebView; smaller machines get the 0.5B model).
+        let info = model::chat_model_for(device::detect_spec().ram_gb);
+        let model = model::ensure(&data_dir, info, &progress)?;
         progress("Thinking…");
         llm::decide(&model, &message)
     })

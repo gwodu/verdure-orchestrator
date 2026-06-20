@@ -37,9 +37,23 @@ pub const WHISPER_BASE_EN: ModelInfo = ModelInfo {
     approx_mb: 142,
 };
 
-/// The chat model behind the conversational front door (knowledge/18). Qwen2.5
-/// 1.5B Instruct (Q4_K_M GGUF) — good chat + tool-calling for its size, ~1 GB,
-/// usable on a CPU. [OQ-55].
+// Chat models behind the conversational front door (knowledge/18). We pick by
+// RAM (see `chat_model_for`): a 1.5B model needs more memory than an 8 GB machine
+// has alongside the WebView — it OOMs and ggml aborts the process — so low-RAM
+// devices get the 0.5B model. Both are Qwen2.5 Instruct (good tool-calling for
+// their size), grammar-constrained for reliable tool calls. [OQ-55].
+
+/// Smaller chat model for memory-constrained machines (≤ 8 GB). ~400 MB.
+pub const QWEN_CHAT_SMALL: ModelInfo = ModelInfo {
+    id: "qwen2.5-0.5b-instruct",
+    name: "Chat model (Qwen2.5 0.5B)",
+    modality: "Chat",
+    file: "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+    url: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+    approx_mb: 400,
+};
+
+/// Larger chat model for roomier machines (≥ 12 GB). ~1.1 GB.
 pub const QWEN_CHAT: ModelInfo = ModelInfo {
     id: "qwen2.5-1.5b-instruct",
     name: "Chat model (Qwen2.5 1.5B)",
@@ -49,8 +63,18 @@ pub const QWEN_CHAT: ModelInfo = ModelInfo {
     approx_mb: 1100,
 };
 
+/// Pick the chat model that fits this machine's RAM. The 1.5B model needs ~12 GB
+/// to be safe next to the WebView; smaller machines get the 0.5B model.
+pub fn chat_model_for(ram_gb: u32) -> &'static ModelInfo {
+    if ram_gb >= 12 {
+        &QWEN_CHAT
+    } else {
+        &QWEN_CHAT_SMALL
+    }
+}
+
 /// Every model Verdure can download today.
-pub const MODELS: &[ModelInfo] = &[WHISPER_BASE_EN, QWEN_CHAT];
+pub const MODELS: &[ModelInfo] = &[WHISPER_BASE_EN, QWEN_CHAT_SMALL, QWEN_CHAT];
 
 /// Look up a model by id.
 pub fn find(id: &str) -> Option<&'static ModelInfo> {
