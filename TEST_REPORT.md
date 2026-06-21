@@ -2,6 +2,21 @@
 
 Test discipline record across the Verdure monorepo. Decider: `npm test --workspace @verdure/decider`. Website: `npm test --workspace nextjs`. Porter app frontend: `cd app && npm run build` (typecheck) + `node app/scripts/shots.mjs` (screenshots). Porter Rust: `cd app/src-tauri && cargo test`. Long-term binary: `cargo test`. Newest first.
 
+## Verdure desktop app (`app/`) — post-pivot
+
+### 2026-06-20 — State of testing (transcription, predictor, chat, tool-calling)
+
+**Automated (CI green):** decider **74** tests (incl. `performance.ts`: arch/cores ordering, RAM gate, measured-overrides-estimate). Porter Rust **23** tests (catalog, device tier, porter `tail`/errors, audio resampler+downmix, model registry, llm JSON-decision parsing). CI compiles + **cross-compiles to x86_64** the whole stack (whisper.cpp + llama.cpp + tauri) and checks the model-download URLs resolve.
+
+**What is NOT unit-testable (verified on-device or not at all):** model inference itself (whisper/llama) needs the weights + real hardware; the live Tauri IPC byte-routing (mock harness denies app commands — see the integration-test note below); GUI render + drag-drop. These are verified by shipping a CI-built Intel app to the founder's Mac.
+
+**On-device findings (founder's 2019 Intel Mac, 8 GB):**
+- Transcription works; base.en ≈ **3.9× real-time** (59 s audio in 15 s) — became the predictor's real anchor.
+- Whisper/Buzz mismatch caught in visual review (hero named the model, not the installed app) — fixed.
+- **Chat OOM crash**: the 1.5B model + WebView exceeded 8 GB RAM; ggml `abort()` (SIGABRT) killed the app even at 2048 context. Lesson: an 8 GB Intel Mac is a 0.5B-class machine for in-app chat → **RAM-gated** the model. Deeper lesson (open): ggml aborting the process is a robustness hole — needs runtime process isolation. 0.5B build (app-build-15) **pending on-device confirmation**.
+
+**Build/ship is the verification loop:** no local toolchain → CI cross-builds a downloadable Intel `.app`/`.dmg`; install + drive it on the real Mac. (See `knowledge/21-handoff.md`.)
+
 ## MVP desktop porter (`app/`)
 
 ### 2026-06-16 — Porter verified in CI (GitHub Actions macOS runner)

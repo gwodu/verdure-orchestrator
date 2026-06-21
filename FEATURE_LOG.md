@@ -1,8 +1,34 @@
 # FEATURE_LOG.md
 
-Living record of features built across the Verdure monorepo — the **MVP desktop porter** (`app/`), the shared decider package (`packages/decider/`), the Phase 0 website (`website/`), and the long-term Rust core (`src/`, `tests/`). Newest first. The knowledge base (`knowledge/`) is the shared brain for all of them.
+Living record of features built across the Verdure monorepo — the **Verdure desktop app** (`app/`), the shared decider package (`packages/decider/`), the Phase 0 website (`website/`), and the long-term Rust core (`src/`, `tests/`). Newest first. The knowledge base (`knowledge/`) is the shared brain for all of them.
 
-## MVP desktop porter (`app/`) — the current build
+## Verdure desktop app (`app/`) — unified interface (post-pivot)
+
+> Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
+
+### 2026-06-20 — Chat front door + grammar tool-calling + RAM-gating
+
+**What:** A local chat model (llama.cpp via `llama-cpp-2`, compiled in) is the conversational front door. It both answers and **orchestrates**: it emits a **GBNF-grammar-constrained** tool call (always-valid JSON — `answer` or `set_up_transcription`), `intent.ts` cross-checks, and the user confirms before Verdure acts. Model is **RAM-gated** (`model::chat_model_for`): Qwen2.5 0.5B on ≤8 GB, 1.5B on ≥12 GB.
+
+**Problem it solves:** "apps for AI" step one — capabilities the model invokes, not just buttons. Small-model unreliability is handled by the grammar (can't malform a call) + the deterministic cross-check + a confirm step (human in the loop).
+
+**Crash fixed:** the 1.5B model OOM-aborted an 8 GB Mac (ggml calls `abort()` on a failed alloc, killing the app). Cut chat context 4096→2048 + batch 512, validated model-file size, then **RAM-gated to 0.5B** on ≤8 GB. (Deeper fix — process isolation so ggml can't crash the UI — is a logged P0 next step.)
+
+**Tests:** `llm.rs` parse tests; CI compiles + cross-compiles llama.cpp (the `common` feature gates the grammar samplers; deployment-target fix shared with whisper). On-device 0.5B confirmation pending.
+
+### 2026-06-19 — Performance predictor (predict from specs, calibrate from runs)
+
+**What:** `packages/decider/performance.ts` estimates a model's speed/feasibility from detected specs (`device.rs` reads cores/RAM/arch → `device_spec`), shown before download as a category + "× real-time" range, then **replaced by the real measured speed** after a run (`transcribe_audio` returns timing). Anchored to a real measurement (founder's Mac: base.en ≈ 3.9× real-time, RTF 0.254). `bestModelFor` picks per device.
+
+**Problem it solves:** honest performance without making users benchmark (resolves the data gap behind `[OQ-51]`/`[OQ-03]`). 10 decider tests.
+
+### 2026-06-19 — In-app transcription (whisper.cpp) + storage management
+
+**What:** Drop an audio file → text, entirely in Verdure. `audio.rs` decodes mp3/m4a/wav/flac via symphonia (no ffmpeg) → 16 kHz mono; `transcribe.rs` runs whisper.cpp (`whisper-rs`, compiled in) on CPU. `model.rs` is a **registry** (data) — models download on first use (curl) to app data, with a size-validation guard. **Storage**: per-model size + Remove (in the transcribe panel) and a global "Manage storage" screen.
+
+**Problem it solves:** the first wrapped modality — proves the pivot (model in one UI, no separate app, no Homebrew/CLT). Storage control is first-class for the floor user's tight disk. Verified on-device (~3.9× real-time). Rust unit tests for the resampler/downmix, catalog, model registry.
+
+## MVP desktop porter (`app/`) — the original build (pre-pivot, now legacy)
 
 ### 2026-06-16 — The Buzz slice: intent → one-click port (v1.0 first slice)
 
