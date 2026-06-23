@@ -1,8 +1,16 @@
 //! Local chat LLM via llama.cpp (the `llama-cpp-2` crate) — the conversational
-//! front door (knowledge/18, 20). The model both converses AND orchestrates: it
-//! decides whether to answer or to invoke a capability, emitting a tool call
-//! that a **GBNF grammar forces to be valid JSON** — so a small model can't
-//! malform the call; it only chooses *which* action. Runs on the CPU, local.
+//! front door (knowledge/18, 20). The model converses and proposes a JSON tool
+//! decision (answer, or invoke a capability); the deterministic classifier in the
+//! UI (`classifyIntent`) is the real router, so the model's JSON is a hint, not a
+//! contract. Runs on the CPU, local.
+//!
+//! NOTE — no GBNF grammar sampler. We previously grammar-locked the JSON, but
+//! llama.cpp's grammar code (`llama_grammar_reject_candidates`) calls
+//! `ggml_abort()` when it reaches a state with no valid continuation (e.g. a
+//! multi-byte token the grammar can't extend) — and an abort kills the WHOLE app
+//! (observed on-device 2026-06-23: chat crashed there, NOT on memory). Plain
+//! sampling + lenient parsing + the UI cross-check is safer and simpler. A grammar
+//! can come back only once the model runs in an isolated process (knowledge/21).
 
 use std::num::NonZeroU32;
 use std::path::Path;
@@ -20,18 +28,6 @@ use llama_cpp_2::sampling::LlamaSampler;
 const N_CTX: u32 = 2048;
 const N_BATCH: u32 = 512;
 const MAX_NEW_TOKENS: i32 = 512;
-
-// The tool surface, as a grammar: output is EITHER the transcription tool call
-// OR an answer with free text. The model cannot produce anything else — invalid
-// tool calls are impossible by construction (knowledge/18). Add a tool = add a
-// branch here + a case in the frontend.
-const TOOL_GRAMMAR: &str = r#"
-root   ::= setup | answer
-setup  ::= "{\"action\":\"set_up_transcription\"}"
-answer ::= "{\"action\":\"answer\",\"reply\":\"" chars "\"}"
-chars  ::= char*
-char   ::= [^"\\] | "\\" ["\\/bfnrt]
-"#;
 
 /// The model's decision: which action, and the user-facing text.
 #[derive(Debug, serde::Serialize)]
@@ -78,10 +74,9 @@ pub fn decide(model_path: &Path, user_message: &str) -> Result<ToolDecision, Str
     ctx.decode(&mut batch)
         .map_err(|e| format!("chat failed: {e}"))?;
 
-    // Grammar sampler first (masks invalid tokens), then greedy among what's left.
-    let grammar = LlamaSampler::grammar(&model, TOOL_GRAMMAR, "root")
-        .map_err(|e| format!("grammar error: {e}"))?;
-    let mut sampler = LlamaSampler::chain_simple([grammar, LlamaSampler::greedy()]);
+    // Plain greedy sampling — deterministic, and crucially NO grammar sampler
+    // (see the module note: the grammar path can `ggml_abort()` the whole app).
+    let mut sampler = LlamaSampler::chain_simple([LlamaSampler::greedy()]);
 
     let mut json = String::new();
     let mut n_cur = batch.n_tokens();
@@ -109,25 +104,53 @@ pub fn decide(model_path: &Path, user_message: &str) -> Result<ToolDecision, Str
     parse_decision(&json)
 }
 
-/// Parse the grammar-locked JSON into a decision. Defaults to a plain answer if
-/// anything is off (grammar makes that essentially impossible, but be safe).
-fn parse_decision(json: &str) -> Result<ToolDecision, String> {
-    let value: serde_json::Value = serde_json::from_str(json.trim())
-        .map_err(|_| format!("the model returned something unexpected: {json}"))?;
-    let action = value
-        .get("action")
-        .and_then(|a| a.as_str())
-        .unwrap_or("answer")
-        .to_string();
-    let mut reply = value
-        .get("reply")
-        .and_then(|r| r.as_str())
-        .unwrap_or("")
-        .to_string();
-    if action == "set_up_transcription" && reply.is_empty() {
-        reply = "I can set you up to turn recordings into text — right here on your computer.".to_string();
+/// Parse the model's output into a decision. Without a grammar the model may wrap
+/// its JSON in prose (or skip JSON entirely), so this is lenient: pull the first
+/// `{...}` object if there is one, else treat the whole text as a plain answer.
+/// Tool ROUTING does not depend on this being perfect — the UI cross-checks intent
+/// deterministically (`classifyIntent`).
+fn parse_decision(text: &str) -> Result<ToolDecision, String> {
+    let trimmed = text.trim();
+
+    if let Some(obj) = extract_json_object(trimmed) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&obj) {
+            let raw_action = value.get("action").and_then(|a| a.as_str()).unwrap_or("answer");
+            // Only honor the one tool action we know; anything else is an answer.
+            let action = if raw_action == "set_up_transcription" {
+                "set_up_transcription"
+            } else {
+                "answer"
+            };
+            let mut reply = value
+                .get("reply")
+                .and_then(|r| r.as_str())
+                .unwrap_or("")
+                .to_string();
+            if action == "set_up_transcription" && reply.is_empty() {
+                reply = "I can set you up to turn recordings into text — right here on your computer."
+                    .to_string();
+            }
+            if action == "answer" && reply.is_empty() {
+                // Valid JSON but no usable reply — fall back to the raw text.
+                reply = trimmed.to_string();
+            }
+            return Ok(ToolDecision { action: action.to_string(), reply });
+        }
     }
-    Ok(ToolDecision { action, reply })
+
+    // No usable JSON — the model just chatted. Show what it said.
+    Ok(ToolDecision {
+        action: "answer".to_string(),
+        reply: trimmed.to_string(),
+    })
+}
+
+/// Pull the first balanced-ish JSON object out of a string (first `{` … last `}`).
+/// Good enough for the single flat object the model emits; prose around it is fine.
+fn extract_json_object(s: &str) -> Option<String> {
+    let start = s.find('{')?;
+    let end = s.rfind('}')?;
+    (end > start).then(|| s[start..=end].to_string())
 }
 
 #[cfg(test)]
@@ -146,5 +169,27 @@ mod tests {
         let d = parse_decision(r#"{"action":"set_up_transcription"}"#).unwrap();
         assert_eq!(d.action, "set_up_transcription");
         assert!(!d.reply.is_empty());
+    }
+
+    #[test]
+    fn plain_text_without_json_becomes_an_answer() {
+        // No grammar → the model might just talk. We show what it said, not an error.
+        let d = parse_decision("Sure! The capital of France is Paris.").unwrap();
+        assert_eq!(d.action, "answer");
+        assert_eq!(d.reply, "Sure! The capital of France is Paris.");
+    }
+
+    #[test]
+    fn extracts_json_wrapped_in_prose() {
+        let d = parse_decision("Here you go: {\"action\":\"answer\",\"reply\":\"hi\"} hope that helps")
+            .unwrap();
+        assert_eq!(d.action, "answer");
+        assert_eq!(d.reply, "hi");
+    }
+
+    #[test]
+    fn unknown_action_falls_back_to_answer() {
+        let d = parse_decision(r#"{"action":"launch_missiles","reply":"no"}"#).unwrap();
+        assert_eq!(d.action, "answer");
     }
 }

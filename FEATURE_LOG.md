@@ -6,17 +6,23 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
-### 2026-06-23 — Live machine-context + memory-aware model picking (chat-crash fix)
+### 2026-06-23 — The real chat-crash fix: remove the GBNF grammar sampler
 
-**What:** Verdure now reads a **live snapshot of the machine's free resources** — available RAM, free disk, cores, arch, Low Power Mode (`device::system_resources`, `system_resources` command) — and uses it to **pick the chat model that fits the memory free *right now***, declining honestly when nothing fits. A "Your computer" readout on the Storage screen makes that context visible.
+**What:** Removed the grammar-constrained sampler from `llm::decide`. The model now samples plainly (greedy) and `parse_decision` is **lenient** — it extracts the first `{...}` JSON object if present, otherwise treats the whole output as a plain answer. Tool routing does not depend on perfect JSON: the UI's deterministic `classifyIntent` cross-check is the real router.
 
-**Problem it solves:** chat **SIGABRT-crashed the whole app** on the founder's 8 GB Intel Mac — even with the 0.5B model. Root cause: the gate keyed on *total* RAM (8 GB → 0.5B), but only **~2 GB was actually free** (less with the WebView running). ggml can't allocate, calls `abort()`, and takes the process down (knowledge/21 gap #4). Total RAM is the wrong number; **available** RAM is the binding constraint. Now `model::chat_model_for_available(available_mb)` picks the largest model whose estimated runtime footprint fits, or returns `None` → chat shows "There isn't enough free memory to chat right now…" instead of crashing.
+**Problem it solves — the actual chat crash.** A **symbolicated** crash report (2026-06-23) showed chat's `SIGABRT` was **not** memory: the trace is `ggml_abort ← llama_grammar_reject_candidates ← llama_grammar_apply_impl ← llama_sampler_sample ← llm::decide`, with only 716 MB malloc'd. llama.cpp's GBNF grammar aborts the **whole process** when it reaches a state with no valid continuation (e.g. a multi-byte token the `char` rule can't extend). The grammar we'd added "for reliability" was the crash. (My first diagnosis blamed RAM off an *unsymbolicated* report + the prior 1.5B OOM history — wrong; corrected here.)
 
-**Why this first (user's call):** before polishing chat, make the machine itself first-class context — the foundation for honest orchestration and model selection ("you at the core of context", knowledge/20). This extends the static `device.rs` specs + the transcription predictor (knowledge/19) to *live* resources.
+**Why removing it is right:** the grammar was redundant — `classifyIntent` already routes transcription deterministically regardless of the model's output — and actively dangerous (an in-process `abort()` is uncatchable). Plain sampling + lenient parse + the cross-check is safer and simpler. A grammar can return only once the model runs in an **isolated process** (knowledge/21 — now the top robustness P0).
 
-**Architecture (`skills/architecture.md`):** the `vm_stat`/`df`/`pmset` parsers are **pure** (no process spawning) so they're unit-tested; the I/O wrappers shell out to fixed paths (PATH-safe, like the existing sysctl). `runtime_mb` is a per-model footprint estimate (0.5B ≈ 1100 MB, 1.5B ≈ 2400 MB) — **provisional, to be calibrated on-device** exactly like the transcription "× real-time" number.
+**Tests:** 3 new `llm.rs` parse tests (plain prose → answer; JSON wrapped in prose → extracted; unknown action → answer) alongside the existing two.
 
-**Honest limit:** the gate massively shrinks the crash window but isn't a *guarantee* — a too-optimistic estimate could still let a model through that aborts. The durable fix remains **running the model in a separate process** so a ggml `abort()` can never kill the UI (knowledge/21 P0 #3, now the next step). Also surfaced: only ~2.5 GB disk free with a **1 GB orphaned 1.5B model** sitting unused — removable via Storage to reclaim it.
+### 2026-06-23 — Live machine-context + memory-aware model picking
+
+**What:** Verdure reads a **live snapshot of the machine's free resources** — available RAM, free disk, cores, arch, Low Power Mode (`device::system_resources`, `system_resources` command) — and uses it to **pick the chat model that fits the memory free *right now***, declining honestly when nothing fits. A "Your computer" readout on the Storage screen makes that context visible.
+
+**What it does and doesn't fix:** this is the machine-as-context foundation the user asked for, and it prevents a *genuine* OOM-abort when memory is truly tight. It did **not** fix the chat crash that prompted it — that was the grammar sampler (see the entry above); memory was fine (~2 GB free, 0.5B fit). Keeping it anyway: it's the right substrate for honest orchestration ("you at the core of context", knowledge/20), extending the static `device.rs` specs + the transcription predictor (knowledge/19) to *live* resources.
+
+**Architecture (`skills/architecture.md`):** the `vm_stat`/`df`/`pmset` parsers are **pure** so they're unit-tested; the I/O wrappers shell out to fixed paths (PATH-safe, like the existing sysctl). `runtime_mb` is a per-model footprint estimate (0.5B ≈ 1100 MB, 1.5B ≈ 2400 MB) — **provisional, to calibrate on-device**.
 
 **Tests:** 4 new `device.rs` parser tests (vm_stat available-memory math, df column, low-power, missing-page-size fallback) + 1 `model.rs` test (picks larger when roomy, small when tight, declines when nearly full). Frontend typechecks; Storage screenshot shows the readout.
 
