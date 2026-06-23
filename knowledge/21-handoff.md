@@ -6,12 +6,13 @@
 The MVP is a **Tauri desktop app** (`app/`) — Verdure, the local personal AI — that runs models **inside one interface**, on an Intel Mac, shipped via CI (no local toolchain; see "How to build/ship").
 
 Verified on the founder's 2019 Intel Mac (8 GB, macOS 15):
-- **Transcription** ✅ — drop audio → text, on-device via whisper.cpp (`base.en`). Real run measured ~3.9× real-time.
+- **Transcription (file)** ✅ — drop audio → text, on-device via whisper.cpp (`base.en`). Real run measured ~3.9× real-time.
+- **Transcription (live mic)** 🟡 — record from the microphone, text streams in as you speak (`live.rs`: `cpal` capture + a pure energy-gated `Segmenter` that cuts at pauses + transcribe-once-per-segment with a resident Whisper context). Built 2026-06-23, segmenter unit-tested + cross-compiles in CI; **on-device confirmation pending** (needs a tagged Intel build + the macOS Microphone-permission grant — unsigned-app TCC is the specific risk to watch).
 - **Performance predictor** ✅ — estimates speed from device specs (`packages/decider/performance.ts`), calibrated by the real measurement; anchored to the founder's Mac.
 - **Storage management** ✅ — per-model size + Remove (in-panel) and a global "Manage storage" screen; models download on first use, removable, re-download on demand.
 - **Chat + grammar tool-calling** 🟡 — local Qwen2.5 (0.5B on ≤8 GB, 1.5B on ≥12 GB) via llama.cpp; GBNF-grammar-locked tool calls; "I need to dictate" → confirm → opens transcription; `intent.ts` cross-check. **Pending on-device confirmation of the 0.5B build (app-build-15)** — earlier 1.5B builds OOM-crashed an 8 GB Mac; the RAM-gate fix is shipped but not yet user-confirmed.
 
-Green: decider 74 tests; porter Rust 23 tests; CI (Linux decider+website, macOS porter incl. x86_64 cross-compile + model-URL checks).
+Green: decider 74 tests; porter Rust 28 tests (incl. 5 live-transcription segmenter tests); CI (Linux decider+website, macOS porter incl. x86_64 cross-compile + model-URL checks).
 
 ## Doctrine (current — supersedes the pre-pivot files)
 - **Build apps for AI, with the user at the core of context** (`20`). Verdure is the personal AI, not an assistant.
@@ -35,6 +36,7 @@ Green: decider 74 tests; porter Rust 23 tests; CI (Linux decider+website, macOS 
 
 ## Next steps (prioritized — pick up here)
 **P0 — correctness & robustness (before this touches real users)**
+0. Confirm **live mic transcription** on-device (built 2026-06-23): tag an Intel build, install, **grant Microphone permission**, and speak — verify segments stream in and the cut cadence feels right. Watch for the unsigned-app TCC risk (macOS may refuse mic access to an unsigned `.app`); if so, signing/notarization is the fix. Also a chance to tune the `Segmenter` defaults (threshold/silence/min/max) against a real mic + room.
 1. Confirm the **0.5B chat build (app-build-15)** runs without crashing on the 8 GB Mac; have the user Remove the orphaned 1.5B model via Storage.
 2. **Resident chat model + conversational memory** (design together): keep the loaded model + context in Tauri state across messages (fast replies), and carry recent turn history in the prompt (the cheap memory fix — NOT RAG). [OQ-55 memory; the user explicitly asked.]
 3. **Isolate the model runtime in a separate process** so a ggml `abort()` can't crash the UI; surface failures as errors. [new — see gap #4]
@@ -46,7 +48,7 @@ Green: decider 74 tests; porter Rust 23 tests; CI (Linux decider+website, macOS 
 
 **P2 — the vision**
 7. **Personal context core (RAG)** — local, user-owned store every model reads/writes; the "you at the core of context" substrate. [OQ-56]
-8. **AI-first dictation** — a system-wide voice button → commands into Verdure + transcription into the context core (the Wispr Flow disruptor). [OQ-57]
+8. **AI-first dictation** — a system-wide voice button → commands into Verdure + transcription into the context core (the Wispr Flow disruptor). [OQ-57] *Foundation now exists:* live mic capture + streaming Whisper (`live.rs`, 2026-06-23); what's left is the system-wide hotkey/surface and routing dictation into the context core.
 
 ## How to build / ship (no local toolchain needed)
 The founder's Mac has **no Xcode CLT and tight disk**, so everything builds in CI:

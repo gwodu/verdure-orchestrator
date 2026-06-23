@@ -113,6 +113,81 @@ export async function transcribeAudio(
   }
 }
 
+/** Callbacks for a live (microphone) transcription session (see live.rs). */
+export type LiveHandlers = {
+  onStatus?: (msg: string) => void;
+  onSegment: (text: string) => void;
+  onError?: (msg: string) => void;
+  onStopped?: () => void;
+};
+
+/**
+ * Start live transcription: register the event listeners, then ask the backend
+ * to begin capture. Resolves to a cleanup function that removes the listeners.
+ * Finished segments arrive via `onSegment`; the session ends via `onStopped`
+ * (after `stopLiveTranscription`) or `onError` (if capture can't start).
+ */
+export async function startLiveTranscription(h: LiveHandlers): Promise<() => void> {
+  if (!inTauri) return simulateLive(h);
+
+  const { invoke } = await import("@tauri-apps/api/core");
+  const { listen } = await import("@tauri-apps/api/event");
+  const unlisteners = await Promise.all([
+    listen<string>("live:status", (e) => h.onStatus?.(e.payload)),
+    listen<string>("live:segment", (e) => h.onSegment(e.payload)),
+    listen<string>("live:error", (e) => h.onError?.(e.payload)),
+    listen("live:stopped", () => h.onStopped?.()),
+  ]);
+  const cleanup = () => unlisteners.forEach((u) => u());
+  try {
+    await invoke("start_live_transcription");
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
+  return cleanup;
+}
+
+/** Stop the live session and release the microphone. The backend then emits the
+ * final segment (if any) and `live:stopped`. */
+export async function stopLiveTranscription(): Promise<void> {
+  if (!inTauri) {
+    stopSimulatedLive();
+    return;
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("stop_live_transcription");
+}
+
+// Browser preview: walk a plausible live session with timers, so the UI can be
+// reviewed without a microphone or the Rust backend. Nothing is recorded.
+let simStop: (() => void) | null = null;
+function simulateLive(h: LiveHandlers): () => void {
+  const lines = [
+    "This is a browser preview of live transcription.",
+    "In the desktop app your speech appears here as you talk.",
+    "Each pause commits a sentence — all on your computer.",
+  ];
+  h.onStatus?.("Listening… speak now. (Browser preview)");
+  let i = 0;
+  const timer = setInterval(() => {
+    if (i < lines.length) h.onSegment(lines[i++]);
+    else stopSimulatedLive();
+  }, 1200);
+  const cleanup = () => {
+    clearInterval(timer);
+    simStop = null;
+  };
+  simStop = () => {
+    cleanup();
+    h.onStopped?.();
+  };
+  return cleanup;
+}
+function stopSimulatedLive(): void {
+  simStop?.();
+}
+
 export type ModelEntry = {
   id: string;
   name: string;

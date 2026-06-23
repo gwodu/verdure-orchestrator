@@ -44,6 +44,21 @@ for (let i = 0; i < count; i++) {
 await page.waitForSelector(".dropzone");
 await page.screenshot({ path: join(outDir, "2-transcribe.png") });
 
+// Screen 2b — live (microphone) transcription, mid-session (browser sim).
+const liveTab = page.locator(".mode-toggle .tab", { hasText: "Record live" });
+if (await liveTab.count()) {
+  await liveTab.click();
+  await page.locator(".live-area .record").click();
+  // Let the browser simulation stream a couple of segments in.
+  await page
+    .waitForFunction(
+      () => (document.querySelector(".transcript")?.value.length ?? 0) > 0,
+      { timeout: 5000 },
+    )
+    .catch(() => {});
+  await page.screenshot({ path: join(outDir, "2b-live.png") });
+}
+
 // Screen 3 — the global Storage screen.
 await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForSelector(".footer .link");

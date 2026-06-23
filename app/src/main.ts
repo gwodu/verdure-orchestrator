@@ -23,6 +23,8 @@ import {
   portTool,
   transcribeAudio,
   onAudioDrop,
+  startLiveTranscription,
+  stopLiveTranscription,
   chatSend,
   listModels,
   removeModel,
@@ -84,10 +86,19 @@ let tier: Tier = "L2-high"; // replaced by detection on boot
 
 // Active window drag-drop listener (transcription panel). Cleaned up on nav.
 let dropUnlisten: (() => void) | null = null;
+// Active live-transcription listeners, if a mic session is running. Every screen
+// calls clearDrop() on entry, so leaving the transcribe panel always releases the
+// microphone — no recording survives navigation.
+let liveCleanup: (() => void) | null = null;
 function clearDrop(): void {
   if (dropUnlisten) {
     dropUnlisten();
     dropUnlisten = null;
+  }
+  if (liveCleanup) {
+    liveCleanup();
+    liveCleanup = null;
+    void stopLiveTranscription();
   }
 }
 
@@ -322,6 +333,9 @@ function renderChat(): void {
 }
 
 // --- Screen 2a: transcription, wrapped IN-APP (the pivot, knowledge/18) ------
+// Two ways to the same on-device result: drop a file, or record live from the
+// mic. They share the transcript box, Copy, and the storage row; only the input
+// (dropzone vs mic) and the status differ.
 function renderTranscribe(): void {
   clearDrop();
   root.innerHTML = "";
@@ -329,33 +343,61 @@ function renderTranscribe(): void {
   root.appendChild(backButton(renderHome));
 
   const panel = el("section", "panel");
-  panel.appendChild(el("h1", "title", "Turn a recording into text"));
+  panel.appendChild(el("h1", "title", "Turn speech into text"));
   panel.appendChild(
     el(
       "p",
       "subtitle",
-      "Drop an audio file below. It's transcribed right on your computer — private, free, no account. The first time, Verdure downloads a small speech model (~140 MB).",
+      "Drop an audio file, or record live from your microphone. It's transcribed right on your computer — private, free, no account. The first time, Verdure downloads a small speech model (~140 MB).",
     ),
   );
+
+  // Mode toggle: a file you already have, vs the mic right now.
+  const modeToggle = el("div", "mode-toggle");
+  const uploadTab = tabButton("Upload a file");
+  const liveTab = tabButton("Record live");
+  modeToggle.appendChild(uploadTab);
+  modeToggle.appendChild(liveTab);
+  panel.appendChild(modeToggle);
+
+  // --- Upload mode: the dropzone + performance prediction --------------------
+  const uploadArea = el("div", "upload-area");
 
   // Performance prediction (before any download) — honest expectation from the
   // machine's specs, calibrated to a real number after the first transcription.
   const perf = el("p", "perf");
   perf.style.display = "none";
-  panel.appendChild(perf);
+  let perfReady = false;
+  uploadArea.appendChild(perf);
 
   // Separate, persistent line for the real measured speed after a run (so the
   // estimate above stays visible — predicted vs actual).
   const measured = el("p", "perf measured");
   measured.style.display = "none";
-  panel.appendChild(measured);
+  uploadArea.appendChild(measured);
 
   const zone = el("div", "dropzone");
-  zone.innerHTML = `<span class="dropzone-emoji" aria-hidden="true">🎙️</span>
+  zone.innerHTML = `<span class="dropzone-emoji" aria-hidden="true">📄</span>
     <span class="dropzone-text">Drop an audio file here</span>
     <span class="dropzone-hint">mp3, m4a, wav, and more</span>`;
-  panel.appendChild(zone);
+  uploadArea.appendChild(zone);
+  panel.appendChild(uploadArea);
 
+  // --- Live mode: the mic button + a recording indicator ---------------------
+  const liveArea = el("div", "live-area");
+  liveArea.style.display = "none";
+  const recordBtn = document.createElement("button");
+  recordBtn.className = "primary record";
+  recordBtn.type = "button";
+  recordBtn.textContent = "🎙️ Start recording";
+  const recIndicator = el("span", "rec-indicator");
+  recIndicator.style.display = "none";
+  recIndicator.innerHTML = `<span class="rec-dot" aria-hidden="true"></span><span class="rec-time">0:00</span>`;
+  liveArea.appendChild(recordBtn);
+  liveArea.appendChild(recIndicator);
+  panel.appendChild(liveArea);
+
+  // --- Shared: status, transcript, copy, storage -----------------------------
   const status = el("p", "status");
   panel.appendChild(status);
 
@@ -419,14 +461,17 @@ function renderTranscribe(): void {
   const showPrediction = async () => {
     const spec = await deviceSpec();
     const est = estimateTranscriptionSpeed(spec, "base");
-    perf.style.display = "block";
     perf.textContent = predictionLine(est);
+    perfReady = true;
+    if (uploadArea.style.display !== "none") perf.style.display = "block";
   };
   void showPrediction();
 
+  // --- Upload transcription (drop a file) ------------------------------------
   let busy = false;
   const run = async (path: string) => {
     if (busy) return;
+    setMode("upload"); // a dropped file always belongs to the upload flow
     busy = true;
     zone.classList.add("working");
     result.style.display = "none";
@@ -454,6 +499,107 @@ function renderTranscribe(): void {
     }
   };
 
+  // --- Live transcription (record from the mic) ------------------------------
+  let recording = false;
+  let seconds = 0;
+  let timer: number | undefined;
+  const drawTimer = () => {
+    const t = recIndicator.querySelector(".rec-time");
+    if (t) t.textContent = fmtDuration(seconds);
+  };
+
+  // Reset the UI once a session has fully ended (driven by live:stopped/error).
+  const finalize = () => {
+    recording = false;
+    recordBtn.disabled = false;
+    recordBtn.textContent = "🎙️ Start recording";
+    recordBtn.classList.remove("recording");
+    recIndicator.style.display = "none";
+    if (timer) {
+      clearInterval(timer);
+      timer = undefined;
+    }
+    if (liveCleanup) {
+      liveCleanup();
+      liveCleanup = null;
+    }
+    void refreshStorage();
+  };
+
+  const startRecording = async () => {
+    if (recording) return;
+    recording = true;
+    recordBtn.textContent = "■ Stop recording";
+    recordBtn.classList.add("recording");
+    result.value = "";
+    result.style.display = "block";
+    actions.style.display = "none";
+    status.textContent = "Starting…";
+    recIndicator.style.display = "inline-flex";
+    seconds = 0;
+    drawTimer();
+    timer = window.setInterval(() => {
+      seconds += 1;
+      drawTimer();
+    }, 1000);
+    try {
+      liveCleanup = await startLiveTranscription({
+        onStatus: (msg) => (status.textContent = msg),
+        onSegment: (text) => {
+          const t = text.trim();
+          if (!t) return;
+          result.value = result.value ? `${result.value} ${t}` : t;
+          result.scrollTop = result.scrollHeight;
+          actions.style.display = "flex";
+        },
+        onError: (msg) => {
+          status.textContent = msg;
+          finalize();
+        },
+        onStopped: () => {
+          status.textContent = result.value.trim()
+            ? "Stopped — transcript above."
+            : "Stopped — no speech captured.";
+          finalize();
+        },
+      });
+    } catch (err) {
+      status.textContent = String(err);
+      finalize();
+    }
+  };
+
+  recordBtn.addEventListener("click", () => {
+    if (recording) {
+      // Ask the backend to finish; the final segment + live:stopped drive finalize.
+      status.textContent = "Finishing up…";
+      recordBtn.disabled = true;
+      void stopLiveTranscription();
+    } else {
+      void startRecording();
+    }
+  });
+
+  // --- Mode switching --------------------------------------------------------
+  function setMode(mode: "upload" | "live"): void {
+    // Leaving live mode while recording must release the mic.
+    if (mode !== "live" && recording) void stopLiveTranscription();
+    uploadTab.classList.toggle("active", mode === "upload");
+    liveTab.classList.toggle("active", mode === "live");
+    uploadArea.style.display = mode === "upload" ? "block" : "none";
+    liveArea.style.display = mode === "live" ? "flex" : "none";
+    perf.style.display = mode === "upload" && perfReady ? "block" : "none";
+    measured.style.display = "none";
+    result.value = "";
+    result.style.display = "none";
+    actions.style.display = "none";
+    status.textContent =
+      mode === "live" && !inTauri ? "Live recording runs in the desktop app." : "";
+  }
+  uploadTab.addEventListener("click", () => setMode("upload"));
+  liveTab.addEventListener("click", () => setMode("live"));
+  setMode("upload");
+
   if (inTauri) {
     onAudioDrop(
       (paths) => {
@@ -463,7 +609,7 @@ function renderTranscribe(): void {
       },
       (hovering) => zone.classList.toggle("hover", hovering),
     ).then((un) => (dropUnlisten = un));
-  } else {
+  } else if (uploadArea.style.display !== "none") {
     status.textContent = "Drag-and-drop transcription runs in the desktop app.";
   }
 }
@@ -582,6 +728,14 @@ function backButton(onClick: () => void): HTMLElement {
   back.textContent = "← Back";
   back.addEventListener("click", onClick);
   return back;
+}
+
+function tabButton(label: string): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.className = "tab";
+  b.type = "button";
+  b.textContent = label;
+  return b;
 }
 
 function brandBar(): HTMLElement {

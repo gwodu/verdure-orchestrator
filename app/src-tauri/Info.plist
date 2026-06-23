@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS partial Info.plist, merged into the bundle by Tauri at build time.
+  NSMicrophoneUsageDescription is REQUIRED for live transcription: without it
+  macOS terminates the app the instant it touches the microphone, instead of
+  showing the permission prompt. The string is what the user reads in that prompt
+  (and in System Settings → Privacy → Microphone) — plain and honest, in keeping
+  with skills/design.md and the no-data-harvesting principle (knowledge/06/16).
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Verdure transcribes your microphone into text entirely on your computer. Your audio is never uploaded or stored anywhere else.</string>
+  </dict>
+</plist>

@@ -4,6 +4,23 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-06-23 — Live (microphone) transcription
+
+**Automated (runs in CI):** 5 new Rust unit tests over the pure `Segmenter` in `live.rs` — the only part of live capture that *can* be tested without audio hardware, and the part that holds the real logic:
+- `cuts_on_a_pause_after_speech` — speech then ≥ 0.6 s of silence completes a segment.
+- `does_not_cut_before_the_minimum_length` — a short word + a long pause stays buffered (no sub-1 s fragments).
+- `force_cuts_a_nonstop_talker_at_the_max` — 13 s of unbroken speech still yields a segment (the 12 s force-cut).
+- `discards_pure_silence` — silence past the max length is dropped, never sent to the model.
+- `flush_returns_trailing_speech` — stop hands back buffered speech, then resets.
+
+The segmenter is **pure by design** (no audio device, no I/O) precisely so the cut logic — the thing most likely to be wrong — is unit-tested. CI also compiles + **cross-compiles to x86_64** the new `cpal` capture path (the main new-dependency risk), so a linking/SDK problem fails in CI, not on the user's Mac.
+
+**Not unit-testable (verified on-device or not at all):** the microphone capture itself (cpal opening CoreAudio), the resident-context streaming loop, and the macOS Microphone **permission** flow — headless CI has no audio device and no TCC prompt. A specific risk to confirm on-device: an unsigned/ad-hoc `.app` (what build-app.yml ships) must still be **granted Microphone access** by the user; if macOS denies it outright for unsigned apps, signing/notarization becomes a prerequisite. The `NSMicrophoneUsageDescription` string (`Info.plist`) is in place.
+
+**Frontend:** typechecks (`tsc` strict) + the screenshot loop gained `2b-live.png` — a mid-session live transcript (browser simulation) visually reviewed: red Stop button, pulsing recording dot + timer, status line, streaming transcript, Copy. The drop-a-file flow is unchanged and still captured in `2-transcribe.png` (now with the Upload/Record toggle).
+
+**On-device confirmation pending** (tag a build → install on the founder's Intel Mac → grant mic permission → speak). This is the same verification loop the rest of the app uses.
+
 ### 2026-06-20 — State of testing (transcription, predictor, chat, tool-calling)
 
 **Automated (CI green):** decider **74** tests (incl. `performance.ts`: arch/cores ordering, RAM gate, measured-overrides-estimate). Porter Rust **23** tests (catalog, device tier, porter `tail`/errors, audio resampler+downmix, model registry, llm JSON-decision parsing). CI compiles + **cross-compiles to x86_64** the whole stack (whisper.cpp + llama.cpp + tauri) and checks the model-download URLs resolve.

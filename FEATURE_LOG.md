@@ -6,6 +6,28 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-06-23 — Live (microphone) transcription — speak, watch text appear
+
+**What:** A second way into on-device transcription, alongside drop-a-file: **record live from the mic**. The transcribe panel gained an **Upload a file / Record live** toggle. In live mode, a Start/Stop button captures the microphone (`cpal`, pure-Rust CoreAudio) and streams finished sentences into the transcript as you speak, entirely on-device. A red recording button + pulsing dot + elapsed timer make the recording state obvious.
+
+**Problem it solves:** the file path only helps if you already *have* a recording. Live capture is the everyday case — a meeting, a voice note, dictation — without any other app. It's the foundation the roadmap's "AI-first dictation" (knowledge/21 P2) builds on.
+
+**Architecture (`skills/architecture.md`):**
+- **Whisper isn't streaming, and the floor device is CPU-bound** (Intel Mac, base.en ≈ 3.9× real-time). Re-transcribing a growing buffer every second would fall behind. So `live.rs` **segments and commits**: a pure, unit-tested `Segmenter` (energy-gated VAD-lite) cuts the mic stream at natural pauses — never mid-word — and each segment is transcribed **once** as it completes. This keeps up with real time on this hardware; text lands a few seconds after each pause (the normal live-captioning cadence).
+- **Resident model per session.** The Whisper context is loaded **once** when recording starts (`transcribe::load`) and reused for every segment — no per-segment reload. A step toward the broader "resident model" debt in knowledge/21.
+- **cpal `Stream` is `!Send`**, so the capture stream is built, used, and dropped on one owned thread; samples flow to the worker over an `mpsc` channel; an `AtomicBool` + a join (in Tauri managed state) make Start/Stop clean. Mic frames reuse the file path's `downmix_to_mono`/`resample_linear` (one tested audio core).
+- **Events mirror the existing pattern:** `live:status` / `live:segment` / `live:error` / `live:stopped`, consumed in `bridge.ts` exactly like `transcribe:progress`.
+
+**UX (`skills/design.md`):** one task ("Turn speech into text"), two inputs behind a calm toggle; the file emoji moved to 📄 so 🎙️ now means *record*. Honest browser-preview simulation so the flow is reviewable without a mic.
+
+**Permissions:** `src-tauri/Info.plist` adds `NSMicrophoneUsageDescription` (plain, no-harvesting language) — required or macOS kills the app on mic access instead of prompting.
+
+**Robustness caveat (carried, knowledge/21 gap #4):** ggml can `abort()` the whole process on a model error, and live mode runs Whisper repeatedly — raising that exposure. The durable fix (runtime in a separate process, P0 #3) is **not** in this change; the model-file validation in `model::ensure` is the only guard for now. Logged as the next hardening step.
+
+**Tests:** 5 new Rust unit tests for the pure `Segmenter` (cuts on a pause after speech, respects the minimum length, force-cuts a non-stop talker, discards pure silence, flushes trailing speech). Frontend typechecks + a new `2b-live.png` visual-review shot of a mid-session live transcript.
+
+**Status:** 🟡 Built; **on-device confirmation pending** (a tagged Intel build on the founder's Mac). CI can't exercise a microphone, but it compiles + cross-compiles the new `cpal` path and runs the segmenter tests. A specific risk to verify on-device: an unsigned/ad-hoc `.app` must still be granted macOS Microphone permission. See TEST_REPORT.md.
+
 ### 2026-06-20 — Chat front door + grammar tool-calling + RAM-gating
 
 **What:** A local chat model (llama.cpp via `llama-cpp-2`, compiled in) is the conversational front door. It both answers and **orchestrates**: it emits a **GBNF-grammar-constrained** tool call (always-valid JSON — `answer` or `set_up_transcription`), `intent.ts` cross-checks, and the user confirms before Verdure acts. Model is **RAM-gated** (`model::chat_model_for`): Qwen2.5 0.5B on ≤8 GB, 1.5B on ≥12 GB.

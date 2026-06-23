@@ -221,6 +221,67 @@ html, body {
 .badge.ok { background: var(--green-tint); color: var(--green-deep); }
 
 /* Transcription panel */
+
+/* Mode toggle — Upload a file vs Record live (one task, two inputs) */
+.mode-toggle {
+  margin-top: 20px;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: #eef2ee;
+  border-radius: 12px;
+}
+.tab {
+  border: none;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 14.5px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.tab:hover { color: var(--ink); }
+.tab.active {
+  background: var(--surface);
+  color: var(--green-deep);
+  box-shadow: 0 1px 2px rgba(21, 36, 28, 0.08);
+}
+
+/* Live (microphone) recording */
+.live-area {
+  margin-top: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.record { max-width: 320px; }
+.record.recording {
+  background: #a3341f;
+}
+.record.recording:hover { background: #8a2c1a; }
+.rec-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #a3341f;
+}
+.rec-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #d8341f;
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
 .dropzone {
   margin-top: 22px;
   display: flex;
@@ -444,4 +505,5 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .card { transition: none; }
   .dropzone { transition: none; }
+  .rec-dot { animation: none; }
 }

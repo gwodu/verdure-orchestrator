@@ -12,12 +12,28 @@
 mod audio;
 mod catalog;
 mod device;
+mod live;
 mod llm;
 mod model;
 mod porter;
 mod transcribe;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+
 use tauri::{AppHandle, Emitter, Manager, Runtime};
+
+/// The one in-flight live-transcription session (if any). Held in Tauri managed
+/// state so `start`/`stop` can hand off the stop signal + capture thread. There is
+/// at most one session: starting a new one stops the old one first.
+#[derive(Default)]
+struct LiveState(Mutex<Option<LiveHandle>>);
+
+struct LiveHandle {
+    stop: Arc<AtomicBool>,
+    thread: JoinHandle<()>,
+}
 
 /// Return the detected hardware tier as a decider `Tier` string (e.g. "L2-high").
 /// The frontend feeds this straight into `recommend()` from @verdure/decider.
@@ -123,6 +139,68 @@ async fn chat<R: Runtime>(app: AppHandle<R>, message: String) -> Result<llm::Too
     .map_err(|e| format!("the chat task could not run: {e}"))?
 }
 
+/// Start live (microphone) transcription. Ensures + loads the speech model ONCE,
+/// then spawns a dedicated thread that captures the mic and streams finished
+/// segments to the UI via `live:segment` events (see `live.rs`). Returns as soon
+/// as capture is underway; any later capture failure arrives as a `live:error`
+/// event. Starting again stops any session already running.
+#[tauri::command]
+async fn start_live_transcription<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    stop_live_session(&app).await; // never run two at once
+
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    let app_for_load = app.clone();
+    // Download the model (first time) off the UI thread, so a download failure is
+    // reported clearly before we claim to be recording. We hand the validated
+    // PATH to the capture thread, which LOADS the context there — the loaded model
+    // never crosses a thread boundary (and neither does the !Send cpal stream).
+    let model_path = tauri::async_runtime::spawn_blocking(move || -> Result<_, String> {
+        let progress = |msg: &str| {
+            let _ = app_for_load.emit("live:status", msg);
+        };
+        let path = model::ensure(&data_dir, &model::WHISPER_BASE_EN, &progress)?;
+        progress("Starting the microphone…");
+        Ok(path)
+    })
+    .await
+    .map_err(|e| format!("couldn't start live transcription: {e}"))??;
+
+    // The cpal stream is !Send, so capture lives entirely on one owned thread.
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_for_thread = stop.clone();
+    let app_for_thread = app.clone();
+    let thread = std::thread::Builder::new()
+        .name("verdure-live".into())
+        .spawn(move || live::run(app_for_thread, model_path, stop_for_thread))
+        .map_err(|e| format!("couldn't start the capture thread: {e}"))?;
+
+    *app.state::<LiveState>().0.lock().unwrap() = Some(LiveHandle { stop, thread });
+    Ok(())
+}
+
+/// Stop the live-transcription session (if any) and release the microphone.
+#[tauri::command]
+async fn stop_live_transcription<R: Runtime>(app: AppHandle<R>) {
+    stop_live_session(&app).await;
+}
+
+/// Signal the live session to stop and wait for it to finish (transcribing any
+/// final segment + releasing the mic). The join can block briefly, so it runs on
+/// a blocking thread rather than the async/UI path.
+async fn stop_live_session<R: Runtime>(app: &AppHandle<R>) {
+    let handle = app.state::<LiveState>().0.lock().unwrap().take();
+    if let Some(h) = handle {
+        h.stop.store(true, Ordering::Relaxed);
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let _ = h.thread.join();
+        })
+        .await;
+    }
+}
+
 /// List every model with whether it's downloaded and its size — for the
 /// transcribe panel's storage row and the global Storage screen.
 #[tauri::command]
@@ -157,10 +235,13 @@ fn build_context<R: Runtime>() -> tauri::Context<R> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(LiveState::default())
         .invoke_handler(tauri::generate_handler![
             detect_device,
             device_spec,
             transcribe_audio,
+            start_live_transcription,
+            stop_live_transcription,
             chat,
             list_models,
             remove_model,
@@ -190,10 +271,13 @@ mod command_tests {
     // it fails if the config, capabilities, or icons are malformed.
     fn create_app<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::App<R> {
         builder
+            .manage(super::LiveState::default())
             .invoke_handler(tauri::generate_handler![
                 super::detect_device,
                 super::device_spec,
                 super::transcribe_audio,
+                super::start_live_transcription,
+                super::stop_live_transcription,
                 super::chat,
                 super::list_models,
                 super::remove_model,

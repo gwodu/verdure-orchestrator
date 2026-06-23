@@ -7,15 +7,28 @@ use std::path::Path;
 
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-/// Transcribe 16 kHz mono f32 PCM (see `audio::decode_to_mono_16k`) using the
-/// ggml model at `model_path`. Pure CPU, fully local. Returns the plain text.
-pub fn transcribe(model_path: &Path, samples: &[f32]) -> Result<String, String> {
+/// Load the ggml speech model at `model_path` into a reusable context. Loading is
+/// the slow part (hundreds of MB off disk), so callers that transcribe repeatedly
+/// — live capture (`live.rs`) — load ONCE and reuse the context across segments.
+pub fn load(model_path: &Path) -> Result<WhisperContext, String> {
     let path_str = model_path
         .to_str()
         .ok_or_else(|| "model path is not valid text".to_string())?;
+    WhisperContext::new_with_params(path_str, WhisperContextParameters::default())
+        .map_err(|e| format!("couldn't load the speech model: {e}"))
+}
 
-    let ctx = WhisperContext::new_with_params(path_str, WhisperContextParameters::default())
-        .map_err(|e| format!("couldn't load the speech model: {e}"))?;
+/// Transcribe 16 kHz mono f32 PCM (see `audio::decode_to_mono_16k`) using the
+/// ggml model at `model_path`. Pure CPU, fully local. Returns the plain text.
+pub fn transcribe(model_path: &Path, samples: &[f32]) -> Result<String, String> {
+    let ctx = load(model_path)?;
+    transcribe_with(&ctx, samples)
+}
+
+/// Transcribe 16 kHz mono f32 PCM with an already-loaded context (see `load`).
+/// A fresh state per call keeps each chunk independent — right for live capture,
+/// where each segment is decoded on its own.
+pub fn transcribe_with(ctx: &WhisperContext, samples: &[f32]) -> Result<String, String> {
     let mut state = ctx
         .create_state()
         .map_err(|e| format!("couldn't start transcription: {e}"))?;

@@ -81,8 +81,11 @@ pub fn decode_to_mono_16k(path: &Path) -> Result<Vec<f32>, String> {
     Ok(resample_linear(&mono, src_rate, TARGET_RATE))
 }
 
-/// Average channels down to mono.
-fn downmix_to_mono(interleaved: &[f32], channels: usize) -> Vec<f32> {
+/// Whisper's required input sample rate, shared with live capture (`live.rs`).
+pub(crate) const WHISPER_RATE: u32 = TARGET_RATE;
+
+/// Average channels down to mono. Reused by live capture to downmix mic frames.
+pub(crate) fn downmix_to_mono(interleaved: &[f32], channels: usize) -> Vec<f32> {
     if channels <= 1 {
         return interleaved.to_vec();
     }
@@ -92,8 +95,9 @@ fn downmix_to_mono(interleaved: &[f32], channels: usize) -> Vec<f32> {
         .collect()
 }
 
-/// Linear-interpolation resample from `src_rate` to `dst_rate`.
-fn resample_linear(input: &[f32], src_rate: u32, dst_rate: u32) -> Vec<f32> {
+/// Linear-interpolation resample from `src_rate` to `dst_rate`. Reused by live
+/// capture to bring a finished mic segment to Whisper's 16 kHz.
+pub(crate) fn resample_linear(input: &[f32], src_rate: u32, dst_rate: u32) -> Vec<f32> {
     if src_rate == dst_rate || input.is_empty() {
         return input.to_vec();
     }
