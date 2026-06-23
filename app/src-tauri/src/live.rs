@@ -313,9 +313,11 @@ mod tests {
     #[test]
     fn does_not_cut_before_the_minimum_length() {
         let mut seg = Segmenter::new(RATE);
-        // A short word (0.3 s) then a long pause — still under the 1 s minimum.
-        assert!(seg.push(&loud((0.3 * RATE as f32) as usize)).is_none());
-        assert!(seg.push(&quiet(RATE as usize)).is_none());
+        // A brief word (0.2 s) then a 0.6 s pause — only 0.8 s of audio total, under
+        // the 1 s minimum, so it stays buffered rather than emitting a tiny fragment.
+        // (The minimum gates on the whole buffer, trailing silence included.)
+        assert!(seg.push(&loud((0.2 * RATE as f32) as usize)).is_none());
+        assert!(seg.push(&quiet((0.6 * RATE as f32) as usize)).is_none());
     }
 
     #[test]
