@@ -94,6 +94,32 @@ export async function deviceSpec(): Promise<DeviceSpec> {
   return await invoke<DeviceSpec>("device_spec");
 }
 
+/** A live snapshot of free resources — the machine-context for orchestration. */
+export type SystemResources = {
+  arch: string;
+  cores: number;
+  totalRamMb: number;
+  availableRamMb: number;
+  freeDiskMb: number;
+  lowPower: boolean;
+};
+
+/** Read the machine's live free resources (available RAM, free disk, low power). */
+export async function systemResources(): Promise<SystemResources> {
+  if (!inTauri) {
+    return {
+      arch: "intel",
+      cores: 4,
+      totalRamMb: 8192,
+      availableRamMb: 2048,
+      freeDiskMb: 2560,
+      lowPower: true,
+    };
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<SystemResources>("system_resources");
+}
+
 /** Transcribe an audio file on-device, streaming progress lines to the UI. */
 export async function transcribeAudio(
   path: string,

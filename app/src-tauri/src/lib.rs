@@ -69,6 +69,19 @@ fn device_spec() -> device::DeviceSpec {
     device::detect_spec()
 }
 
+/// A LIVE snapshot of free resources (available RAM, free disk, low-power) — the
+/// machine-context that drives honest orchestration and model picking
+/// (knowledge/20/21). Free disk is measured where models download (the app data
+/// folder).
+#[tauri::command]
+fn system_resources<R: Runtime>(app: AppHandle<R>) -> Result<device::SystemResources, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    Ok(device::system_resources(&data_dir))
+}
+
 /// A finished transcription plus the timing that calibrates the predictor: how
 /// long the audio was vs how long it took (→ the real "× real-time" factor).
 #[derive(serde::Serialize)]
@@ -128,9 +141,19 @@ async fn chat<R: Runtime>(app: AppHandle<R>, message: String) -> Result<llm::Too
         let progress = |msg: &str| {
             let _ = app_for_progress.emit("chat:progress", msg);
         };
-        // Pick the chat model that fits this machine's RAM (a 1.5B model OOMs on
-        // an 8 GB Mac next to the WebView; smaller machines get the 0.5B model).
-        let info = model::chat_model_for(device::detect_spec().ram_gb);
+        // Pick the chat model that fits the memory AVAILABLE right now — not just
+        // total RAM. A 0.5B model "fits" an 8 GB Mac on paper but still OOM-aborts
+        // when the WebView leaves only ~1 GB free, so when nothing fits we decline
+        // honestly instead of loading a model that would crash the app
+        // (knowledge/21 — the chat-crash fix).
+        let res = device::system_resources(&data_dir);
+        let info = model::chat_model_for_available(res.available_ram_mb).ok_or_else(|| {
+            format!(
+                "There isn't enough free memory to chat right now — about {} MB is free of {} MB. \
+                 Closing a few other apps will free some up, then try again.",
+                res.available_ram_mb, res.total_ram_mb
+            )
+        })?;
         let model = model::ensure(&data_dir, info, &progress)?;
         progress("Thinking…");
         llm::decide(&model, &message)
@@ -239,6 +262,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             detect_device,
             device_spec,
+            system_resources,
             transcribe_audio,
             start_live_transcription,
             stop_live_transcription,
@@ -275,6 +299,7 @@ mod command_tests {
             .invoke_handler(tauri::generate_handler![
                 super::detect_device,
                 super::device_spec,
+                super::system_resources,
                 super::transcribe_audio,
                 super::start_live_transcription,
                 super::stop_live_transcription,

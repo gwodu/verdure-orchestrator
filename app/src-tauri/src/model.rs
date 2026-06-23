@@ -24,6 +24,13 @@ pub struct ModelInfo {
     pub url: &'static str,
     /// Approximate download size, for the one-time "~NN MB" message.
     pub approx_mb: u32,
+    /// Rough RAM footprint (MB) while loaded + running: weights + KV-cache +
+    /// compute buffers + runtime overhead. Used to decide whether a model fits
+    /// the machine's AVAILABLE memory before we load it — loading one that
+    /// doesn't fit makes ggml abort the whole process (knowledge/21 gap #4).
+    /// Provisional estimates, to be calibrated on-device like the transcription
+    /// predictor (knowledge/19). 0 = not gated this way.
+    pub runtime_mb: u32,
 }
 
 /// base.en: a good speed/quality balance for English on a CPU. Official
@@ -35,6 +42,7 @@ pub const WHISPER_BASE_EN: ModelInfo = ModelInfo {
     file: "ggml-base.en.bin",
     url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
     approx_mb: 142,
+    runtime_mb: 600,
 };
 
 // Chat models behind the conversational front door (knowledge/18). We pick by
@@ -51,9 +59,13 @@ pub const QWEN_CHAT_SMALL: ModelInfo = ModelInfo {
     file: "qwen2.5-0.5b-instruct-q4_k_m.gguf",
     url: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
     approx_mb: 400,
+    // ~469 MB weights + KV/compute at 2048 ctx + llama overhead. On an 8 GB Intel
+    // Mac this still aborted with only ~2 GB free — so the gate is on AVAILABLE,
+    // not total, RAM (knowledge/21).
+    runtime_mb: 1100,
 };
 
-/// Larger chat model for roomier machines (≥ 12 GB). ~1.1 GB.
+/// Larger chat model for roomier machines. ~1.1 GB download.
 pub const QWEN_CHAT: ModelInfo = ModelInfo {
     id: "qwen2.5-1.5b-instruct",
     name: "Chat model (Qwen2.5 1.5B)",
@@ -61,16 +73,19 @@ pub const QWEN_CHAT: ModelInfo = ModelInfo {
     file: "qwen2.5-1.5b-instruct-q4_k_m.gguf",
     url: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
     approx_mb: 1100,
+    runtime_mb: 2400,
 };
 
-/// Pick the chat model that fits this machine's RAM. The 1.5B model needs ~12 GB
-/// to be safe next to the WebView; smaller machines get the 0.5B model.
-pub fn chat_model_for(ram_gb: u32) -> &'static ModelInfo {
-    if ram_gb >= 12 {
-        &QWEN_CHAT
-    } else {
-        &QWEN_CHAT_SMALL
-    }
+/// Pick the largest chat model that fits the AVAILABLE memory right now, leaving
+/// headroom for the WebView + OS. Returns `None` when nothing fits — the caller
+/// then declines honestly instead of loading a model that would OOM-abort the app
+/// (knowledge/21). Keying on *available* (not total) RAM is the fix for the 8 GB
+/// chat crash: a 0.5B model "fits" 8 GB total but not ~1 GB free.
+pub fn chat_model_for_available(available_mb: u64) -> Option<&'static ModelInfo> {
+    // Largest first, so a roomy machine still gets the better model.
+    [&QWEN_CHAT, &QWEN_CHAT_SMALL]
+        .into_iter()
+        .find(|m| (m.runtime_mb as u64) <= available_mb)
 }
 
 /// Every model Verdure can download today.
@@ -218,5 +233,18 @@ mod tests {
     #[test]
     fn remove_unknown_id_errors() {
         assert!(remove(Path::new("/tmp"), "nope").is_err());
+    }
+
+    #[test]
+    fn chat_model_picks_by_available_memory() {
+        // Plenty free → the larger model.
+        assert_eq!(chat_model_for_available(8000).unwrap().id, QWEN_CHAT.id);
+        // Tight (the 8 GB Mac with the WebView running) → the small model only.
+        assert_eq!(
+            chat_model_for_available(1500).unwrap().id,
+            QWEN_CHAT_SMALL.id
+        );
+        // Almost nothing free → decline rather than OOM-abort the app.
+        assert!(chat_model_for_available(500).is_none());
     }
 }

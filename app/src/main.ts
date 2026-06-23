@@ -29,6 +29,7 @@ import {
   listModels,
   removeModel,
   deviceSpec,
+  systemResources,
   inTauri,
   type PortOutcome,
 } from "./bridge";
@@ -156,6 +157,30 @@ function renderStorage(): void {
       "Models you've downloaded live on your computer so they work offline. Remove any to free up space — Verdure re-downloads it next time you need it.",
     ),
   );
+
+  // Live "Your computer" readout — the machine-context Verdure uses to size what
+  // it runs (knowledge/20/21). Honest, plain numbers; no jargon.
+  const sysBox = el("div", "sysbox");
+  panel.appendChild(sysBox);
+  const fillSys = async () => {
+    const r = await systemResources();
+    const gb = (mb: number) => `${(mb / 1024).toFixed(1)} GB`;
+    sysBox.innerHTML = "";
+    sysBox.appendChild(el("span", "sysbox-title", "Your computer"));
+    const grid = el("div", "sysbox-grid");
+    const row = (label: string, value: string) => {
+      const r = el("div", "sysbox-row");
+      r.appendChild(el("span", "sysbox-label", label));
+      r.appendChild(el("span", "sysbox-value", value));
+      grid.appendChild(r);
+    };
+    row("Memory free now", `${gb(r.availableRamMb)} of ${gb(r.totalRamMb)}`);
+    row("Disk free", gb(r.freeDiskMb));
+    row("Processor", `${r.cores} cores · ${r.arch === "apple-silicon" ? "Apple Silicon" : "Intel"}`);
+    if (r.lowPower) row("Low Power Mode", "On — runs slower to save battery");
+    sysBox.appendChild(grid);
+  };
+  void fillSys();
 
   const listEl = el("div", "model-list");
   panel.appendChild(listEl);

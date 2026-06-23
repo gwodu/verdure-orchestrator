@@ -464,6 +464,37 @@ html, body {
 }
 .link:hover { text-decoration: underline; }
 
+/* "Your computer" readout (Storage screen) */
+.sysbox {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  background: #fafcfa;
+}
+.sysbox-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--green-deep);
+  margin-bottom: 10px;
+}
+.sysbox-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sysbox-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sysbox-label { font-size: 14px; color: var(--ink-soft); }
+.sysbox-value { font-size: 14px; font-weight: 600; color: var(--ink); }
+
 /* Storage screen */
 .model-list {
   margin-top: 20px;

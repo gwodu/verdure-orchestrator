@@ -4,6 +4,18 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-06-23 — Live machine-context + memory-aware model picking
+
+**Automated (runs in CI):** 5 new Rust unit tests, all over **pure** logic (the parsing + the pick), since the live readings need a real machine:
+- `device::parses_available_ram_from_vm_stat` — free + inactive + speculative + purgeable pages × page size; active/wired ignored.
+- `device::available_ram_is_none_without_a_page_size` — malformed `vm_stat` → `None` (caller falls back to half of total, never a confident-but-wrong "it fits").
+- `device::parses_df_available_column` / `detects_low_power_mode` — `df -k` 4th column, `pmset -g` lowpowermode flag.
+- `model::chat_model_picks_by_available_memory` — roomy → 1.5B; tight (8 GB Mac + WebView) → 0.5B only; nearly full → `None` (decline, don't OOM-abort).
+
+**Origin — a real on-device crash:** chat `SIGABRT`-crashed the whole app on the founder's 8 GB Intel Mac with the *0.5B* model already selected. Diagnosed from the crash report + live readings: ~2 GB free of 8 GB (app closed; less with the WebView up). The gate keyed on total RAM, not available — fixed. The `runtime_mb` footprints (0.5B ≈ 1100, 1.5B ≈ 2400 MB) are **provisional estimates to calibrate on-device**, like the transcription speed number.
+
+**Not unit-testable / on-device:** the actual `vm_stat`/`df`/`pmset` execution and whether the gate's thresholds are well-tuned (does 0.5B load cleanly when the gate says it fits?) need the real Mac. And the gate is **mitigation, not a guarantee** — the proof that a model can never crash the app is process isolation (not yet built).
+
 ### 2026-06-23 — Live (microphone) transcription
 
 **Automated (runs in CI):** 5 new Rust unit tests over the pure `Segmenter` in `live.rs` — the only part of live capture that *can* be tested without audio hardware, and the part that holds the real logic:

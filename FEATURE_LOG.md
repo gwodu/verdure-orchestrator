@@ -6,6 +6,20 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-06-23 — Live machine-context + memory-aware model picking (chat-crash fix)
+
+**What:** Verdure now reads a **live snapshot of the machine's free resources** — available RAM, free disk, cores, arch, Low Power Mode (`device::system_resources`, `system_resources` command) — and uses it to **pick the chat model that fits the memory free *right now***, declining honestly when nothing fits. A "Your computer" readout on the Storage screen makes that context visible.
+
+**Problem it solves:** chat **SIGABRT-crashed the whole app** on the founder's 8 GB Intel Mac — even with the 0.5B model. Root cause: the gate keyed on *total* RAM (8 GB → 0.5B), but only **~2 GB was actually free** (less with the WebView running). ggml can't allocate, calls `abort()`, and takes the process down (knowledge/21 gap #4). Total RAM is the wrong number; **available** RAM is the binding constraint. Now `model::chat_model_for_available(available_mb)` picks the largest model whose estimated runtime footprint fits, or returns `None` → chat shows "There isn't enough free memory to chat right now…" instead of crashing.
+
+**Why this first (user's call):** before polishing chat, make the machine itself first-class context — the foundation for honest orchestration and model selection ("you at the core of context", knowledge/20). This extends the static `device.rs` specs + the transcription predictor (knowledge/19) to *live* resources.
+
+**Architecture (`skills/architecture.md`):** the `vm_stat`/`df`/`pmset` parsers are **pure** (no process spawning) so they're unit-tested; the I/O wrappers shell out to fixed paths (PATH-safe, like the existing sysctl). `runtime_mb` is a per-model footprint estimate (0.5B ≈ 1100 MB, 1.5B ≈ 2400 MB) — **provisional, to be calibrated on-device** exactly like the transcription "× real-time" number.
+
+**Honest limit:** the gate massively shrinks the crash window but isn't a *guarantee* — a too-optimistic estimate could still let a model through that aborts. The durable fix remains **running the model in a separate process** so a ggml `abort()` can never kill the UI (knowledge/21 P0 #3, now the next step). Also surfaced: only ~2.5 GB disk free with a **1 GB orphaned 1.5B model** sitting unused — removable via Storage to reclaim it.
+
+**Tests:** 4 new `device.rs` parser tests (vm_stat available-memory math, df column, low-power, missing-page-size fallback) + 1 `model.rs` test (picks larger when roomy, small when tight, declines when nearly full). Frontend typechecks; Storage screenshot shows the readout.
+
 ### 2026-06-23 — Live (microphone) transcription — speak, watch text appear
 
 **What:** A second way into on-device transcription, alongside drop-a-file: **record live from the mic**. The transcribe panel gained an **Upload a file / Record live** toggle. In live mode, a Start/Stop button captures the microphone (`cpal`, pure-Rust CoreAudio) and streams finished sentences into the transcript as you speak, entirely on-device. A red recording button + pulsing dot + elapsed timer make the recording state obvious.
