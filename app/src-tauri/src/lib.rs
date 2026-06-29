@@ -156,7 +156,10 @@ async fn chat<R: Runtime>(app: AppHandle<R>, message: String) -> Result<llm::Too
         })?;
         let model = model::ensure(&data_dir, info, &progress)?;
         progress("Thinking…");
-        llm::decide(&model, &message)
+        // Frame the prompt for this model's family (ChatML vs Gemma). Chat models
+        // always carry a style; fall back to ChatML if one ever doesn't.
+        let style = info.prompt_style.unwrap_or(crate::model::PromptStyle::ChatMl);
+        llm::decide(&model, &message, style)
     })
     .await
     .map_err(|e| format!("the chat task could not run: {e}"))?

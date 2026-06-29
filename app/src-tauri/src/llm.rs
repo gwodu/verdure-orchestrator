@@ -22,12 +22,20 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, LlamaModel, Special};
 use llama_cpp_2::sampling::LlamaSampler;
 
+use crate::model::PromptStyle;
+
 // Kept modest on purpose: ggml aborts the whole process on a failed allocation,
 // and the floor target is an 8 GB machine where the WebView already uses ~1.5 GB.
 // 2048 ctx + a 512 batch keeps the KV + compute buffers small. [OQ-55]
 const N_CTX: u32 = 2048;
 const N_BATCH: u32 = 512;
-const MAX_NEW_TOKENS: i32 = 512;
+// A concise chat reply is short; capping the budget keeps a worst-case generation
+// snappy on the CPU floor machine. EOG normally stops us well before this.
+const MAX_NEW_TOKENS: i32 = 256;
+// Fixed seed → the same message gives the same reply, which is reproducible and
+// easy to reason about. The sampler is lightly stochastic (temp), so this only
+// pins which of several good continuations we take.
+const SEED: u32 = 0x5EED;
 
 /// The model's decision: which action, and the user-facing text.
 #[derive(Debug, serde::Serialize)]
@@ -39,15 +47,42 @@ pub struct ToolDecision {
     pub reply: String,
 }
 
-fn format_tool_prompt(user: &str) -> String {
-    format!(
-        "<|im_start|>system\nYou are Verdure, a local personal AI. Decide what the user wants and reply ONLY in JSON. If they want to turn audio, recordings, voice notes, meetings, or dictation into text, reply {{\"action\":\"set_up_transcription\"}}. Otherwise answer helpfully and concisely with {{\"action\":\"answer\",\"reply\":\"...\"}}.<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n"
-    )
+/// The system instruction is the same across families; only the turn framing
+/// differs (knowledge/03 — model details).
+const SYSTEM: &str = "You are Verdure, a local personal AI. Decide what the user wants and reply ONLY in JSON. If they want to turn audio, recordings, voice notes, meetings, or dictation into text, reply {\"action\":\"set_up_transcription\"}. Otherwise answer helpfully and concisely with {\"action\":\"answer\",\"reply\":\"...\"}.";
+
+/// Frame the prompt for the model's family. Getting this wrong yields garbage, so
+/// the family travels with the model (`PromptStyle`) rather than being assumed.
+fn format_tool_prompt(user: &str, style: PromptStyle) -> String {
+    match style {
+        // ChatML — Qwen et al. No BOS (the tokenizer adds none for this family).
+        PromptStyle::ChatMl => format!(
+            "<|im_start|>system\n{SYSTEM}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n"
+        ),
+        // Gemma has no system role, so the instruction rides the first user turn.
+        // The leading BOS is added by the tokenizer (AddBos::Always), not written
+        // here — writing a literal `<bos>` too would double it.
+        PromptStyle::Gemma => format!(
+            "<start_of_turn>user\n{SYSTEM}\n\n{user}<end_of_turn>\n<start_of_turn>model\n"
+        ),
+    }
 }
 
-/// Decide what to do about `user_message` — answer, or invoke a tool. The output
-/// is grammar-locked to valid JSON, then parsed.
-pub fn decide(model_path: &Path, user_message: &str) -> Result<ToolDecision, String> {
+/// BOS convention for the family — see `format_tool_prompt`.
+fn add_bos_for(style: PromptStyle) -> AddBos {
+    match style {
+        PromptStyle::ChatMl => AddBos::Never,
+        PromptStyle::Gemma => AddBos::Always,
+    }
+}
+
+/// Decide what to do about `user_message` — answer, or invoke a tool. We sample
+/// plainly (no grammar) and parse the output leniently; the UI cross-checks intent.
+pub fn decide(
+    model_path: &Path,
+    user_message: &str,
+    style: PromptStyle,
+) -> Result<ToolDecision, String> {
     let backend =
         LlamaBackend::init().map_err(|e| format!("couldn't start the chat engine: {e}"))?;
     let model = LlamaModel::load_from_file(&backend, model_path, &LlamaModelParams::default())
@@ -59,9 +94,9 @@ pub fn decide(model_path: &Path, user_message: &str) -> Result<ToolDecision, Str
         .new_context(&backend, ctx_params)
         .map_err(|e| format!("couldn't start a chat session: {e}"))?;
 
-    let prompt = format_tool_prompt(user_message);
+    let prompt = format_tool_prompt(user_message, style);
     let tokens = model
-        .str_to_token(&prompt, AddBos::Never)
+        .str_to_token(&prompt, add_bos_for(style))
         .map_err(|e| format!("couldn't read the message: {e}"))?;
 
     let mut batch = LlamaBatch::new(512, 1);
@@ -74,9 +109,22 @@ pub fn decide(model_path: &Path, user_message: &str) -> Result<ToolDecision, Str
     ctx.decode(&mut batch)
         .map_err(|e| format!("chat failed: {e}"))?;
 
-    // Plain greedy sampling — deterministic, and crucially NO grammar sampler
-    // (see the module note: the grammar path can `ggml_abort()` the whole app).
-    let mut sampler = LlamaSampler::chain_simple([LlamaSampler::greedy()]);
+    // Real sampling — NOT pure greedy, and crucially NO grammar sampler (see the
+    // module note: the grammar path can `ggml_abort()` the whole app). Greedy
+    // argmax on a tiny q4 model collapses into a repetition loop (observed
+    // 2026-06-26: "uids!!!!!!…"). Worse, the loop never reaches an end-of-turn
+    // token, so generation runs the full budget every time — garbage AND slow. A
+    // repetition penalty breaks the loop and a light temperature keeps replies
+    // natural; the model can then actually stop. Order matters: penalties →
+    // top_k → top_p → temp → dist (final pick). Qwen's recommended settings,
+    // with a slightly firmer repeat penalty because q4 0.5B is loop-prone. [OQ-55]
+    let mut sampler = LlamaSampler::chain_simple([
+        LlamaSampler::penalties(64, 1.1, 0.0, 0.0),
+        LlamaSampler::top_k(40),
+        LlamaSampler::top_p(0.9, 1),
+        LlamaSampler::temp(0.6),
+        LlamaSampler::dist(SEED),
+    ]);
 
     let mut json = String::new();
     let mut n_cur = batch.n_tokens();
@@ -191,5 +239,28 @@ mod tests {
     fn unknown_action_falls_back_to_answer() {
         let d = parse_decision(r#"{"action":"launch_missiles","reply":"no"}"#).unwrap();
         assert_eq!(d.action, "answer");
+    }
+
+    #[test]
+    fn chatml_prompt_frames_the_turn() {
+        let p = format_tool_prompt("hi", PromptStyle::ChatMl);
+        assert!(p.contains("<|im_start|>system"));
+        assert!(p.contains("<|im_start|>user\nhi<|im_end|>"));
+        assert!(p.trim_end().ends_with("<|im_start|>assistant"));
+        // No BOS is written into the string; the tokenizer adds none for ChatML.
+        assert_eq!(add_bos_for(PromptStyle::ChatMl), AddBos::Never);
+    }
+
+    #[test]
+    fn gemma_prompt_uses_turn_markers_not_chatml() {
+        let p = format_tool_prompt("hi", PromptStyle::Gemma);
+        assert!(p.contains("<start_of_turn>user"));
+        assert!(p.contains("hi<end_of_turn>"));
+        assert!(p.trim_end().ends_with("<start_of_turn>model"));
+        // Gemma has no system role, and the BOS is added by the tokenizer — so
+        // neither a ChatML marker nor a literal <bos> should appear in the text.
+        assert!(!p.contains("<|im_start|>"));
+        assert!(!p.contains("<bos>"));
+        assert_eq!(add_bos_for(PromptStyle::Gemma), AddBos::Always);
     }
 }

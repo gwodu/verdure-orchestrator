@@ -4,6 +4,18 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-06-26 — Chat sampler fix (greedy → real sampling)
+
+**Change:** swapped pure-greedy for a penalties→top-k→top-p→temp→dist chain in `llm::decide` to kill the `uids!!!!` repetition loop (and the slowness it caused — the loop never hit EOG, so every reply ran the full token budget).
+
+**Tests (sampler):** no new unit test for sampling itself — quality is a property of the loaded model + sampler at runtime, nothing pure to assert without a GGUF in-process (CI has no model, same constraint as the no-crash behavior below). The existing five `llm.rs` `parse_decision` tests are unaffected and still lock the lenient parser. The sampler chain was checked against the `llama-cpp-2` 0.1.150 `LlamaSampler` API (signatures for `penalties`/`top_k`/`top_p`/`temp`/`dist` confirmed).
+
+**Tests (Gemma 4 E2B wiring — roomy-tier, gated):** the parts that *are* pure got tests:
+- `llm::chatml_prompt_frames_the_turn` / `gemma_prompt_uses_turn_markers_not_chatml` — assert each family's prompt framing (ChatML `<|im_start|>` vs Gemma `<start_of_turn>`, Gemma carries no system role / no literal `<bos>`) and the matching `add_bos_for` convention (`AddBos::Never` vs `Always`). This locks the template formatting so adoption is a flag flip.
+- `model::unverified_gemma_stays_out_of_the_live_pick` — with the `GEMMA4_E2B_VERIFIED` flag false, even 64 GB free does not auto-select Gemma. `model::gemma_carries_the_gemma_prompt_style` — the family travels with the model (Gemma→Gemma, Qwen→ChatMl, Whisper→None). Existing `chat_model_picks_by_available_memory` unaffected (Qwen pair still the live default).
+
+**Could not run `cargo test` on this Mac** — build gated on missing Xcode CLT (`[OQ-61]`); the sampler fix needs on-device confirmation that replies are coherent and stop early, and Gemma needs an on-device load + PLE-offload check before its flag flips.
+
 ### 2026-06-23 — Chat-crash fix (grammar sampler) + live machine-context
 
 **The crash, correctly diagnosed (second pass).** Chat `SIGABRT`-crashed the whole app on the 8 GB Intel Mac. My **first** diagnosis (RAM/available-memory) was **wrong** — based on an *unsymbolicated* crash report + the prior 1.5B OOM history. The **symbolicated** report was unambiguous: `ggml_abort ← llama_grammar_reject_candidates ← llama_grammar_apply_impl ← llama_sampler_sample ← llm::decide`, only 716 MB malloc'd. It's the **GBNF grammar sampler**, not memory. Lesson logged: don't infer an abort cause from raw offsets — symbolicate first.

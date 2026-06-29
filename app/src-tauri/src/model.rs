@@ -12,6 +12,17 @@ use std::process::Command;
 
 use serde::Serialize;
 
+/// How a chat model wants its prompt framed. Families differ in turn markers and
+/// BOS convention; using the wrong one yields garbage output, so it travels with
+/// the model as data (knowledge/03 — model details). Non-chat models carry `None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptStyle {
+    /// Qwen 2.5 etc. — ChatML (`<|im_start|>`…`<|im_end|>`), no leading BOS.
+    ChatMl,
+    /// Gemma — `<start_of_turn>`/`<end_of_turn>`, leading BOS, no system role.
+    Gemma,
+}
+
 /// A downloadable model: what it is, and where to get it.
 pub struct ModelInfo {
     pub id: &'static str,
@@ -31,6 +42,8 @@ pub struct ModelInfo {
     /// Provisional estimates, to be calibrated on-device like the transcription
     /// predictor (knowledge/19). 0 = not gated this way.
     pub runtime_mb: u32,
+    /// Prompt framing for chat models; `None` for non-chat models (e.g. Whisper).
+    pub prompt_style: Option<PromptStyle>,
 }
 
 /// base.en: a good speed/quality balance for English on a CPU. Official
@@ -43,13 +56,15 @@ pub const WHISPER_BASE_EN: ModelInfo = ModelInfo {
     url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
     approx_mb: 142,
     runtime_mb: 600,
+    prompt_style: None,
 };
 
 // Chat models behind the conversational front door (knowledge/18). We pick by
-// RAM (see `chat_model_for`): a 1.5B model needs more memory than an 8 GB machine
-// has alongside the WebView — it OOMs and ggml aborts the process — so low-RAM
-// devices get the 0.5B model. Both are Qwen2.5 Instruct (good tool-calling for
-// their size), grammar-constrained for reliable tool calls. [OQ-55].
+// AVAILABLE RAM (see `chat_model_for_available`): a 1.5B model needs more memory
+// than an 8 GB machine has alongside the WebView — it OOMs and ggml aborts the
+// process — so low-RAM devices get the 0.5B model. The Qwen2.5 Instruct pair are
+// good tool-callers for their size; Gemma 4 E2B (below) is the roomy-tier option,
+// gated until verified. Sampling is plain (no grammar) — see `llm.rs`. [OQ-55].
 
 /// Smaller chat model for memory-constrained machines (≤ 8 GB). ~400 MB.
 pub const QWEN_CHAT_SMALL: ModelInfo = ModelInfo {
@@ -63,6 +78,7 @@ pub const QWEN_CHAT_SMALL: ModelInfo = ModelInfo {
     // Mac this still aborted with only ~2 GB free — so the gate is on AVAILABLE,
     // not total, RAM (knowledge/21).
     runtime_mb: 1100,
+    prompt_style: Some(PromptStyle::ChatMl),
 };
 
 /// Larger chat model for roomier machines. ~1.1 GB download.
@@ -74,7 +90,37 @@ pub const QWEN_CHAT: ModelInfo = ModelInfo {
     url: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
     approx_mb: 1100,
     runtime_mb: 2400,
+    prompt_style: Some(PromptStyle::ChatMl),
 };
+
+/// Roomy-tier chat model: Gemma 4 E2B (Google, 2026-04-02, Apache 2.0). Sparse
+/// activation (Per-Layer Embeddings) → ~2.3B *effective* params, so short-prompt
+/// replies feel close to a 1.5B while carrying more capability — the appeal for the
+/// chat front door (knowledge/03, the speed axis). BUT the Q4_K_M file is ~3.1 GB,
+/// and the advertised <1.5 GB *active* footprint only materialises if the runtime
+/// implements PLE offload — unverified in our pinned llama-cpp-2. So `runtime_mb`
+/// is set to the full resident cost (conservative), and the model is held OUT of
+/// the live pick (see `GEMMA4_E2B_VERIFIED`) until an on-device run confirms it
+/// loads and offloads — loading one that doesn't OOM-aborts the whole app. [OQ-61]
+pub const GEMMA4_E2B: ModelInfo = ModelInfo {
+    id: "gemma-4-e2b-it",
+    name: "Chat model (Gemma 4 E2B)",
+    modality: "Chat",
+    file: "gemma-4-E2B-it-Q4_K_M.gguf",
+    url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf",
+    approx_mb: 3100,
+    // Full resident estimate: ~3.1 GB weights + KV/compute at 2048 ctx + overhead.
+    // Revisit DOWN once PLE offload is confirmed (then it can drop toward ~1.5 GB).
+    runtime_mb: 4000,
+    prompt_style: Some(PromptStyle::Gemma),
+};
+
+/// Whether Gemma 4 E2B has been verified on-device — that our pinned llama.cpp
+/// actually loads it AND does the PLE offload that delivers its advertised active
+/// footprint. Until this is `true`, the picker never auto-selects it, so we never
+/// hand a user a model that might fail to load and OOM-abort the app. Flip to
+/// `true` only after an on-device run confirms both ([OQ-61]).
+const GEMMA4_E2B_VERIFIED: bool = false;
 
 /// Pick the largest chat model that fits the AVAILABLE memory right now, leaving
 /// headroom for the WebView + OS. Returns `None` when nothing fits — the caller
@@ -82,14 +128,24 @@ pub const QWEN_CHAT: ModelInfo = ModelInfo {
 /// (knowledge/21). Keying on *available* (not total) RAM is the fix for the 8 GB
 /// chat crash: a 0.5B model "fits" 8 GB total but not ~1 GB free.
 pub fn chat_model_for_available(available_mb: u64) -> Option<&'static ModelInfo> {
-    // Largest first, so a roomy machine still gets the better model.
-    [&QWEN_CHAT, &QWEN_CHAT_SMALL]
-        .into_iter()
+    // Most capable first, so a roomy machine gets the better model. Gemma 4 E2B
+    // leads the list ONLY once verified on-device ([OQ-61]); until then it stays
+    // out so we never auto-select a model that might OOM-abort the app.
+    let candidates: &[&ModelInfo] = if GEMMA4_E2B_VERIFIED {
+        &[&GEMMA4_E2B, &QWEN_CHAT, &QWEN_CHAT_SMALL]
+    } else {
+        &[&QWEN_CHAT, &QWEN_CHAT_SMALL]
+    };
+    candidates
+        .iter()
+        .copied()
         .find(|m| (m.runtime_mb as u64) <= available_mb)
 }
 
-/// Every model Verdure can download today.
-pub const MODELS: &[ModelInfo] = &[WHISPER_BASE_EN, QWEN_CHAT_SMALL, QWEN_CHAT];
+/// Every model Verdure can download today. Gemma 4 E2B is listed so the Storage
+/// screen can show + manage it uniformly, but the chat picker won't auto-select it
+/// until it's verified (see `chat_model_for_available`).
+pub const MODELS: &[ModelInfo] = &[WHISPER_BASE_EN, QWEN_CHAT_SMALL, QWEN_CHAT, GEMMA4_E2B];
 
 /// Look up a model by id.
 pub fn find(id: &str) -> Option<&'static ModelInfo> {
@@ -246,5 +302,24 @@ mod tests {
         );
         // Almost nothing free → decline rather than OOM-abort the app.
         assert!(chat_model_for_available(500).is_none());
+    }
+
+    #[test]
+    fn unverified_gemma_stays_out_of_the_live_pick() {
+        // Even with abundant memory, the gate keeps Gemma 4 E2B out of the live
+        // pick until it's verified on-device ([OQ-61]) — never auto-select a model
+        // that might fail to load and OOM-abort the app.
+        if !GEMMA4_E2B_VERIFIED {
+            let pick = chat_model_for_available(64_000).unwrap();
+            assert_ne!(pick.id, GEMMA4_E2B.id);
+        }
+    }
+
+    #[test]
+    fn gemma_carries_the_gemma_prompt_style() {
+        // The template family travels with the model so inference frames it right.
+        assert_eq!(GEMMA4_E2B.prompt_style, Some(PromptStyle::Gemma));
+        assert_eq!(QWEN_CHAT.prompt_style, Some(PromptStyle::ChatMl));
+        assert_eq!(WHISPER_BASE_EN.prompt_style, None);
     }
 }

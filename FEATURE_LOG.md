@@ -6,6 +6,24 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-06-26 — Chat: real sampling (fixes the `uids!!!!` garbage + slowness)
+
+**What:** Replaced the pure-greedy sampler in `llm::decide` with a proper chain — repetition penalty → top-k → top-p → light temperature → distribution pick (`penalties(64, 1.1, 0, 0)`, `top_k(40)`, `top_p(0.9)`, `temp(0.6)`, fixed seed). Lowered `MAX_NEW_TOKENS` 512 → 256.
+
+**Problem it solves (observed 2026-06-26):** with greedy argmax, the q4 0.5B chat model collapsed into a repetition loop — every reply was `uids!!!!!!!!!!!…`. Greedy is deterministic argmax with no penalty, so once a tiny quantized model (pushed off-distribution by the JSON-forcing system prompt) latches onto a token it repeats it forever. Worse, the loop **never reaches an end-of-turn token**, so generation ran the full 512-token budget every message — which is *also* why it was slow. One cause, both symptoms. A repetition penalty breaks the loop; a light temperature keeps replies natural; the model can then actually stop (EOG fires early). This stays within the no-grammar constraint from the crash fix below — plain sampling, lenient parse, UI cross-check unchanged.
+
+**Not the whole speed story:** `llm::decide` still reloads the model from disk every message (~0.4–1 GB) — `[OQ-59]` (resident model in Tauri state) is the rest of the latency fix.
+
+**Verification:** could not compile on this Mac (build gated on Xcode CLT — see `[OQ-61]`/handoff); the existing `parse_decision` tests are unaffected and the sampler API was checked against `llama-cpp-2` 0.1.150 docs. On-device run still pending.
+
+### 2026-06-26 — Model picking now weighs *active* compute, not just total params (`knowledge/03`)
+
+**What:** Added an "Active parameters, not just total: the speed axis" section to `03-model-matrix.md` and a Gemma 4 E2B model entry. The matrix keyed only on total params (= footprint); this captures that **generation speed tracks the params activated per token**, which sparse-activation models (MoE; Gemma 4's Per-Layer Embeddings) keep far below their stored size. Net rule: *total params → does it fit; active params → does it feel fast.*
+
+**Why (user request):** evaluating Gemma 4 E2B for the chat front door because sparse activation should give snappy short-prompt replies. Research surfaced the catch worth recording: E2B is ~2.3B *effective* but a **~3.1 GB** Q4_K_M file — the <1.5 GB active footprint needs runtime PLE offload (unverified in our pinned `llama-cpp-2`), and it uses Gemma's chat template, not ChatML. So it's a *roomy-tier* pick, **not** a floor replacement for the 0.5B. Tracked for adoption as `[OQ-61]`.
+
+**Code wiring (decision: "add as roomy-tier, verify first"):** registered `GEMMA4_E2B` in `model.rs` (in `MODELS` so Storage manages it uniformly), but held OUT of the live pick behind a `GEMMA4_E2B_VERIFIED` flag (currently `false`) so the picker never auto-selects an unverified model that could OOM-abort the app. Added a `PromptStyle` (ChatMl | Gemma) that travels with each model; `llm::decide` + `format_tool_prompt` now branch on it (Gemma uses `<start_of_turn>`/`<end_of_turn>` + a tokenizer-added BOS, no system role). The template formatting is **the part testable without a model**, so it's unit-tested now; flipping the model on after on-device verification is then a one-line change. The current shipping default is unchanged (the Qwen pair).
+
 ### 2026-06-23 — The real chat-crash fix: remove the GBNF grammar sampler
 
 **What:** Removed the grammar-constrained sampler from `llm::decide`. The model now samples plainly (greedy) and `parse_decision` is **lenient** — it extracts the first `{...}` JSON object if present, otherwise treats the whole output as a plain answer. Tool routing does not depend on perfect JSON: the UI's deterministic `classifyIntent` cross-check is the real router.

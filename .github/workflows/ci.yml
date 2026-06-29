@@ -13,10 +13,12 @@ on:
 #
 #   - changes:     detect which areas changed (cheap, always runs)
 #   - decider-web: the shared decider + the website (Linux)
-#   - porter:      the MVP desktop porter on a macOS runner — compiles the Rust
-#                  backend, runs cargo test, and runs the real
-#                  `brew install --cask buzz` recipe. Gated so macOS minutes are
-#                  spent only when app/ or the decider change.
+#   - porter:      the MVP desktop app on a macOS runner — builds the frontend,
+#                  compiles the Tauri Rust backend (cargo test), cross-checks the
+#                  x86_64 (Intel) build, and verifies the model-download URLs
+#                  resolve. Gated so macOS minutes are spent only when app/ or the
+#                  decider change. (Pre-pivot this also ran `brew install --cask
+#                  buzz`; the app now runs models in-app, so that step is gone.)
 #
 # The long-term Rust core (src/) is a scaffold with a malformed manifest and
 # intentionally has NO job yet; it gets one when it becomes real
@@ -117,7 +119,8 @@ jobs:
           for url in \
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin" \
             "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf" \
-            "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"; do
+            "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf" \
+            "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf"; do
             echo "checking $url"
             curl -fsSL -I "$url" >/dev/null
           done
