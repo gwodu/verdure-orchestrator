@@ -1,6 +1,8 @@
 # 01 — Thesis
 
-**Status:** ✅ Settled
+**Status:** 🟡 Partially superseded — mission settled, *delivery model* reversed by the 2026-06-18 pivot (`18`). Read through that lens (`[OQ-52]`).
+
+> **Read this file through the pivot.** The mission and most of the analysis below still hold: the **intent-first decider** ("what are you trying to do?" not "browse a model library"), **honest feasibility** (decline when not local-capable), the **demand findings** (`13`), the **RAM-crisis** market case, the **Apple-Silicon-as-beachhead** validation, and **neutrality / mission-over-moat** (`16`). What the **2026-06-18 pivot (`18`) reversed** is the *delivery model*: Verdure no longer installs and launches **separate third-party apps** ("ports existing tools") — it is **one interface that drives headless model engines directly** (whisper.cpp, llama.cpp) inside a single Verdure surface. The doctrine is narrowed, not dropped: **never build a model or engine, but *do* build the one unified surface.** Then the **personal-AI north star (`20`)** reframed even the framing — Verdure is the user's *personal AI*, capabilities are *tools a model invokes*. So below: the "**porter**" naming, the **seven sequential decisions**, the **three-phase** plan, and the **Tool-layer / port-AnythingLLM** mechanism are **legacy** — superseded by `18`/`20`. Current state and what carries over: `21-handoff.md`.
 
 ## What Verdure is
 

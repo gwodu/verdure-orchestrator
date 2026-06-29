@@ -1,6 +1,8 @@
 # 15 — The Port Catalog (the local-tool database)
 
-**Status:** 🟡 Provisional — seed catalog, researched 2026-06-15. Licenses and platform support change fast; re-verify any single entry before relying on it.
+**Status:** 🟡 Largely superseded by the 2026-06-18 pivot (`18`) — read through that lens (`[OQ-52]`).
+
+> **Read through the pivot.** This file is the supply side of the *old* delivery model: a catalog of **separate third-party apps to install**. The 2026-06-18 pivot (`18`) **demoted standalone-app porting** in favor of running models **in-app** (whisper.cpp, llama.cpp inside the Verdure shell), so this catalog no longer describes the primary path. What **survives**: the research method (curate free, locally-runnable, well-licensed OSS), the licensing gate (`09`), and the "seed supply from the OSS ecosystem" growth idea. The install-and-launch-external-apps mechanism is **legacy** — kept only as a transitional fallback for capabilities not yet wrapped in-app (the porter code, `app/src-tauri/catalog.rs`/`porter.rs`).
 
 This is the **supply side of the porter**: the curated registry of free, open-source, *locally-runnable* AI tools Verdure can **port** (install + configure) onto a user's device. It pairs with `13-use-case-demand.md` (what people want), is gated by `02`/`03`/`12` (what the device can run) and `09` (licensing), and is the "what we can actually deliver" half of *the decider that finishes the job* (`01`, `14`).
 

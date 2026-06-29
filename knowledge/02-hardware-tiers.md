@@ -43,7 +43,7 @@ The card → tier mapping (cards are the user-facing layer; RAM/graphics stay in
 | "An older or basic computer" | L1 | ~4 GB | the floor |
 | "I'm not sure" | L2-low (safe default) | 6–8 GB | confirmed/adjustable on the next screen |
 
-The "quietly signals" column is the key Phase-0 win: the cards capture the graphics signal the multimodal engine needs (see `12-multimodal-models.md`) **without ever asking the user a technical question.** Implemented in `website/lib/tiers.ts` (`DEVICE_CARDS`). Distinguishing graphics-memory *amount* for the heaviest tasks remains `[OQ-29]`.
+The "quietly signals" column is the key Phase-0 win: the cards capture the graphics signal the multimodal engine needs (see `12-multimodal-models.md`) **without ever asking the user a technical question.** Implemented in `packages/decider/src/tiers.ts` (`DEVICE_CARDS`). Distinguishing graphics-memory *amount* for the heaviest tasks remains `[OQ-29]`.
 
 ## Open questions
 

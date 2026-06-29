@@ -1,18 +1,22 @@
 # 17 — Build Plan: the MVP and the road from here
 
-**Status:** 🟡 Provisional — the current build target. **New session here to build? Start with this file.**
+**Status:** 🟡 Superseded as the primary plan by the 2026-06-18 pivot (`18`). **New session here to build? Start at `21-handoff.md`, then `18`** — not this file.
+
+> **Read through the pivot.** This was the pre-pivot build plan: a launcher that **installs separate apps** (first port = Buzz). The 2026-06-18 pivot (`18`) replaced that with **one interface that runs models in-app** (transcription on whisper.cpp, chat on llama.cpp, *inside* the Verdure shell — no separate app to install). What **carries over** and is still accurate here: the Tauri app shape (Rust backend + web UI), the shared decider (`@verdure/decider`), CI, the Intel-Mac portability constraint, and the install machinery (now a transitional fallback). What's **legacy**: "porter / ports existing tools," installing standalone apps as the delivery model, and Buzz-as-an-app. The framings below are pre-pivot.
 
 This states, in one place, **what we build first (the MVP), where it lives, and what it becomes** — so a fresh session can continue the build. It reconciles the architecture (`14`), the tool catalog (`15`), and the mission (`01`, `16`).
 
 ## What Verdure is (one line)
 The user's **local AI conductor**: a neutral *decider* + *porter* that recommends the right local tools, installs/sets them up, and (later) connects them — all on the user's own device, owned by them. **Agency, not extraction.** Verdure ports existing tools; it never builds its own. Mission over moat; **no data harvesting**.
+*(Pre-pivot framing. Current one-line definition, from `18`/`KNOWLEDGE.md`: **one simple interface that runs the right local model** for whatever the user wants, on their own device, owned by them.)*
 
 ## The atomic unit
 **One OSS tool installed & running, from the user's intent, in one click** (Verdure's "ride"). The MVP proves exactly this, for one use case. Verdure is a **utility that empowers users** — that's the goal, not a stepping stone to a data/network moat.
+*(Pre-pivot. Redefined by `18`: the atomic unit is now **one everyday task done with a local model, in one place** — no separate tool to install.)*
 
 ## The MVP (v1.0) — what we build now
 A small **Tauri desktop app** (Rust backend + web UI) that:
-1. **Asks intent** — reuses the existing **intent cards + decider** from `website/lib` (cards in `website/lib/modality.ts`; the decision in `website/lib/matrix.ts` → `decide()`). The hard part — the decider — is already built and tested.
+1. **Asks intent** — reuses the existing **intent cards + decider** from `website/lib` (cards in `packages/decider/src/modality.ts`; the decision in `packages/decider/src/matrix.ts` → `decide()`). The hard part — the decider — is already built and tested.
 2. **Decides** the right **OSS tool** for the use case + device (the catalog, `15`).
 3. **Ports it in one click** — the Rust backend installs the tool (and a portable engine if needed) from the tool's official source, configures it, and launches it.
 4. **It runs locally** — private, free, on the user's machine.
@@ -53,11 +57,11 @@ A small **Tauri desktop app** (Rust backend + web UI) that:
 - **Port, don't build.** Never author/brand a tool or build an I/O surface a tool lacks. If Verdure is writing application/UI logic, stop — port a tool or push a config.
 - **Mission over moat. No data harvesting.** Agency, privacy, user benefit first (`06`, `16`).
 - **Assume zero technical knowledge** (`skills/design.md`); plain, verb-first copy (`skills/copywriting.md`).
-- **Tests ship with the feature** (`skills/testing.md`). The decider already has the cross-impl contract (`website/lib/matrix.test.ts`).
+- **Tests ship with the feature** (`skills/testing.md`). The decider already has the cross-impl contract (`packages/decider/src/matrix.test.ts`).
 - **No abstraction without a second implementation** (`14`).
 
 ## Where to start (new session)
-Read `KNOWLEDGE.md` → `CLAUDE.md` → `01-thesis.md` → `14-architecture.md` (Tool layer + composition) → `15-port-catalog.md` → `16-growth-asset.md` → **this file**. Then scaffold `app/` and build the Buzz slice.
+*(Superseded routing — pre-pivot. The current pickup order is `KNOWLEDGE.md` → `CLAUDE.md` → `21-handoff.md` → `18` → `20`.)* ~~Read `KNOWLEDGE.md` → `CLAUDE.md` → `01-thesis.md` → `14-architecture.md` (Tool layer + composition) → `15-port-catalog.md` → `16-growth-asset.md` → this file. Then scaffold `app/` and build the Buzz slice.~~
 
 ## Small known follow-ups (not blockers)
 - `02`/`03` still present Apple-Silicon zero-download prominently — remember the founder's Mac is Intel, so that path is deferred behind the Apple `Backend` adapter.

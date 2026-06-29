@@ -1,6 +1,8 @@
 # 14 — Architecture
 
-**Status:** 🟡 Provisional (the seams and layering are settled; specific trait signatures will firm up as v1 code lands)
+**Status:** 🟡 Provisional, and predates the 2026-06-18 pivot (`18`) — read through that lens (`[OQ-52]`).
+
+> **Read through the pivot.** The *structural principles* here still hold and still guide the code: a **pure core + replaceable adapters at explicit seams**, no abstraction without a present caller, the Phase-0↔1 single-source-of-truth boundary (now realized as `@verdure/decider`). What's **legacy**: the **"Tool layer"** and **composition layer** describe the pre-pivot model of installing and launching **separate third-party tools**; the pivot (`18`) replaced that with **driving headless model engines in-app**. Treat the seam/layering doctrine as live; treat "Tool layer = configure-and-launch external apps" as superseded. Note also: the MVP (`app/src-tauri`) is intentionally a single flat Tauri crate, *not yet* the multi-crate hexagon described below — the porter grows toward this core later (see `CLAUDE.md`, "Repository layout").
 
 This file answers: **how is Verdure structured so that any single part can be replaced without disturbing the rest?**
 
@@ -89,7 +91,7 @@ The website (Phase 0) and the binary (Phase 1) are not two products — they are
 The website and binary overlap *only* on the decision — and even there the binary can have **better inputs** (probe vs. the coarse device cards), so it may land on a finer tier. That is not drift; it is the binary legitimately being more precise. The decision *function* is shared; the *inputs* differ by surface.
 
 **The sync mechanism (decided; implementation phased).** The knowledge base (`02`/`03`/`12`/`13`) is the human-authored source of truth. Neither implementation is canonical. To keep the two from drifting:
-- **The matching matrix is a single data artifact + shared conformance fixtures.** Today it lives in `website/lib/matrix.ts` (`decide()` — pure data, no copy) with the canonical `(device, intent) → decision` fixtures in `website/lib/matrix.test.ts`. The Rust `ModelMatcher` must reproduce those fixtures exactly; if the two ever disagree on a fixture, CI screams.
+- **The matching matrix is a single data artifact + shared conformance fixtures.** Today it lives in `packages/decider/src/matrix.ts` (`decide()` — pure data, no copy) with the canonical `(device, intent) → decision` fixtures in `packages/decider/src/matrix.test.ts`. The Rust `ModelMatcher` must reproduce those fixtures exactly; if the two ever disagree on a fixture, CI screams.
 - **Near-term (done):** the matrix is already extracted from presentation in the website, so it is one declarative module + fixtures rather than logic tangled into the recommendation copy.
 - **Deferred (gated on the binary existing):** promoting the matrix to a *language-neutral* shared file both surfaces load. Per the counter-discipline above, that cross-language artifact earns its keep only when the second consumer (the Rust core) is real — until then there is one consumer and nothing to drift against. What *is* genuinely open is the data/logic line (the lookups are data; intent classification and feasibility gating are partly logic that the fixtures, not the data file, must pin) and the format.
 

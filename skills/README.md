@@ -13,8 +13,11 @@ Before starting any task, identify which skills apply and load them. A typical t
 - `documentation.md` — knowledge maintenance: open questions, feature logs, cross-references
 - `research.md` — honest inquiry: filling gaps without inventing content
 - `copywriting.md` — user-facing text: conversion through trust, awareness stages, honest specificity
+- `inspection.md` — auditing the project against its own principles: the four modes, the truck-driver test, drift
 
 ## Quick routing
+
+This table is the canonical routing. `../CLAUDE.md`'s Skills section summarizes it for the always-loaded context; when they differ, this table wins — keep them in sync.
 
 - Writing or editing Rust code → `architecture` + `testing` + (`refactoring` if touching existing code)
 - Writing or editing UI → `design` + `testing`
@@ -22,3 +25,4 @@ Before starting any task, identify which skills apply and load them. A typical t
 - Updating knowledge files → `documentation`
 - Investigating an open question → `research` + `documentation`
 - Code review / cleanup pass → `refactoring` + `testing`
+- Auditing architecture/principles, or pre-redesign alignment check → `inspection`

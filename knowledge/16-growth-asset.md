@@ -1,6 +1,8 @@
 # 16 — Growth Strategy: the ASSET Framework
 
-**Status:** 🟡 Provisional — adopted 2026-06-16 as the growth / network-effect roadmap.
+**Status:** 🟡 Provisional — growth lens, mostly intact post-pivot; one definition updated by `18` (`[OQ-52]`).
+
+> **Read through the pivot.** The growth *strategy* here survives the 2026-06-18 pivot (`18`): seed supply from the OSS ecosystem, **reject the data/network-effect moat as off-mission**, mission over moat. The one thing the pivot **redefined** is the **atomic unit**: this file calls it "one OSS tool installed & running"; `18` redefines it as **one everyday task done with a local model, in one place** (no separate tool to install). Read the atomic-unit passages below as that updated definition.
 
 This file uses the **ASSET framework** by Eva Lau (Two Small Fish Ventures; *"network effect = assets"*) as a **lens** for growth — and is explicit about where Verdure **deliberately diverges**, because Verdure optimizes for **user agency and benefit, not a defensible data/network moat**. We adopt A and the two S's; we reject the network-effect/data-harvesting end (E and especially T) as off-mission. Pairs with `13-use-case-demand.md` (demand) and `15-port-catalog.md` (supply).
 

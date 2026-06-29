@@ -26,14 +26,14 @@ The exact text Verdure produces for "8 GB MacBook + creative writing" is a revie
 
 ## FFI testing — non-negotiable rules
 
-Verdure's `infrastructure/` crate calls into C++ via `llama-cpp-2`. This is where memory safety bugs come from. Rust's compiler cannot help across the FFI boundary.
+The MVP app (`app/src-tauri`) calls into C++ via `whisper-rs` (whisper.cpp) and `llama-cpp-2` (llama.cpp). This is where memory safety bugs come from. Rust's compiler cannot help across the FFI boundary, and — observed on-device — a fault in this C++ doesn't return an error, it calls `ggml_abort()`/`SIGABRT` and takes the **whole app** down.
 
 The rules:
 
-1. **All `unsafe` is wrapped.** Every FFI call sits inside a safe Rust abstraction that validates inputs, owns memory, and converts C error codes to `Result`. Tests run against the safe wrapper, not the raw FFI.
-2. **Use binding generators.** Don't hand-write `extern "C"` blocks when `bindgen` or `cxx` exists. CXX in particular is designed to make whole categories of FFI bugs impossible by controlling both sides of the boundary.
-3. **Sanitizers in CI.** AddressSanitizer and MemorySanitizer must run against FFI integration tests in the CI pipeline. Shipping FFI code without sanitizer coverage is the single highest-risk omission Verdure could make. Memory corruption from llama.cpp will be silent until it isn't.
-4. **Document ownership at every FFI boundary.** Who allocates? Who frees? When? Every `unsafe` block needs a comment answering these.
+1. **Reach C++ only through audited wrapper crates.** We do not hand-write `extern "C"` or raw `unsafe` FFI; `whisper-rs` and `llama-cpp-2` own the boundary (validate inputs, own memory, convert errors to `Result`). Tests run against the safe wrapper, not the raw FFI. If you ever must hand-write FFI, wrap it the same way and use a binding generator (`bindgen`/`cxx`).
+2. **Process isolation is the real crash boundary.** Because a C++ abort is uncatchable in-process, the durable safety mechanism is running inference in a **separate process** so a model fault surfaces as an error, not a dead UI. This is the top robustness P0 (`knowledge/21`, `[OQ-58]`) — until it lands, we mitigate by gating model loads on *available* RAM and validating model files (`model.rs`), and by not using crash-prone paths (e.g. the GBNF grammar sampler was removed for exactly this reason).
+3. **Sanitizers in CI — currently a GAP, tracked honestly.** AddressSanitizer/MemorySanitizer against FFI integration tests would be the strongest net, but CI runs none today (`ci.yml`), and we link real C++. Don't claim a safety net we don't have: the gap and the decision (add a sanitizer job vs. lean on wrapper-crates + process isolation) are tracked as `[OQ-63]`. If you add hand-written `unsafe`, a sanitizer job stops being optional.
+4. **Document ownership at every FFI boundary.** Who allocates? Who frees? When? Every `unsafe` block (and every assumption about what the wrapper crate owns) needs a comment answering these.
 
 ## Coverage — chase critical paths, not numbers
 
@@ -65,9 +65,17 @@ A skipped test rots faster than no test at all, because it creates the illusion 
 
 Tests and the build run on every push and every pull request. CI is the firebreak that catches the failure mode "I forgot to run tests before pushing" — exactly the mode the discipline above is designed to prevent and that CI enforces structurally.
 
-Verdure is a monorepo (the Rust binary at the root, the Phase 0 website under `website/`), so CI lives in one `.github/workflows/` with **path-filtered** jobs: a Rust job (`cargo test`) that runs when `src/`/`tests/`/`Cargo.toml` change, and a website job (`npm test` + `npm run build`) that runs when `website/` changes. Never merge red. When CI fails, the fix lives in the same change.
+Verdure is a monorepo over one brain (the shared decider, `packages/decider`), so CI lives in one `.github/workflows/ci.yml` with **path-filtered** jobs — each runs only when it or a dependency changes:
 
-When you add a new component, add its CI job in the same change that adds the component. A component without CI is unprotected — see `[OQ-27]` for active gaps.
+- **Decider + website** (Linux): the decider tests (the single source of truth), the website tests, and the website production build. Triggers on `packages/decider/**` or `website/**`.
+- **Desktop porter** (macOS runner): the MVP. **This is where the app gets compiled.** It runs the frontend typecheck+build, then `cargo test` (which compiles the Tauri Rust backend), then `cargo check --target x86_64-apple-darwin` to cross-compile for the founder's Intel Mac (the pivot's main C++/whisper risk), then a check that every model-download URL in `model.rs` still resolves. Triggers on `app/**` or `packages/decider/**`.
+- The long-term Rust core (`src/`/`tests/`) has **no job yet** — it's a scaffold with a malformed manifest; it gets one when it becomes real.
+
+Never merge red. When CI fails, the fix lives in the same change.
+
+**CI is the porter's compiler.** The Tauri backend needs the macOS toolchain (Xcode Command Line Tools) to build, so a dev machine without them can't `cargo build`/`cargo test` the porter locally — that's expected, not a blocker. Pushing a branch runs the macOS job, which compiles `app/src-tauri` and runs the tests for you. For porter changes the loop is therefore **push to compile-check**; write the pure logic (parsers, prompt formatting, model gating) to be unit-testable so it's actually exercised there. Don't report "can't build locally" as "unverifiable" — it's verified in CI on push.
+
+When you add a new component, add its CI job in the same change that adds the component. A component without CI is unprotected. The known remaining CI gaps are the FFI sanitizer net (`[OQ-63]`) and a job for the long-term `src/` core once it's real. When you add a downloaded model to `model.rs`, add its URL to the porter job's resolve check in the same change (so a rotted release URL fails in CI, not on a user's machine).
 
 ## Self-check before declaring a feature done
 
@@ -77,4 +85,4 @@ When you add a new component, add its CI job in the same change that adds the co
 - If this is UI: has Claude actually looked at the screenshot?
 - If a future Claude refactors the internals, will these tests still pass?
 - Has `TEST_REPORT.md` been updated with what was tested and any edge cases caught?
-- Is CI green on the PR? (If the repo has no CI yet, see `[OQ-27]`.)
+- Is CI green on the PR? (For porter/Rust changes, "green" means pushed — CI is the porter's compiler; see "Continuous integration" above.)

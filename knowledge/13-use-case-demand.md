@@ -2,7 +2,7 @@
 
 **Status:** 🟡 Provisional (grounded in 2024–2026 secondary research, 2026-06-01; no rigorous survey of *local-AI* users by use case exists publicly — treat rankings as directional, not statistical).
 
-This file is the **demand side** of the matching brain. The other legs answer supply: `02-hardware-tiers.md` (device → tier) and `03-model-matrix.md` + `12-multimodal-models.md` (tier → model). This file answers the question those can't: **what do people actually want to do?** — so the intent layer (the Screen 1 cards in `05-website-spec.md`, the `(modality, task)` taxonomy in `website/lib/modality.ts`) is planned from real demand, not guessed from the model catalog. Resolves the moat gap flagged in `01-thesis.md` and `[OQ-33]`.
+This file is the **demand side** of the matching brain. The other legs answer supply: `02-hardware-tiers.md` (device → tier) and `03-model-matrix.md` + `12-multimodal-models.md` (tier → model). This file answers the question those can't: **what do people actually want to do?** — so the intent layer (the Screen 1 cards in `05-website-spec.md`, the `(modality, task)` taxonomy in `packages/decider/src/modality.ts`) is planned from real demand, not guessed from the model catalog. Resolves the moat gap flagged in `01-thesis.md` and `[OQ-33]`.
 
 ## The one insight that matters
 
@@ -36,11 +36,11 @@ Ranked by relevance to a *local-AI* audience (a blend of overall prevalence and 
 | Music generation | `audio/music` | Growing (cloud-led: Suno) | weak locally | ➖ via free-text |
 | Video generation | `video/generate` | **Lowest** adoption; most hype | not local-feasible on our tiers | ❌ free-text → honest decline |
 
-**Long tail → free text.** Screen 1 keeps a "describe it in your own words" fallback so the unsurfaced tasks (edit/upscale, TTS, music, separation, video, RAG, automation) still route through the classifier (`website/lib/intent.ts`) to the right `(modality, task)` — including the honest "not-local-yet" verdicts.
+**Long tail → free text.** Screen 1 keeps a "describe it in your own words" fallback so the unsurfaced tasks (edit/upscale, TTS, music, separation, video, RAG, automation) still route through the classifier (`packages/decider/src/intent.ts`) to the right `(modality, task)` — including the honest "not-local-yet" verdicts.
 
 ## The Screen 1 intent cards (the actionable output → `[OQ-32]`)
 
-Six cards, ordered to lead with the universal/high-demand and the strongest local-native cases, mirroring the device cards' recognition-first pattern. Each maps to a distinct `(modality, task)` and ships in `website/lib/modality.ts` as `INTENT_CARDS`:
+Six cards, ordered to lead with the universal/high-demand and the strongest local-native cases, mirroring the device cards' recognition-first pattern. Each maps to a distinct `(modality, task)` and ships in `packages/decider/src/modality.ts` as `INTENT_CARDS`:
 
 1. **Everyday questions & chat** → `text/general`
 2. **Writing & ideas** → `text/creative`

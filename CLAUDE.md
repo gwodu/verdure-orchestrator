@@ -22,11 +22,18 @@ Verdure is a single private monorepo — surfaces over one brain:
 
 Knowledge and design decisions live once, in `knowledge/` and `skills/`, and inform both surfaces. When you change recommendation logic, the knowledge file is the source of truth and the code in `packages/decider/` follows it — never the reverse. Both surfaces import that package, so the change reaches them together.
 
+## Operational ground truth
+
+Read these first — they are the facts that, when missed, lead to wrong moves:
+
+- **CI is how the porter compiles.** The Tauri backend (`app/src-tauri/`) needs the macOS toolchain (Xcode CLT) to build. If your environment lacks it — as the founder's Mac currently does — you **can't `cargo build`/`cargo test` the porter locally, and that's expected, not a blocker.** The `porter` job in `.github/workflows/ci.yml` compiles it (and cross-compiles for Intel, and checks model URLs) on every push touching `app/`. So **verify porter changes by pushing the branch; never report Rust changes as "unverifiable."** Keep the pure logic (parsers, prompt formatting, model gating) unit-testable so CI exercises it. Detail: `skills/testing.md`.
+- **Read everything through the pivot.** Verdure pivoted 2026-06-18 (`knowledge/18`) from a launcher-of-apps to **one interface over local model engines**, then to the **personal-AI** north star (`knowledge/20`). Files `01`/`14`–`17` predate it — read them through `18`'s lens. The "porter" naming in code/docs is legacy.
+- **`@verdure/decider` is the single source of truth** for recommendation logic; `knowledge/` is the *why* behind it. Change the knowledge file first, then the code follows — never the reverse.
+- **Start a build session at `knowledge/21-handoff.md`** — current working state, architecture debt, and prioritized next steps.
+
 ## How you work
 
-Before starting any task, read `KNOWLEDGE.md` to orient yourself, then load only the knowledge files relevant to the task. Do not assume context from files you have not explicitly read in this session.
-
-The `skills/` folder holds the procedural counterpart to the knowledge base — *how* to do recurring kinds of work. Treat the applicable skill as required reading, not optional reference: a skill no one loads is an orphaned file, exactly the failure mode the knowledge index exists to prevent. See the Skills section below for which skill maps to which task.
+Before editing anything, orient yourself in this order: (1) read `KNOWLEDGE.md` and load the knowledge files relevant to the task; (2) load the skill(s) the task routes to (see Skills below) — treat them as required reading you load *before acting*, not optional reference. A skill no one loads is an orphaned file, exactly the failure mode the index exists to prevent. Do not assume context from files you have not explicitly read in this session.
 
 Cross-reference your reasoning against the propositional knowledge base. When you make a decision that contradicts what is documented, flag it explicitly and update the knowledge base — never silently diverge.
 
@@ -44,12 +51,13 @@ Routing:
 
 - Writing or editing Rust code → `skills/architecture.md` + `skills/testing.md` + (`skills/refactoring.md` if touching existing code)
 - Writing or editing UI → `skills/design.md` + `skills/testing.md`
-- Writing any user-facing text (website copy, app text, emails) → `skills/copywriting.md` + `skills/design.md`
+- Writing any user-facing text (website copy, app text, emails, error messages) → `skills/copywriting.md` + `skills/design.md`
 - Updating knowledge files → `skills/documentation.md`
 - Investigating an open question → `skills/research.md` + `skills/documentation.md`
 - Code review / cleanup pass → `skills/refactoring.md` + `skills/testing.md`
+- Auditing architecture/principles, or a pre-redesign alignment check → `skills/inspection.md`
 
-Read `skills/README.md` for the index. Skills work in concert with the propositional knowledge base in `knowledge/`; check the relevant knowledge files for the *what*, and the skill files for the *how*.
+`skills/README.md` holds the canonical routing table and the index; the rows above mirror it for always-loaded context. Skills work in concert with the propositional knowledge base in `knowledge/`; check the relevant knowledge files for the *what*, and the skill files for the *how*.
 
 ## What you do not do
 
