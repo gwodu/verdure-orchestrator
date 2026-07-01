@@ -59,6 +59,15 @@ Every change that touches code updates `TEST_REPORT.md`:
 
 This is the participatory layer in the four-ways-of-knowing structure. Without it, the testing skill becomes ritual without memory.
 
+## Living state: history vs. handoff
+
+Two docs track "where the project is," and they must not overlap — overlap is the only way they drift. Each owns one role:
+
+- **`KNOWLEDGE.md` changelog** = append-only **history**: dated events, "what happened when." Never edited retroactively.
+- **`knowledge/21-handoff.md`** = current **state + next steps**: "where are we now / what to do next." Overwritten as the build moves; it does *not* narrate chronology — it links back to the changelog for how we got here.
+
+When you finish a unit of work, do both: append one dated line to the changelog (history), and refresh the handoff's state + next-steps (current). If you catch yourself writing chronology into the handoff, that belongs in the changelog with a pointer instead.
+
 ## Conventions across all files
 
 - Plain prose. Tables only where they meaningfully aid scanning (the model matrix, the license audit). Avoid bullets where prose reads better.

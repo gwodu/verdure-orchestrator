@@ -4,6 +4,21 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-07-01 — ByteShape Qwen3 4B base chat model (`model.rs`)
+
+**Change:** added `BYTESHAPE_QWEN3_4B` to the registry and made it the top candidate in `chat_model_for_available` (behind `USE_BYTESHAPE_QWEN3_4B`), Qwen pair as fallback; refactored the picker to a flag-built list.
+
+**Tests (pure logic — three new + one updated):**
+- `byteshape_4b_is_the_base_when_it_fits_and_falls_back_when_it_does_not` — at exactly the 4B's `runtime_mb` it's the pick; at one MB under (still ≥ the 1.5B footprint) the picker falls back to Qwen 1.5B, never a model that wouldn't fit. Guards the core invariant: **never auto-select a model larger than available RAM** (loading one OOM-aborts the app). The test asserts the 4B > 1.5B footprint assumption so it can't silently rot.
+- `byteshape_4b_carries_the_chatml_prompt_style` — the model carries `PromptStyle::ChatMl` (Qwen3 = ChatML, so no new framing) and `find()` resolves its id to the Chat modality.
+- `chat_model_picks_by_available_memory` (updated) — the roomy-machine pick is now the 4B when enabled (was Qwen 1.5B); the tight-machine (1500 MB → 0.5B) and near-empty (500 MB → decline) cases are unchanged, so the RAM-gate floor behavior is preserved. Written flag-aware so it stays honest if the base model is disabled.
+
+**Edge case caught:** the fallback-boundary test pins that a model just *over* available RAM is skipped in favor of the largest that fits — the exact discipline that keeps a too-big pick from reaching `load_from_file` and aborting.
+
+**Not covered (same constraint as prior chat work):** whether the GGUF actually loads/decodes on the pinned `llama-cpp-2` and whether it fits the founder's 8 GB Mac — both are on-device (CI has no model, no runtime memory). `[OQ-64]`.
+
+**Could not run `cargo test` on this Mac** — build gated on missing Xcode CLT; CI compiles the backend, runs these tests, and resolves the new download URL on push.
+
 ### 2026-06-26 — Chat sampler fix (greedy → real sampling)
 
 **Change:** swapped pure-greedy for a penalties→top-k→top-p→temp→dist chain in `llm::decide` to kill the `uids!!!!` repetition loop (and the slowness it caused — the loop never hit EOG, so every reply ran the full token budget).

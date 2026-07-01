@@ -1,18 +1,20 @@
 # 21 — Handoff: where we are, alignment, and next steps
 
-**Status:** 🟢 Current working state as of 2026-06-20. **New session? Read this first** (then `18` pivot, `20` personal-AI, `19` predictor). This is the single source of truth for *where the build is*; older files (`01/14/15/16/17`) predate the pivot — see "Doctrine" below.
+*Role: current **state + next steps** — "where are we now / what do I do next." Overwritten as the build moves; it does not narrate chronology. For the dated history of how we got here, see `KNOWLEDGE.md`'s changelog.*
+
+**Status:** 🟢 Current working state as of 2026-06-30. **Entering a redesign** — see "Next steps" below; the inspection that precedes it is `KNOWLEDGE.md`'s 2026-06-29 changelog entry + `skills/inspection.md`. **New session? Read this first** (then `18` pivot, `20` personal-AI, `19` predictor). This is the single source of truth for *where the build is*; older files (`01/14/15/16/17`) predate the pivot — see "Doctrine" below.
 
 ## What exists and works (branch `mvp-porter-buzz`, not merged to main)
 The MVP is a **Tauri desktop app** (`app/`) — Verdure, the local personal AI — that runs models **inside one interface**, on an Intel Mac, shipped via CI (no local toolchain; see "How to build/ship").
 
 Verified on the founder's 2019 Intel Mac (8 GB, macOS 15):
 - **Transcription (file)** ✅ — drop audio → text, on-device via whisper.cpp (`base.en`). Real run measured ~3.9× real-time.
-- **Transcription (live mic)** 🟡 — record from the microphone, text streams in as you speak (`live.rs`: `cpal` capture + a pure energy-gated `Segmenter` that cuts at pauses + transcribe-once-per-segment with a resident Whisper context). Built 2026-06-23, segmenter unit-tested + cross-compiles in CI; **on-device confirmation pending** (needs a tagged Intel build + the macOS Microphone-permission grant — unsigned-app TCC is the specific risk to watch).
+- **Transcription (live mic)** ✅ — record from the microphone, text streams in as you speak (`live.rs`: `cpal` capture + a pure energy-gated `Segmenter` that cuts at pauses + transcribe-once-per-segment with a resident Whisper context). Built 2026-06-23, segmenter unit-tested + cross-compiles in CI; **confirmed working on-device 2026-06-30** (mic permission grant cleared; unsigned-app TCC was not a blocker in practice).
 - **Performance predictor** ✅ — estimates speed from device specs (`packages/decider/performance.ts`), calibrated by the real measurement; anchored to the founder's Mac.
 - **Storage management** ✅ — per-model size + Remove (in-panel) and a global "Manage storage" screen; models download on first use, removable, re-download on demand.
-- **Chat tool-calling** 🟡 — local Qwen2.5 via llama.cpp; "I need to dictate" → confirm → opens transcription; `classifyIntent` cross-check is the real router. **Crash fixed 2026-06-23:** chat `SIGABRT`'d on the 8 GB Mac — symbolicated trace = `ggml_abort ← llama_grammar_reject_candidates` (the **GBNF grammar sampler**, NOT memory; ~716 MB malloc'd, model fit fine). Removed the grammar sampler → plain greedy + lenient JSON parse. Separately, model selection is now **available-RAM-aware** (`device::system_resources` + `model::chat_model_for_available`) — good orchestration context + real-OOM guard, though it was not the crash cause. On-device confirmation pending; the *guaranteed* no-crash fix (process isolation) is the next P0.
+- **Chat tool-calling** 🔴 **not working on-device — folded into the redesign, not a standalone P0.** Local Qwen via llama.cpp; "I need to dictate" → confirm → opens transcription; `classifyIntent` cross-check is the real router. Prior crash/quality fixes (grammar-sampler removal, RAM-aware pick, real sampling) and the parked **Gemma 4 E2B** wiring have **not** made it usable. **Base chat model is now ByteShape's low-bit Qwen3 4B** (`Q3_K_S-2.77bpw`, ~1.4 GB, Apache 2.0; `USE_BYTESHAPE_QWEN3_4B = true`), top of the pick with the Qwen 0.5B/1.5B floor as fallback — the bet being a real 4B beats the 0.5B garbage within the RAM budget. **Pending on-device:** (a) does it load on our pinned llama.cpp; (b) does it fit the 8 GB Mac at all (with ~1.5 GB free the gate falls back to Qwen — free RAM or lower `N_CTX` to exercise it). `[OQ-64]`. *(How it got here: KNOWLEDGE.md changelog, 2026-06-23 / 06-29 / 07-01.)*
 
-Green: decider 74 tests; porter Rust 33 tests (incl. 5 live-transcription segmenter tests + 5 machine-context/model-fit tests); CI (Linux decider+website, macOS porter incl. x86_64 cross-compile + model-URL checks).
+Green: decider 74 tests; porter Rust 40 tests (incl. live-transcription segmenter + machine-context/model-fit + sampling/prompt-style tests); CI (Linux decider+website, macOS porter incl. x86_64 cross-compile + model-URL checks). Last green CI: `78aaa54` (2026-06-29).
 
 ## Doctrine (current — supersedes the pre-pivot files)
 - **Build apps for AI, with the user at the core of context** (`20`). Verdure is the personal AI, not an assistant.
@@ -35,16 +37,18 @@ Green: decider 74 tests; porter Rust 33 tests (incl. 5 live-transcription segmen
 5. **Chat reloads the model from disk every message.** `llm::decide` does `load_from_file` + new context per call (~0.4–1 GB load each time) → slow, wasteful. Needs a **resident model/session** (Tauri managed state holding the loaded model + context), which also unlocks conversational memory.
 
 ## Next steps (prioritized — pick up here)
-**P0 — correctness & robustness (before this touches real users)**
-0. Confirm **live mic transcription** on-device (built 2026-06-23): tag an Intel build, install, **grant Microphone permission**, and speak — verify segments stream in and the cut cadence feels right. Watch for the unsigned-app TCC risk (macOS may refuse mic access to an unsigned `.app`); if so, signing/notarization is the fix. Also a chance to tune the `Segmenter` defaults (threshold/silence/min/max) against a real mic + room.
-1. ~~Confirm the 0.5B chat build runs without crashing on the 8 GB Mac.~~ **Diagnosed + fixed 2026-06-23 (two passes):** chat `SIGABRT`'d even at 0.5B. Pass 1 blamed *available* RAM (unsymbolicated report + the 1.5B OOM history) — **wrong**. The symbolicated trace = `ggml_abort ← llama_grammar_reject_candidates ← llama_sampler_sample ← llm::decide`: the **GBNF grammar sampler** aborts the process on a no-valid-continuation state; memory was fine (~716 MB malloc). Fix: **removed the grammar sampler** (`llm.rs`) → plain greedy + lenient JSON parse; the UI's `classifyIntent` is the real router. The available-RAM gate from pass 1 stays (good context + real-OOM guard, not the crash cause). On-device confirmation pending: tag a build, chat, expect a real reply — NOT a crash. Still: have the user Remove the orphaned 1.5B model (1 GB) via Storage — disk is ~2.5 GB free.
-2. **Isolate the model runtime in a separate process** so a ggml `abort()` can NEVER crash the UI; surface failures as errors. [gap #4] **Now the top robustness priority** — the memory gate (step 1) shrinks the crash window but is mitigation, not a guarantee; this is the real fix. The live `system_resources` context feeds it (decide before spawning, kill/restart the child cleanly).
-3. **Resident chat model + conversational memory** (design together): keep the loaded model + context in Tauri state across messages (fast replies), and carry recent turn history in the prompt (the cheap memory fix — NOT RAG). [OQ-55 memory; the user explicitly asked.] Pairs naturally with #2 (the resident model lives in the isolated runtime).
+**▶ The next move is a redesign.** The pre-redesign inspection (2026-06-29) is done and its structural fixes are committed; what's left feeds *into* the redesign rather than racing ahead of it. The redesign's own scope is **not yet written** — define it before building. The items below are the standing inputs it must absorb (statuses current as of 2026-06-30); they are no longer an independent execution queue.
 
-**P1 — alignment & cleanup**
-4. Reconcile `01/14/15/16/17` to the pivot doctrine. [OQ-52]
-5. Rename `porter` → Verdure across the crate/binary (decide identifier/data-dir migration). [gap #1]
-6. Decide the legacy-porter's fate (keep transitional vs remove) and make un-wrapped intents show an honest "coming soon" rather than the app-install recommendation. [gap #2]
+**Done since this list was first written:**
+- ✅ **Live mic transcription confirmed on-device** (2026-06-30) — was P0 item 0. TCC/mic-permission cleared.
+- ✅ **Chat `SIGABRT` (GBNF grammar) removed** + available-RAM-aware model pick (2026-06-23); real sampling chain + Gemma 4 E2B wiring parked behind `GEMMA4_E2B_VERIFIED` (2026-06-29). **Chat still does not work on-device** — folded into the redesign (below), not a standalone task.
+- ✅ **Pivot-doctrine reconciliation** (old P1 item 4, `[OQ-52]`) — discharged by the inspection (superseded-doctrine banners on `01/14/15/16/17`).
+
+**Standing inputs the redesign must absorb:**
+- **Make chat actually work** — the open robustness/quality knot: **verify the ByteShape Qwen3 4B base model on-device** (loads on pinned llama.cpp + fits/feels usable; calibrate its `runtime_mb`) [OQ-64]; process-isolate the model runtime so a ggml `abort()` can NEVER crash the UI (surface failures as errors) [gap #4, OQ-58] — this also removes the 4B's load-abort risk; resident chat model + conversational memory in Tauri state (fast replies, cheap prompt-history memory — NOT RAG) [OQ-55, OQ-59]; resolve `[OQ-62]` (fold chat's RAM-aware pick into `@verdure/decider` vs document as a separate stack).
+- **UX findings the inspection deferred to the redesign:** app UX jargon, the Storage spec panel, raw error strings surfaced to the user.
+- **Rename `porter` → Verdure** across the crate/binary (decide identifier/data-dir migration so downloaded models aren't orphaned). [gap #1]
+- **Decide the legacy-porter's fate** (keep transitional vs remove) and make un-wrapped intents show an honest "coming soon" rather than the app-install recommendation. [gap #2]
 
 **P2 — the vision**
 7. **Personal context core (RAG)** — local, user-owned store every model reads/writes; the "you at the core of context" substrate. [OQ-56]

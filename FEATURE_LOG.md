@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-07-01 — ByteShape Qwen3 4B as the base chat model (`model.rs`)
+
+**What:** Wired [ByteShape](https://byteshape.com/)'s ShapeLearn-quantized **Qwen3-4B-Instruct-2507 `Q3_K_S-2.77bpw`** (~1.4 GB, Apache 2.0) as the top-of-pick chat model in the RAM-aware picker, with the Qwen 0.5B/1.5B pair kept as the always-present floor/fallback (`USE_BYTESHAPE_QWEN3_4B = true`). Refactored `chat_model_for_available` from nested conditionals to a flag-built candidate list so adding a gated model no longer amplifies edits. Added its URL to the CI resolve check. Qwen3 uses ChatML, so the existing `PromptStyle::ChatMl` framing applies unchanged — no new prompt plumbing.
+
+**Problem it solves:** the 8 GB Intel Mac forced chat onto Qwen 0.5B, which produced garbage; a *real* 4B is far more coherent, and ByteShape's low-bit quant squeezes it to ~1.4 GB so it can plausibly fit the machine's available RAM. The direct lever on "chat doesn't work."
+
+**Why it's the safe route:** the GGUF's base type is a *standard* llama.cpp K-quant (ByteShape's "KQ" = per-tensor mixing on stock GGML kernels — no engine fork), and Qwen3 (2025) is within our pinned `llama-cpp-2 0.1.150`'s arch support (it already runs Apr-2026 Gemma 4). Enabling it can't strand a tight machine: if the 4B doesn't fit available RAM it's simply not picked and Qwen answers instead. One-line revert (`USE_BYTESHAPE_QWEN3_4B = false`) if an on-device run shows it fails to load.
+
+**Not yet confirmed (on-device):** (a) that it *loads* on our pinned llama.cpp — low risk, but a load failure OOM-aborts the app until process isolation lands (`[OQ-58]`); (b) whether it *fits* the founder's 8 GB Mac at all — with ~1.5 GB free the gate falls back to Qwen, so the 4B needs RAM freed (or a lower `N_CTX`) to be exercised. `runtime_mb` (2600) is provisional, to calibrate on-device like the predictor (`19`). Tracked as `[OQ-64]`.
+
+**Verification:** can't compile on this Mac (build gated on Xcode CLT); pure-logic covered by new `model.rs` unit tests (base-when-it-fits + fallback-when-it-doesn't + ChatML style); CI compiles the backend, runs the tests, and resolves the new URL on push.
+
 ### 2026-06-26 — Chat: real sampling (fixes the `uids!!!!` garbage + slowness)
 
 **What:** Replaced the pure-greedy sampler in `llm::decide` with a proper chain — repetition penalty → top-k → top-p → light temperature → distribution pick (`penalties(64, 1.1, 0, 0)`, `top_k(40)`, `top_p(0.9)`, `temp(0.6)`, fixed seed). Lowered `MAX_NEW_TOKENS` 512 → 256.

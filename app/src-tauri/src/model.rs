@@ -60,10 +60,11 @@ pub const WHISPER_BASE_EN: ModelInfo = ModelInfo {
 };
 
 // Chat models behind the conversational front door (knowledge/18). We pick by
-// AVAILABLE RAM (see `chat_model_for_available`): a 1.5B model needs more memory
-// than an 8 GB machine has alongside the WebView — it OOMs and ggml aborts the
-// process — so low-RAM devices get the 0.5B model. The Qwen2.5 Instruct pair are
-// good tool-callers for their size; Gemma 4 E2B (below) is the roomy-tier option,
+// AVAILABLE RAM (see `chat_model_for_available`): a model needs more memory than an
+// 8 GB machine has alongside the WebView — it OOMs and ggml aborts the process — so
+// tight devices fall back to a smaller model. The base is now ByteShape's low-bit
+// Qwen3 4B (a real 4B in ~1.4 GB — see `BYTESHAPE_QWEN3_4B`); the Qwen2.5 0.5B/1.5B
+// pair are the always-present floor/fallback, and Gemma 4 E2B is a roomy-tier option
 // gated until verified. Sampling is plain (no grammar) — see `llm.rs`. [OQ-55].
 
 /// Smaller chat model for memory-constrained machines (≤ 8 GB). ~400 MB.
@@ -122,30 +123,69 @@ pub const GEMMA4_E2B: ModelInfo = ModelInfo {
 /// `true` only after an on-device run confirms both ([OQ-61]).
 const GEMMA4_E2B_VERIFIED: bool = false;
 
+/// The base chat model going forward: ByteShape's ShapeLearn-quantized **Qwen3 4B
+/// Instruct-2507** (Apache 2.0). A real 4B — far more coherent than the Qwen 0.5B
+/// floor that produced garbage — squeezed to ~1.4 GB by per-tensor low-bit
+/// quantization, so it can plausibly fit an 8 GB machine's AVAILABLE RAM. The file
+/// is a standard `Q3_K_S` K-quant (ByteShape brands the CPU-preferred K-quants
+/// "KQ"), so **stock** llama.cpp GGML kernels decode it — no fork — and Qwen3 (2025)
+/// is within our pinned `llama-cpp-2`'s architecture support. We take the smallest
+/// K-quant (2.77 bpw) as the safest first pick for the RAM-starved floor machine;
+/// step up (`Q3_K_S-3.19bpw` …) for quality once it's confirmed to fit. [OQ-64]
+pub const BYTESHAPE_QWEN3_4B: ModelInfo = ModelInfo {
+    id: "qwen3-4b-instruct-2507-byteshape",
+    name: "Chat model (Qwen3 4B)",
+    modality: "Chat",
+    file: "Qwen3-4B-Instruct-2507-Q3_K_S-2.77bpw.gguf",
+    url: "https://huggingface.co/byteshape/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q3_K_S-2.77bpw.gguf",
+    approx_mb: 1400,
+    // Provisional: ~1.4 GB weights + KV/compute at 2048 ctx + llama overhead.
+    // Calibrate on-device like the transcription predictor (knowledge/19). On the
+    // founder's 8 GB Mac only ~1.5 GB may be free — then the gate falls back to Qwen;
+    // free RAM (quit other apps) to give the 4B room, or lower N_CTX (llm.rs) to
+    // shrink this. Deliberately conservative: undershooting would risk an OOM abort.
+    runtime_mb: 2600,
+    prompt_style: Some(PromptStyle::ChatMl),
+};
+
+/// Use the ByteShape Qwen3 4B as the base chat model. Enabled for the on-device
+/// trial: it leads the pick when it fits, with the Qwen models as automatic
+/// RAM-gated fallback, so enabling it can't strand a machine that's too tight — it
+/// simply isn't picked there. This is NOT a "verified" claim (cf. Gemma's gate on an
+/// unproven runtime feature); the on-device run IS the verification. Flip to `false`
+/// to revert instantly if a run shows it fails to load on our pinned llama.cpp. [OQ-64]
+const USE_BYTESHAPE_QWEN3_4B: bool = true;
+
 /// Pick the largest chat model that fits the AVAILABLE memory right now, leaving
 /// headroom for the WebView + OS. Returns `None` when nothing fits — the caller
 /// then declines honestly instead of loading a model that would OOM-abort the app
 /// (knowledge/21). Keying on *available* (not total) RAM is the fix for the 8 GB
 /// chat crash: a 0.5B model "fits" 8 GB total but not ~1 GB free.
 pub fn chat_model_for_available(available_mb: u64) -> Option<&'static ModelInfo> {
-    // Most capable first, so a roomy machine gets the better model. Gemma 4 E2B
-    // leads the list ONLY once verified on-device ([OQ-61]); until then it stays
-    // out so we never auto-select a model that might OOM-abort the app.
-    let candidates: &[&ModelInfo] = if GEMMA4_E2B_VERIFIED {
-        &[&GEMMA4_E2B, &QWEN_CHAT, &QWEN_CHAT_SMALL]
-    } else {
-        &[&QWEN_CHAT, &QWEN_CHAT_SMALL]
-    };
+    // Most capable first, so a roomy machine gets the better model. A model behind a
+    // flag stays OUT of the live pick until it's cleared for on-device use, so we
+    // never auto-select one that might fail to load and OOM-abort the app. The Qwen
+    // pair is always present as the floor/fallback. Built as a list (not nested ifs)
+    // so adding a gated model is one push, not a combinatorial edit.
+    let mut candidates: Vec<&'static ModelInfo> = Vec::new();
+    if USE_BYTESHAPE_QWEN3_4B {
+        candidates.push(&BYTESHAPE_QWEN3_4B); // the base chat model when it fits ([OQ-64])
+    }
+    if GEMMA4_E2B_VERIFIED {
+        candidates.push(&GEMMA4_E2B); // roomy tier, only once verified ([OQ-61])
+    }
+    candidates.push(&QWEN_CHAT);
+    candidates.push(&QWEN_CHAT_SMALL);
     candidates
-        .iter()
-        .copied()
+        .into_iter()
         .find(|m| (m.runtime_mb as u64) <= available_mb)
 }
 
 /// Every model Verdure can download today. Gemma 4 E2B is listed so the Storage
 /// screen can show + manage it uniformly, but the chat picker won't auto-select it
 /// until it's verified (see `chat_model_for_available`).
-pub const MODELS: &[ModelInfo] = &[WHISPER_BASE_EN, QWEN_CHAT_SMALL, QWEN_CHAT, GEMMA4_E2B];
+pub const MODELS: &[ModelInfo] =
+    &[WHISPER_BASE_EN, BYTESHAPE_QWEN3_4B, QWEN_CHAT_SMALL, QWEN_CHAT, GEMMA4_E2B];
 
 /// Look up a model by id.
 pub fn find(id: &str) -> Option<&'static ModelInfo> {
@@ -293,8 +333,13 @@ mod tests {
 
     #[test]
     fn chat_model_picks_by_available_memory() {
-        // Plenty free → the larger model.
-        assert_eq!(chat_model_for_available(8000).unwrap().id, QWEN_CHAT.id);
+        // Plenty free → the base 4B chat model (ByteShape Qwen3), when enabled.
+        let roomy = chat_model_for_available(8000).unwrap().id;
+        if USE_BYTESHAPE_QWEN3_4B {
+            assert_eq!(roomy, BYTESHAPE_QWEN3_4B.id);
+        } else {
+            assert_eq!(roomy, QWEN_CHAT.id);
+        }
         // Tight (the 8 GB Mac with the WebView running) → the small model only.
         assert_eq!(
             chat_model_for_available(1500).unwrap().id,
@@ -302,6 +347,31 @@ mod tests {
         );
         // Almost nothing free → decline rather than OOM-abort the app.
         assert!(chat_model_for_available(500).is_none());
+    }
+
+    #[test]
+    fn byteshape_4b_is_the_base_when_it_fits_and_falls_back_when_it_does_not() {
+        // Only meaningful while the base model is enabled.
+        if !USE_BYTESHAPE_QWEN3_4B {
+            return;
+        }
+        // Enough for the 4B → it's the pick, ahead of the Qwen fallback.
+        assert_eq!(
+            chat_model_for_available(BYTESHAPE_QWEN3_4B.runtime_mb as u64).unwrap().id,
+            BYTESHAPE_QWEN3_4B.id
+        );
+        // Just below the 4B's footprint but enough for 1.5B → fall back, never a
+        // model that wouldn't fit (loading one that doesn't OOM-aborts the app).
+        let just_under = BYTESHAPE_QWEN3_4B.runtime_mb as u64 - 1;
+        assert!(just_under >= QWEN_CHAT.runtime_mb as u64, "test assumes 4B > 1.5B footprint");
+        assert_eq!(chat_model_for_available(just_under).unwrap().id, QWEN_CHAT.id);
+    }
+
+    #[test]
+    fn byteshape_4b_carries_the_chatml_prompt_style() {
+        // Qwen3 uses ChatML, so the existing framing applies — no new plumbing.
+        assert_eq!(BYTESHAPE_QWEN3_4B.prompt_style, Some(PromptStyle::ChatMl));
+        assert_eq!(find("qwen3-4b-instruct-2507-byteshape").unwrap().modality, "Chat");
     }
 
     #[test]
