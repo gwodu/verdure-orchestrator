@@ -139,12 +139,13 @@ pub const BYTESHAPE_QWEN3_4B: ModelInfo = ModelInfo {
     file: "Qwen3-4B-Instruct-2507-Q3_K_S-2.77bpw.gguf",
     url: "https://huggingface.co/byteshape/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q3_K_S-2.77bpw.gguf",
     approx_mb: 1400,
-    // Provisional: ~1.4 GB weights + KV/compute at 2048 ctx + llama overhead.
-    // Calibrate on-device like the transcription predictor (knowledge/19). On the
-    // founder's 8 GB Mac only ~1.5 GB may be free — then the gate falls back to Qwen;
-    // free RAM (quit other apps) to give the 4B room, or lower N_CTX (llm.rs) to
-    // shrink this. Deliberately conservative: undershooting would risk an OOM abort.
-    runtime_mb: 2600,
+    // Provisional: ~1.4 GB weights + KV/compute at 1024 ctx (llm.rs N_CTX) + llama
+    // overhead ≈ ~2.3 GB. Calibrate on-device like the transcription predictor
+    // (knowledge/19). NOTE: the 1.4 GB of weights is a hard floor — this can never
+    // fit a machine with less than ~2.3 GB free, so on the 8 GB Mac (often ~1.5 GB
+    // free) the gate still falls back to Qwen until RAM is freed. Deliberately keeps
+    // a safety margin above the raw estimate: undershooting risks an OOM abort.
+    runtime_mb: 2300,
     prompt_style: Some(PromptStyle::ChatMl),
 };
 
@@ -360,11 +361,15 @@ mod tests {
             chat_model_for_available(BYTESHAPE_QWEN3_4B.runtime_mb as u64).unwrap().id,
             BYTESHAPE_QWEN3_4B.id
         );
-        // Just below the 4B's footprint but enough for 1.5B → fall back, never a
-        // model that wouldn't fit (loading one that doesn't OOM-aborts the app).
+        // Just below the 4B's footprint → it's skipped, and whatever IS picked
+        // genuinely fits. This is the core safety invariant (never hand
+        // `load_from_file` a model larger than available RAM — that OOM-aborts the
+        // app), asserted without hard-coding which fallback wins, so it survives
+        // runtime_mb re-tuning.
         let just_under = BYTESHAPE_QWEN3_4B.runtime_mb as u64 - 1;
-        assert!(just_under >= QWEN_CHAT.runtime_mb as u64, "test assumes 4B > 1.5B footprint");
-        assert_eq!(chat_model_for_available(just_under).unwrap().id, QWEN_CHAT.id);
+        let pick = chat_model_for_available(just_under).unwrap();
+        assert_ne!(pick.id, BYTESHAPE_QWEN3_4B.id);
+        assert!((pick.runtime_mb as u64) <= just_under);
     }
 
     #[test]

@@ -26,8 +26,12 @@ use crate::model::PromptStyle;
 
 // Kept modest on purpose: ggml aborts the whole process on a failed allocation,
 // and the floor target is an 8 GB machine where the WebView already uses ~1.5 GB.
-// 2048 ctx + a 512 batch keeps the KV + compute buffers small. [OQ-55]
-const N_CTX: u32 = 2048;
+// 1024 ctx + a 512 batch keeps the KV + compute buffers small — lowered from 2048
+// to shrink the resident footprint of the 4B base model (`BYTESHAPE_QWEN3_4B`) so
+// the RAM gate can actually pick it on the 8 GB Mac; the model's `runtime_mb` gate
+// estimate is set to match. Chat prompts + replies are short, so 1024 is ample. If
+// conversational memory (`[OQ-59]`) needs a longer window later, raise both together.
+const N_CTX: u32 = 1024;
 const N_BATCH: u32 = 512;
 // A concise chat reply is short; capping the budget keeps a worst-case generation
 // snappy on the CPU floor machine. EOG normally stops us well before this.
