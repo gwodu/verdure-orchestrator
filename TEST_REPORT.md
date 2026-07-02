@@ -4,6 +4,21 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-07-01 — "Best model only" chat toggle (`model.rs`, `lib.rs`, frontend)
+
+**Change:** added `choose_chat_model(available_mb, allow_fallback)` (pure) + `preferred_chat_model()`, refactored the candidate order into a shared `chat_candidates()`, threaded an `allow_fallback` arg through the `chat` command and `chatSend`, and added a persisted UI toggle.
+
+**Tests (pure logic — three new):**
+- `preferred_chat_model_is_the_top_candidate` — the strict pick equals the head of the RAM picker's order (one source of truth for ordering), and is the 4B while enabled.
+- `best_model_only_uses_the_preferred_or_explains_why_not` — at the preferred model's footprint it's chosen; one MB under, it returns `Err(strict=true)` carrying the model name + needed MB and **does not** downgrade, even though a smaller model would have fit. This is the whole point: no silent substitution.
+- `fallback_downgrades_and_only_fails_when_nothing_fits` — with fallback on and room only for the floor, a smaller model that fits is returned (never the preferred, never a non-fitting one); below the floor's footprint it errors with `strict=false` (the "close some apps" path).
+
+**Edge case caught:** the strict/no-fallback branch must reject the preferred model when it's one MB too big *without* consulting smaller models — the test pins that, so a future refactor can't accidentally re-introduce the silent downgrade.
+
+**Frontend:** `tsc --noEmit` clean; `vite build` clean. Not covered: visual/behavioral review of the toggle — on-device in the tagged build (no browser/Tauri toolchain locally).
+
+**Could not run `cargo test` on this Mac** — build gated on Xcode CLT; CI compiles + runs these on push.
+
 ### 2026-07-01 — ByteShape Qwen3 4B base chat model (`model.rs`)
 
 **Change:** added `BYTESHAPE_QWEN3_4B` to the registry and made it the top candidate in `chat_model_for_available` (behind `USE_BYTESHAPE_QWEN3_4B`), Qwen pair as fallback; refactored the picker to a flag-built list.

@@ -66,6 +66,8 @@ import "./styles.css";
 // separate app). Transcription is the first. Others still fall back to the
 // legacy recommendation/porter view until they're wrapped too.
 const WRAPPED = new Set(["audio:transcription"]);
+// Chat setting: use the best model only (no silent fallback to a smaller one).
+const BEST_MODEL_ONLY_KEY = "verdure.chat.bestModelOnly";
 const AUDIO_EXTS = ["mp3", "m4a", "wav", "flac", "aac", "mp4", "ogg", "aiff", "caf"];
 
 // The MVP's wired ports: which catalog tool backs which classification, and the
@@ -267,9 +269,31 @@ function renderChat(): void {
     el(
       "p",
       "subtitle",
-      "Ask anything — it runs entirely on your computer, private and free. The first time, Verdure downloads a small chat model sized to your computer (about 0.4–1 GB).",
+      "Ask anything — it runs entirely on your computer, private and free. The first time, Verdure downloads a chat model sized to your computer (about 0.4–1.4 GB).",
     ),
   );
+
+  // "Best model only" — when on, chat uses the most capable model or tells you why
+  // it can't fit, instead of quietly falling back to a smaller, weaker one. Off by
+  // default (the friendly path for any computer); a deliberate choice for anyone who
+  // wants to know exactly which model is answering. Persisted so it sticks.
+  const bestOnly = document.createElement("label");
+  bestOnly.className = "chat-setting";
+  const bestOnlyBox = document.createElement("input");
+  bestOnlyBox.type = "checkbox";
+  bestOnlyBox.checked = localStorage.getItem(BEST_MODEL_ONLY_KEY) === "1";
+  bestOnlyBox.addEventListener("change", () =>
+    localStorage.setItem(BEST_MODEL_ONLY_KEY, bestOnlyBox.checked ? "1" : "0"),
+  );
+  bestOnly.appendChild(bestOnlyBox);
+  bestOnly.appendChild(
+    el(
+      "span",
+      "chat-setting-label",
+      "Use the best chat model only — tell me if it won't fit, don't switch to a smaller one",
+    ),
+  );
+  panel.appendChild(bestOnly);
 
   const thread = el("div", "chat-thread");
   panel.appendChild(thread);
@@ -322,7 +346,11 @@ function renderChat(): void {
     addMsg("user", text);
     status.textContent = "Thinking…";
     try {
-      const decision = await chatSend(text, (msg) => (status.textContent = msg));
+      const decision = await chatSend(
+        text,
+        (msg) => (status.textContent = msg),
+        !bestOnlyBox.checked, // best-model-only → don't allow fallback
+      );
       status.textContent = "";
       // Cross-check the model's pick with our deterministic classifier.
       const cls = classifyIntent(text);

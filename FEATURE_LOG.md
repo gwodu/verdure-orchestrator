@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-07-01 — "Best model only" chat toggle (kills silent fallback for testing + honesty)
+
+**What:** A chat setting — *"Use the best chat model only — tell me if it won't fit, don't switch to a smaller one"* (persisted in `localStorage`, off by default). When on, chat uses the preferred model (the ByteShape 4B) or **declines with an honest message naming the model and the memory shortfall**, instead of silently downgrading to Qwen 0.5B. Backend: a pure `model::choose_chat_model(available_mb, allow_fallback)` returning either the chosen model or a `ChatModelTooBig` (carries model name + needed vs available MB + a `strict` flag); the `chat` command gained an `allow_fallback` arg and formats the message in human GB. Factored the candidate ordering into one `chat_candidates()` list shared by the RAM picker and the preferred/strict pick, so they can't drift.
+
+**User-impact statement:** *After this change, the user can tell exactly which chat model is running — because best-only mode either uses the 4B or says why it can't, instead of quietly substituting a weaker one.*
+
+**Problem it solves:** silent fallback made the 4B impossible to test — a reply might be the 4B or the 0.5B and you couldn't tell. Now best-only mode is a deterministic lever: a reply means the 4B ran; the decline message means it didn't fit (and says how much memory it needs). It's also better UX per "honest performance / feedback" — no silent downgrade behind the user's back.
+
+**Tests:** three new `model.rs` unit tests — preferred = top candidate; best-only uses-preferred-or-errors-strict (no downgrade even when a smaller model would fit); fallback downgrades and only errors (non-strict) when nothing fits. Frontend `tsc` + `vite build` clean.
+
+**Not done:** visual self-review of the toggle (no browser tooling / Tauri toolchain locally) — verify on-device in the tagged build. A general "which model is active" indicator (for fallback mode too) is a natural follow-up, deferred to the redesign's chat UX pass.
+
 ### 2026-07-01 — ByteShape Qwen3 4B as the base chat model (`model.rs`)
 
 **What:** Wired [ByteShape](https://byteshape.com/)'s ShapeLearn-quantized **Qwen3-4B-Instruct-2507 `Q3_K_S-2.77bpw`** (~1.4 GB, Apache 2.0) as the top-of-pick chat model in the RAM-aware picker, with the Qwen 0.5B/1.5B pair kept as the always-present floor/fallback (`USE_BYTESHAPE_QWEN3_4B = true`). Refactored `chat_model_for_available` from nested conditionals to a flag-built candidate list so adding a gated model no longer amplifies edits. Added its URL to the CI resolve check. Qwen3 uses ChatML, so the existing `PromptStyle::ChatMl` framing applies unchanged — no new prompt plumbing.

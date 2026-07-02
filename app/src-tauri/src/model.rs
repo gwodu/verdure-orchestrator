@@ -163,11 +163,17 @@ const USE_BYTESHAPE_QWEN3_4B: bool = true;
 /// (knowledge/21). Keying on *available* (not total) RAM is the fix for the 8 GB
 /// chat crash: a 0.5B model "fits" 8 GB total but not ~1 GB free.
 pub fn chat_model_for_available(available_mb: u64) -> Option<&'static ModelInfo> {
-    // Most capable first, so a roomy machine gets the better model. A model behind a
-    // flag stays OUT of the live pick until it's cleared for on-device use, so we
-    // never auto-select one that might fail to load and OOM-abort the app. The Qwen
-    // pair is always present as the floor/fallback. Built as a list (not nested ifs)
-    // so adding a gated model is one push, not a combinatorial edit.
+    chat_candidates()
+        .into_iter()
+        .find(|m| (m.runtime_mb as u64) <= available_mb)
+}
+
+/// The chat models we'll consider, most capable first. A model behind a flag stays
+/// OUT until it's cleared for on-device use, so we never auto-select one that might
+/// fail to load and OOM-abort the app. The Qwen pair is always present as the
+/// floor/fallback. One list (not nested ifs) so adding a gated model is one line and
+/// so every caller — the RAM picker AND the strict/preferred pick — shares one order.
+fn chat_candidates() -> Vec<&'static ModelInfo> {
     let mut candidates: Vec<&'static ModelInfo> = Vec::new();
     if USE_BYTESHAPE_QWEN3_4B {
         candidates.push(&BYTESHAPE_QWEN3_4B); // the base chat model when it fits ([OQ-64])
@@ -178,8 +184,60 @@ pub fn chat_model_for_available(available_mb: u64) -> Option<&'static ModelInfo>
     candidates.push(&QWEN_CHAT);
     candidates.push(&QWEN_CHAT_SMALL);
     candidates
+}
+
+/// The preferred (most capable) chat model, regardless of whether it fits right now.
+/// This is the model "best model only" mode insists on, so the user can test it
+/// deliberately instead of silently getting a smaller fallback. The Qwen floor
+/// guarantees the list is never empty.
+pub fn preferred_chat_model() -> &'static ModelInfo {
+    chat_candidates()
         .into_iter()
-        .find(|m| (m.runtime_mb as u64) <= available_mb)
+        .next()
+        .expect("the Qwen floor is always a candidate")
+}
+
+/// Why chat can't run: the chosen model needs more free memory than the machine has.
+/// Carries the numbers so the UI can explain honestly (design.md — honest
+/// performance) rather than failing blankly or silently downgrading.
+pub struct ChatModelTooBig {
+    pub model_name: &'static str,
+    pub needed_mb: u32,
+    pub available_mb: u64,
+    /// The user asked for the best model only (no silent fallback to a smaller one).
+    pub strict: bool,
+}
+
+/// Choose which chat model to load. With `allow_fallback` we take the largest model
+/// that fits available memory (the friendly default). Without it ("best model only")
+/// we insist on the preferred model and, if it doesn't fit, return the shortfall so
+/// the caller can tell the user exactly why — never a silent downgrade. Either way we
+/// never return a model that wouldn't fit, since loading one OOM-aborts the app.
+pub fn choose_chat_model(
+    available_mb: u64,
+    allow_fallback: bool,
+) -> Result<&'static ModelInfo, ChatModelTooBig> {
+    if allow_fallback {
+        chat_model_for_available(available_mb).ok_or(ChatModelTooBig {
+            // Even the smallest floor model won't fit — report against it.
+            model_name: QWEN_CHAT_SMALL.name,
+            needed_mb: QWEN_CHAT_SMALL.runtime_mb,
+            available_mb,
+            strict: false,
+        })
+    } else {
+        let preferred = preferred_chat_model();
+        if (preferred.runtime_mb as u64) <= available_mb {
+            Ok(preferred)
+        } else {
+            Err(ChatModelTooBig {
+                model_name: preferred.name,
+                needed_mb: preferred.runtime_mb,
+                available_mb,
+                strict: true,
+            })
+        }
+    }
 }
 
 /// Every model Verdure can download today. Gemma 4 E2B is listed so the Storage
@@ -370,6 +428,47 @@ mod tests {
         let pick = chat_model_for_available(just_under).unwrap();
         assert_ne!(pick.id, BYTESHAPE_QWEN3_4B.id);
         assert!((pick.runtime_mb as u64) <= just_under);
+    }
+
+    #[test]
+    fn preferred_chat_model_is_the_top_candidate() {
+        // The preferred model is the most capable candidate, independent of RAM —
+        // it's what "best model only" insists on. Matches the head of the pick order.
+        let preferred = preferred_chat_model();
+        assert_eq!(preferred.id, chat_model_for_available(u64::MAX).unwrap().id);
+        if USE_BYTESHAPE_QWEN3_4B {
+            assert_eq!(preferred.id, BYTESHAPE_QWEN3_4B.id);
+        }
+    }
+
+    #[test]
+    fn best_model_only_uses_the_preferred_or_explains_why_not() {
+        let preferred = preferred_chat_model();
+        // Fits → we get the preferred model, never a downgrade.
+        let ok = choose_chat_model(preferred.runtime_mb as u64, false).unwrap();
+        assert_eq!(ok.id, preferred.id);
+        // Doesn't fit → Err carrying the shortfall, flagged strict, and NO fallback
+        // (even though a smaller model would have fit that memory).
+        let err = choose_chat_model(preferred.runtime_mb as u64 - 1, false).unwrap_err();
+        assert!(err.strict);
+        assert_eq!(err.model_name, preferred.name);
+        assert_eq!(err.needed_mb, preferred.runtime_mb);
+    }
+
+    #[test]
+    fn fallback_downgrades_and_only_fails_when_nothing_fits() {
+        // With fallback on and no room for the preferred model, we still get a
+        // smaller one that fits (never the preferred, never a non-fitting model).
+        let preferred = preferred_chat_model();
+        let tight = QWEN_CHAT_SMALL.runtime_mb as u64; // fits only the floor
+        let pick = choose_chat_model(tight, true).unwrap();
+        assert!((pick.runtime_mb as u64) <= tight);
+        if USE_BYTESHAPE_QWEN3_4B {
+            assert_ne!(pick.id, preferred.id);
+        }
+        // Nothing fits → Err flagged non-strict (the "close some apps" message).
+        let err = choose_chat_model(QWEN_CHAT_SMALL.runtime_mb as u64 - 1, true).unwrap_err();
+        assert!(!err.strict);
     }
 
     #[test]

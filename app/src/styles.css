@@ -355,6 +355,21 @@ html, body {
 }
 
 /* Chat */
+.chat-setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  line-height: 1.4;
+}
+.chat-setting input {
+  margin-top: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
 .chat-thread {
   display: flex;
   flex-direction: column;

@@ -131,7 +131,11 @@ async fn transcribe_audio<R: Runtime>(
 /// Long-running, so it runs on a blocking thread and streams a "Thinking…" stage
 /// via the `chat:progress` event (knowledge/18). Tool-calling lands next.
 #[tauri::command]
-async fn chat<R: Runtime>(app: AppHandle<R>, message: String) -> Result<llm::ToolDecision, String> {
+async fn chat<R: Runtime>(
+    app: AppHandle<R>,
+    message: String,
+    allow_fallback: bool,
+) -> Result<llm::ToolDecision, String> {
     let data_dir = app
         .path()
         .app_data_dir()
@@ -141,18 +145,31 @@ async fn chat<R: Runtime>(app: AppHandle<R>, message: String) -> Result<llm::Too
         let progress = |msg: &str| {
             let _ = app_for_progress.emit("chat:progress", msg);
         };
-        // Pick the chat model that fits the memory AVAILABLE right now — not just
-        // total RAM. A 0.5B model "fits" an 8 GB Mac on paper but still OOM-aborts
-        // when the WebView leaves only ~1 GB free, so when nothing fits we decline
-        // honestly instead of loading a model that would crash the app
-        // (knowledge/21 — the chat-crash fix).
+        // Choose the chat model against the memory AVAILABLE right now — not just
+        // total RAM. A model "fits" an 8 GB Mac on paper but still OOM-aborts when
+        // the WebView leaves only ~1 GB free, so we never load one that doesn't fit
+        // (knowledge/21 — the chat-crash fix). `allow_fallback` = false is "best
+        // model only": use the preferred model or say why it can't, never a silent
+        // downgrade — the switch that lets a tester know which model actually ran.
         let res = device::system_resources(&data_dir);
-        let info = model::chat_model_for_available(res.available_ram_mb).ok_or_else(|| {
-            format!(
-                "There isn't enough free memory to chat right now — about {} MB is free of {} MB. \
-                 Closing a few other apps will free some up, then try again.",
-                res.available_ram_mb, res.total_ram_mb
-            )
+        let gb = |mb: u64| format!("{:.1} GB", mb as f64 / 1024.0);
+        let info = model::choose_chat_model(res.available_ram_mb, allow_fallback).map_err(|e| {
+            if e.strict {
+                format!(
+                    "\u{201c}{}\u{201d} needs about {} of free memory, but only {} is free right now. \
+                     Close some apps to free memory — or turn off \u{201c}best model only\u{201d} to use a smaller one.",
+                    e.model_name,
+                    gb(e.needed_mb as u64),
+                    gb(e.available_mb)
+                )
+            } else {
+                format!(
+                    "There isn't enough free memory to chat right now — about {} is free of {}. \
+                     Closing a few other apps will free some up, then try again.",
+                    gb(res.available_ram_mb),
+                    gb(res.total_ram_mb)
+                )
+            }
         })?;
         let model = model::ensure(&data_dir, info, &progress)?;
         progress("Thinking…");

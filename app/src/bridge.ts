@@ -55,10 +55,16 @@ export async function portTool(
 /** The model's decision: answer, or invoke a tool (grammar-locked). */
 export type ChatDecision = { action: string; reply: string };
 
-/** Send a chat message to the local model, streaming a status line. */
+/**
+ * Send a chat message to the local model, streaming a status line.
+ * `allowFallback` = false ("best model only") tells the backend to use the
+ * preferred chat model or explain why it can't, instead of silently switching to a
+ * smaller one — so a tester knows which model actually answered.
+ */
 export async function chatSend(
   message: string,
   onProgress: ProgressFn,
+  allowFallback = true,
 ): Promise<ChatDecision> {
   if (!inTauri) {
     onProgress("Thinking…");
@@ -81,7 +87,7 @@ export async function chatSend(
     onProgress(e.payload),
   );
   try {
-    return await invoke<ChatDecision>("chat", { message });
+    return await invoke<ChatDecision>("chat", { message, allowFallback });
   } finally {
     unlisten();
   }
