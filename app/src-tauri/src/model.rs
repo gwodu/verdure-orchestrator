@@ -24,6 +24,7 @@ pub enum PromptStyle {
 }
 
 /// A downloadable model: what it is, and where to get it.
+#[derive(Debug)]
 pub struct ModelInfo {
     pub id: &'static str,
     /// User-facing name (jargon-free; skills/design.md).
@@ -200,6 +201,7 @@ pub fn preferred_chat_model() -> &'static ModelInfo {
 /// Why chat can't run: the chosen model needs more free memory than the machine has.
 /// Carries the numbers so the UI can explain honestly (design.md — honest
 /// performance) rather than failing blankly or silently downgrading.
+#[derive(Debug)]
 pub struct ChatModelTooBig {
     pub model_name: &'static str,
     pub needed_mb: u32,
