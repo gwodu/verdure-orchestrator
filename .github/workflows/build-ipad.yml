@@ -85,11 +85,14 @@ jobs:
           python3 - <<'PY'
           import re
           spec = open("project.yml").read()
+          # Ground truth from run 28709260194's link line: the template links
+          # `-lapp` and searches Externals/arm64/<config> — the prebuilt lib must
+          # be COPIED AS libapp.a (the template renames every crate's lib to that).
           copy = (
               "set -e; "
               "for d in \"${SRCROOT}/Externals/arm64/${CONFIGURATION}\" \"${SRCROOT}/Externals\"; do "
               "mkdir -p \"$d\"; "
-              "cp \"${SRCROOT}/../../target/aarch64-apple-ios/release/libverdure_porter_lib.a\" \"$d/\"; "
+              "cp \"${SRCROOT}/../../target/aarch64-apple-ios/release/libverdure_porter_lib.a\" \"$d/libapp.a\"; "
               "done"
           )
           new, n = re.subn(r"script:.*tauri ios xcode-script.*", "script: " + copy, spec)
