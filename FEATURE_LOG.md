@@ -6,6 +6,20 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-07-04 — iPad test build: the app runs on iOS (unsigned IPA via CI) [OQ-65]
+
+**What:** A temporary iPad port of the whole app as a **test vehicle** — the founder's 8 GB Mac can't exercise the ByteShape 4B (`[OQ-64]`); his iPad can. Deliberate, flagged deviation from `knowledge/11`'s thin-decider iOS strategy (the shippable-iOS decision stays with `11`). Backend made iOS-compatible behind `cfg` gates with the **macOS paths byte-identical**: `model.rs` downloads via in-process `ureq`/rustls on iOS (no process spawning there; macOS keeps its on-device-verified `curl`); `device.rs` reads syscalls instead of shell-outs — `sysctlbyname` (RAM), `statvfs` (disk), and `os_proc_available_memory()` — the app's **real headroom before iOS jetsam-kills it**, feeding the existing chat RAM gate so the picker sizes against iOS's true constraint. New `build-ipad.yml` (tag `ipad-build-N`): `tauri ios init` fresh each run, mic-permission plist injected, Rust lib pre-built with cargo (bypassing the generated xcode-script phase, which requires a parent tauri-CLI process CI can't provide), project rewritten to link the prebuilt lib, xcodebuild unsigned → `verdure-ipad-unsigned.ipa` artifact.
+
+**User-impact statement:** *After this change, the founder can test chat and live transcription on the one device he has that can actually run the models — because CI now produces an installable iPad build without needing a local toolchain or an Apple Developer account.*
+
+**Problem it solves:** every on-device unknown (`[OQ-64]`: does the 4B load, is it usable) was blocked on a machine that can no longer run the app. This unblocks testing entirely.
+
+**Key finding:** **whisper.cpp + llama.cpp + the full backend cross-compile for `aarch64-apple-ios`** — proven in CI (the decisive unknown of the port, answered in round 2 of 3).
+
+**Install:** sideload with a free Apple ID (Sideloadly/AltStore; 7-day cert) — no $99 account. See `knowledge/21` "How to build / ship".
+
+**Not verified (on-device, tracked in [OQ-65]):** jetsam ceiling vs the ~2.3 GB 4B footprint; cpal/AVAudioSession mic capture; TCC mic grant for a sideloaded app; WebView UI fit on iPadOS.
+
 ### 2026-07-01 — "Best model only" chat toggle (kills silent fallback for testing + honesty)
 
 **What:** A chat setting — *"Use the best chat model only — tell me if it won't fit, don't switch to a smaller one"* (persisted in `localStorage`, off by default). When on, chat uses the preferred model (the ByteShape 4B) or **declines with an honest message naming the model and the memory shortfall**, instead of silently downgrading to Qwen 0.5B. Backend: a pure `model::choose_chat_model(available_mb, allow_fallback)` returning either the chosen model or a `ChatModelTooBig` (carries model name + needed vs available MB + a `strict` flag); the `chat` command gained an `allow_fallback` arg and formats the message in human GB. Factored the candidate ordering into one `chat_candidates()` list shared by the RAM picker and the preferred/strict pick, so they can't drift.

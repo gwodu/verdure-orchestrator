@@ -4,6 +4,21 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-07-04 — iPad test build (`build-ipad.yml`, cfg-gated backend) [OQ-65]
+
+**Change:** iOS-compatible backend (`model.rs` download split, `device.rs` syscall probes) + a CI workflow producing an unsigned iPad IPA.
+
+**Verified in CI (3 build rounds, `ipad-build-1..3`):**
+- **`cargo build --lib --release --target aarch64-apple-ios` succeeds** — whisper.cpp, llama.cpp, cpal, ureq/rustls, and the tauri mobile entry all cross-compile for iOS. This was the port's decisive unknown.
+- The full pipeline is green end-to-end: `tauri ios init --ci` → plist mic-key injection → prebuilt-lib link (`libapp.a`, the template's naming, learned from round 2's link line) → unsigned xcodebuild → 5 MB `.ipa` artifact.
+- **Mac regression:** branch CI green after the cfg split — macOS porter compiles, all porter unit tests pass, x86_64 cross-compile + model-URL checks hold. The Mac dependency tree is unchanged (`ureq`/`libc` are `cfg(not(macos))`).
+
+**Deliberately not unit-tested:** the iOS syscall probes (`sysctlbyname`/`statvfs`/`os_proc_available_memory`) — `cargo test` runs on the macOS host where the `cfg(target_os = "ios")` code doesn't compile; they're thin, documented wrappers over audited `libc` + one public Apple API (testing.md FFI rules 1 & 4 followed: SAFETY comments state ownership at each boundary — nothing is allocated across it).
+
+**Failure history (for the record):** round 1 — generated xcode-script phase requires a parent tauri-CLI process (server-addr file) absent under bare xcodebuild; round 2 — linker wanted `libapp.a` (template renames every crate's staticlib); round 3 — green.
+
+**Not covered (on-device only, [OQ-65]):** whether iOS's per-app memory ceiling admits the 4B; mic capture via cpal/AVAudioSession; TCC on a sideloaded app.
+
 ### 2026-07-01 — "Best model only" chat toggle (`model.rs`, `lib.rs`, frontend)
 
 **Change:** added `choose_chat_model(available_mb, allow_fallback)` (pure) + `preferred_chat_model()`, refactored the candidate order into a shared `chat_candidates()`, threaded an `allow_fallback` arg through the `chat` command and `chatSend`, and added a persisted UI toggle.
