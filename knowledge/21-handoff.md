@@ -58,6 +58,7 @@ Green: decider 74 tests; porter Rust 40 tests (incl. live-transcription segmente
 The founder's Mac has **no Xcode CLT and tight disk**, so everything builds in CI:
 - Push to `mvp-porter-buzz` → CI runs (`.github/workflows/ci.yml`): decider+website (Linux), porter (macOS, incl. `cargo test` + x86_64 cross-compile check + model-URL reachability).
 - To produce a runnable Intel app: `git tag app-build-N && git push origin app-build-N` → `build-app.yml` cross-compiles x86_64 and uploads `verdure-porter-macos-intel` (.dmg/.app).
+- To produce the **iPad test build** (`[OQ-65]`, unsigned): `git tag ipad-build-N && git push origin ipad-build-N` → `build-ipad.yml` builds an unsigned `.ipa` (install via free-Apple-ID sideload, e.g. Sideloadly; 7-day cert). Test vehicle only — the shippable iOS strategy stays `11`'s thin-decider.
 - Install on the Mac: `gh run download <run-id> -n verdure-porter-macos-intel`, then mount the dmg, copy `Verdure.app` to /Applications, `xattr -cr` it, `open` it. (See the session's install one-liner.)
 - Key fix already in place: `app/src-tauri/.cargo/config.toml` forces `MACOSX_DEPLOYMENT_TARGET=10.15` so whisper/llama cross-compile (ggml `std::filesystem`).
 

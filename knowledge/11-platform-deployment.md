@@ -50,6 +50,8 @@ The iOS strategy therefore pivots from "daemon" to **thin decider over Apple's s
 
 TestFlight remains viable for early distribution. All of the above reflects iOS 27 developer betas (June 2026); re-verify at public release in the fall.
 
+**Deliberate deviation (2026-07-04, flagged per CLAUDE.md): the iPad test build.** The founder's Mac (8 GB) can no longer exercise the 4B chat model, and his iPad is the only available device that can — so we are building a **temporary iPad port of the existing Tauri app** (bundled whisper.cpp/llama.cpp + downloaded GGUF) purely as a **test vehicle** for the chat/transcription stack. This contradicts the thin-decider strategy above and is *not* a change of strategy: it exists to answer `[OQ-64]` (does the ByteShape 4B load and feel usable) while the Mac can't, and it inherits iOS's real constraints — the per-app memory ceiling (jetsam) may cap the 4B regardless of device RAM, and the in-process ggml-abort risk (`[OQ-58]`) applies unchanged. Tracked as `[OQ-65]`; the strategy of record for a *shippable* iOS product remains thin-decider-over-Apple's-stack.
+
 ## Open questions
 
 - [OQ-23] Current Apple Developer Program pricing, notarization policy changes in 2026.

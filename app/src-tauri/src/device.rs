@@ -12,6 +12,7 @@
 //! follow-up — see knowledge/17 "Small known follow-ups".
 
 use std::path::Path;
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 use serde::Serialize;
@@ -54,6 +55,7 @@ pub struct SystemResources {
 }
 
 /// Detect this machine's specs for the performance predictor.
+#[cfg(target_os = "macos")]
 pub fn detect_spec() -> DeviceSpec {
     DeviceSpec {
         arch: if is_apple_silicon() {
@@ -68,7 +70,24 @@ pub fn detect_spec() -> DeviceSpec {
     }
 }
 
+/// Detect this machine's specs — iOS. Every iPhone/iPad CPU is Apple ARM, and
+/// there are no shell tools to call (apps can't spawn processes), so the readings
+/// come from syscalls instead of `/usr/sbin/sysctl` ([OQ-65]).
+#[cfg(target_os = "ios")]
+pub fn detect_spec() -> DeviceSpec {
+    DeviceSpec {
+        arch: "apple-silicon".to_string(),
+        cores: std::thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(4),
+        ram_gb: ios::total_ram_bytes()
+            .map(|b| (b as f64 / 1_073_741_824.0).round() as u32)
+            .unwrap_or(4),
+    }
+}
+
 /// Read an integer sysctl value (fixed path, PATH-independent).
+#[cfg(target_os = "macos")]
 fn sysctl_int(key: &str) -> Option<u64> {
     Command::new("/usr/sbin/sysctl")
         .args(["-n", key])
@@ -80,6 +99,7 @@ fn sysctl_int(key: &str) -> Option<u64> {
 /// Take a live snapshot of free resources. `data_dir` is the folder models live
 /// in — we report free space on its volume. Every reading degrades safely: if a
 /// tool can't be read, that field falls back rather than failing the snapshot.
+#[cfg(target_os = "macos")]
 pub fn system_resources(data_dir: &Path) -> SystemResources {
     let total_ram_mb = sysctl_int("hw.memsize").map(|b| b / 1_048_576).unwrap_or(8192);
     let available_ram_mb = read_available_ram_mb()
@@ -97,13 +117,94 @@ pub fn system_resources(data_dir: &Path) -> SystemResources {
     }
 }
 
+/// Take a live snapshot of free resources — iOS. The key difference from the Mac:
+/// `available_ram_mb` is **this app's** remaining allocation headroom before iOS
+/// terminates it (jetsam), via `os_proc_available_memory()` — a stricter and more
+/// truthful gate than system-wide free RAM, which is exactly what the chat model
+/// picker needs to avoid being killed mid-load ([OQ-65], knowledge/11).
+#[cfg(target_os = "ios")]
+pub fn system_resources(data_dir: &Path) -> SystemResources {
+    let total_ram_mb = ios::total_ram_bytes().map(|b| b / 1_048_576).unwrap_or(4096);
+    let available_ram_mb = ios::available_ram_bytes()
+        .map(|b| b / 1_048_576)
+        // If the headroom can't be read, assume a conservative quarter of total —
+        // overshooting on iOS means the OS kills the app, not an error dialog.
+        .unwrap_or(total_ram_mb / 4);
+    SystemResources {
+        arch: "apple-silicon".to_string(),
+        cores: std::thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(4),
+        total_ram_mb,
+        available_ram_mb,
+        free_disk_mb: ios::free_disk_bytes(data_dir).map(|b| b / 1_048_576).unwrap_or(0),
+        // Reading Low Power Mode needs an ObjC bridge (NSProcessInfo) — not worth
+        // the dependency for the test build; "off" only skips a speed warning.
+        low_power: false,
+    }
+}
+
+/// iOS syscall probes. All readings go through the audited `libc` wrapper crate —
+/// no hand-rolled bindings beyond the one documented Apple API below
+/// (skills/testing.md, FFI rules 1 & 4).
+#[cfg(target_os = "ios")]
+mod ios {
+    /// Total physical RAM — the same `hw.memsize` fact the Mac reads via the
+    /// sysctl *binary*, read via the sysctl *syscall* (no spawning on iOS).
+    pub fn total_ram_bytes() -> Option<u64> {
+        let name = std::ffi::CString::new("hw.memsize").ok()?;
+        let mut value: u64 = 0;
+        let mut size = std::mem::size_of::<u64>();
+        // SAFETY: sysctlbyname writes at most `size` bytes into `value`, which we
+        // own on the stack; `name` outlives the call; nothing is allocated across
+        // the boundary, so there is nothing to free.
+        let rc = unsafe {
+            libc::sysctlbyname(
+                name.as_ptr(),
+                &mut value as *mut u64 as *mut libc::c_void,
+                &mut size,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        (rc == 0).then_some(value)
+    }
+
+    // The one hand-written binding: Apple's public API (os/proc.h, iOS 13+) for
+    // "how much can THIS process still allocate before jetsam kills it". Takes no
+    // arguments, returns a plain integer — no ownership crosses the boundary.
+    extern "C" {
+        fn os_proc_available_memory() -> usize;
+    }
+
+    /// This app's remaining allocation headroom, in bytes. `None` when the OS
+    /// reports 0 (e.g. simulator), so callers fall back conservatively.
+    pub fn available_ram_bytes() -> Option<u64> {
+        // SAFETY: no-argument call returning an integer by value; nothing owned.
+        let bytes = unsafe { os_proc_available_memory() } as u64;
+        (bytes > 0).then_some(bytes)
+    }
+
+    /// Free space on the volume holding `path`, via statvfs (there is no `df`).
+    pub fn free_disk_bytes(path: &std::path::Path) -> Option<u64> {
+        let c = std::ffi::CString::new(path.to_str()?).ok()?;
+        let mut sv: libc::statvfs = unsafe { std::mem::zeroed() };
+        // SAFETY: statvfs fills the struct we own on the stack; `c` outlives the
+        // call; nothing is allocated across the boundary.
+        let rc = unsafe { libc::statvfs(c.as_ptr(), &mut sv) };
+        (rc == 0).then(|| sv.f_bavail as u64 * sv.f_frsize as u64)
+    }
+}
+
 /// Available RAM (MB) from `vm_stat`: free + reclaimable pages × page size.
+#[cfg(target_os = "macos")]
 fn read_available_ram_mb() -> Option<u64> {
     let out = Command::new("/usr/bin/vm_stat").output().ok()?;
     parse_available_bytes(&String::from_utf8_lossy(&out.stdout)).map(|b| b / 1_048_576)
 }
 
 /// Free space (MB) on the volume containing `path`, via `df -k`.
+#[cfg(target_os = "macos")]
 fn read_free_disk_mb(path: &Path) -> Option<u64> {
     let out = Command::new("/bin/df")
         .args(["-k", &path.to_string_lossy()])
@@ -113,6 +214,7 @@ fn read_free_disk_mb(path: &Path) -> Option<u64> {
 }
 
 /// True if macOS Low Power Mode is on (`pmset -g`).
+#[cfg(target_os = "macos")]
 fn read_low_power() -> bool {
     Command::new("/usr/bin/pmset")
         .args(["-g"])
@@ -124,6 +226,7 @@ fn read_low_power() -> bool {
 
 /// Parse `vm_stat` output into available bytes (free + inactive + speculative +
 /// purgeable pages, the memory macOS can hand out). Pure — unit-tested.
+#[cfg(any(target_os = "macos", test))]
 fn parse_available_bytes(vm_stat: &str) -> Option<u64> {
     let page_size: u64 = vm_stat
         .split("page size of ")
@@ -148,12 +251,14 @@ fn parse_available_bytes(vm_stat: &str) -> Option<u64> {
 }
 
 /// Parse the "Available" column (KB) from `df -k` output. Pure — unit-tested.
+#[cfg(any(target_os = "macos", test))]
 fn parse_df_avail_kb(df: &str) -> Option<u64> {
     let data = df.lines().nth(1)?;
     data.split_whitespace().nth(3).and_then(|s| s.parse().ok())
 }
 
 /// Parse `pmset -g` for Low Power Mode being on. Pure — unit-tested.
+#[cfg(any(target_os = "macos", test))]
 fn parse_low_power(pmset: &str) -> bool {
     pmset
         .lines()
@@ -162,6 +267,7 @@ fn parse_low_power(pmset: &str) -> bool {
 
 /// Detect the device's tier as a decider `Tier` string. Always returns a safe,
 /// real tier — never fails to the user.
+#[cfg(target_os = "macos")]
 pub fn detect_tier() -> &'static str {
     if is_apple_silicon() {
         // Apple Silicon → DeviceClass apple-silicon (knowledge/03, matrix.ts).
@@ -173,10 +279,19 @@ pub fn detect_tier() -> &'static str {
     }
 }
 
+/// Detect the device's tier — iOS. Every iPad/iPhone is Apple Silicon-class for
+/// the decider's purposes; the RAM gate (jetsam-aware, above) does the real
+/// per-device sizing at pick time ([OQ-65]).
+#[cfg(target_os = "ios")]
+pub fn detect_tier() -> &'static str {
+    "L3"
+}
+
 /// True on Apple Silicon. `sysctl hw.optional.arm64` is "1" there, absent/"0"
 /// on Intel. sysctl lives at a fixed path, so this works under the minimal PATH
 /// a Finder-launched app inherits. Also used by the porter to pick the right
 /// architecture's download (x64 vs ARM64).
+#[cfg(target_os = "macos")]
 pub(crate) fn is_apple_silicon() -> bool {
     Command::new("/usr/sbin/sysctl")
         .args(["-n", "hw.optional.arm64"])
@@ -184,6 +299,12 @@ pub(crate) fn is_apple_silicon() -> bool {
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "1")
         .unwrap_or(false)
+}
+
+/// True on Apple Silicon — iOS: always (there are no Intel iPads).
+#[cfg(target_os = "ios")]
+pub(crate) fn is_apple_silicon() -> bool {
+    true
 }
 
 #[cfg(test)]

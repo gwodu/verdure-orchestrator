@@ -1,0 +1,102 @@
+name: Build iPad test app (unsigned IPA)
+
+# The iPad TEST VEHICLE ([OQ-65], knowledge/11 deviation note): builds the Tauri
+# app for iOS (aarch64-apple-ios) and packages an UNSIGNED .ipa. This exists to
+# test the chat/transcription stack (the ByteShape 4B, [OQ-64]) on the founder's
+# iPad while his 8 GB Mac can't — it is NOT the shippable iOS product (that
+# strategy is knowledge/11's thin-decider-over-Apple's-stack).
+#
+# Unsigned on purpose: no Apple Developer cert in CI. Install by re-signing on
+# the user side with a free Apple ID (Sideloadly / AltStore, 7-day cert) — see
+# knowledge/21 "How to build / ship".
+#
+# Separate workflow from build-app.yml so the verified Mac pipeline is untouched.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "ipad-build-*"
+
+env:
+  # whisper.cpp/ggml use C++17 std::filesystem — comfortably covered by iOS 14,
+  # and every iPad that could run these models is far newer.
+  IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+
+jobs:
+  build:
+    name: Package Verdure for iPad (.ipa, unsigned)
+    runs-on: macos-latest # full Xcode preinstalled — the toolchain the Mac lacks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Rust (with the iOS targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - name: Install workspaces
+        run: npm ci
+      - name: Build the frontend
+        # xcodebuild is invoked directly below (to control signing), so Tauri's
+        # beforeBuildCommand never runs — build the dist/ it embeds here.
+        working-directory: app
+        run: npm run build
+      - name: Generate the iOS project (tauri ios init)
+        # Creates app/src-tauri/gen/apple (Xcode project + Info.plist). Generated
+        # fresh each build — nothing under gen/ is committed, so the desktop
+        # checkout stays clean and there's no stale project to rot.
+        working-directory: app
+        run: npx tauri ios init --ci
+      - name: Add the microphone permission string
+        # Same NSMicrophoneUsageDescription as the macOS partial Info.plist
+        # (app/src-tauri/Info.plist): without it, iOS terminates the app the
+        # instant live transcription touches the mic instead of prompting.
+        run: |
+          MIC_TEXT="Verdure transcribes your microphone into text entirely on your computer. Your audio is never uploaded or stored anywhere else."
+          found=0
+          for plist in $(find app/src-tauri/gen/apple -maxdepth 2 -name Info.plist); do
+            echo "patching $plist"
+            /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string $MIC_TEXT" "$plist" \
+              || /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription $MIC_TEXT" "$plist"
+            found=1
+          done
+          [ "$found" = "1" ] # fail loudly if the generated layout ever changes
+      - name: Build for iOS, unsigned
+        # xcodebuild drives the whole build: its "Build Rust Code" phase (generated
+        # by tauri ios init) cross-compiles the Rust lib — whisper.cpp and llama.cpp
+        # included — for aarch64-apple-ios, then links the app. Signing is disabled;
+        # the user re-signs at install time (Sideloadly/AltStore).
+        working-directory: app
+        run: |
+          PROJ=$(ls -d src-tauri/gen/apple/*.xcodeproj | head -1)
+          echo "project: $PROJ"
+          xcodebuild -project "$PROJ" -list
+          SCHEME=$(xcodebuild -project "$PROJ" -list | sed -n '/Schemes:/,$p' | sed -n '2p' | xargs)
+          CONFIG=$(xcodebuild -project "$PROJ" -list | sed -n '/Build Configurations:/,/^$/p' | grep -i release | head -1 | xargs)
+          echo "scheme: $SCHEME  config: $CONFIG"
+          xcodebuild \
+            -project "$PROJ" \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIG" \
+            -sdk iphoneos \
+            -derivedDataPath build-ios \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+      - name: Package the unsigned .ipa
+        # An .ipa is just Payload/<app>.app zipped — that's all sideloading tools
+        # need; they re-sign the binary themselves.
+        working-directory: app
+        run: |
+          APP=$(find build-ios/Build/Products -maxdepth 2 -name "*.app" -type d | head -1)
+          echo "app bundle: $APP"
+          test -n "$APP"
+          mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qry verdure-ipad-unsigned.ipa Payload
+      - name: Upload the iPad test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: verdure-ipad-unsigned
+          path: app/verdure-ipad-unsigned.ipa
+          if-no-files-found: error

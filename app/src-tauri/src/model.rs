@@ -8,6 +8,7 @@
 //! files in the app data folder, so removal fully reclaims the space.
 
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 use serde::Serialize;
@@ -289,6 +290,41 @@ pub fn list(data_dir: &Path) -> Vec<ModelEntry> {
         .collect()
 }
 
+/// Fetch `url` into `dest`, following redirects (Hugging Face `resolve` URLs
+/// redirect to a CDN). Two implementations, one contract:
+///
+/// - **macOS**: base-system `curl` (no extra dependency, the path verified on the
+///   founder's Mac). Kept byte-identical to the original — don't churn a working,
+///   on-device-verified download path for the sake of uniformity.
+/// - **iOS (and anything else)**: in-process HTTP via `ureq` (rustls). iOS apps
+///   cannot spawn processes — there is no `/usr/bin/curl` to shell out to — so the
+///   download must happen in-process. [OQ-65]
+#[cfg(target_os = "macos")]
+fn download(url: &str, dest: &Path) -> Result<(), String> {
+    let output = Command::new("/usr/bin/curl")
+        .args(["-fL", "--retry", "3", "-o", &dest.to_string_lossy(), url])
+        .output()
+        .map_err(|e| format!("the download couldn't start: {e}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn download(url: &str, dest: &Path) -> Result<(), String> {
+    let response = ureq::get(url)
+        .call()
+        .map_err(|e| format!("the download couldn't start: {e}"))?;
+    let mut file = std::fs::File::create(dest)
+        .map_err(|e| format!("couldn't create the download file: {e}"))?;
+    // Stream body → disk; a multi-GB model must never be buffered in memory
+    // (ggml aborts on failed allocations, and iOS jetsam-kills memory hogs).
+    std::io::copy(&mut response.into_reader(), &mut file)
+        .map_err(|e| format!("the download was interrupted: {e}"))?;
+    Ok(())
+}
+
 /// Ensure a model is present, downloading it once if needed. Reports progress.
 pub fn ensure<F: Fn(&str)>(
     data_dir: &Path,
@@ -322,18 +358,9 @@ pub fn ensure<F: Fn(&str)>(
     // Download to a .part file, rename on success — an interrupted download is
     // never mistaken for a complete model.
     let part = path.with_extension("part");
-    let output = Command::new("/usr/bin/curl")
-        .args(["-fL", "--retry", "3", "-o", &part.to_string_lossy(), info.url])
-        .output()
-        .map_err(|e| format!("the download couldn't start: {e}"))?;
-
-    if !output.status.success() {
+    if let Err(msg) = download(info.url, &part) {
         let _ = std::fs::remove_file(&part);
-        return Err(format!(
-            "{} couldn't be downloaded. {}",
-            info.name,
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
+        return Err(format!("{} couldn't be downloaded. {}", info.name, msg));
     }
 
     std::fs::rename(&part, &path).map_err(|e| format!("couldn't save the model: {e}"))?;
