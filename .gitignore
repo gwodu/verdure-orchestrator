@@ -23,3 +23,6 @@ node_modules/
 # Local env / secrets
 .env
 .env.local
+
+# Downloaded build artifacts (gh run download) — never committed
+*.ipa
