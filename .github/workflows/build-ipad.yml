@@ -69,8 +69,13 @@ jobs:
         # `tauri ios build` process (a server-addr file) that doesn't exist under
         # bare xcodebuild — and `tauri ios build` itself hard-requires signing.
         # The frontend dist/ (built above) is embedded at this compile step.
+        # --features tauri/custom-protocol is what separates a PRODUCTION build
+        # (embedded assets) from a DEV build (loads http://localhost:1420): tauri's
+        # build script emits dev=true unless this feature is on, and the tauri CLI
+        # normally adds it for you — bare cargo doesn't. Without it the app ships
+        # looking for a dev server (seen on-device, ipad-build-3).
         working-directory: app/src-tauri
-        run: cargo build --lib --release --target aarch64-apple-ios
+        run: cargo build --lib --release --target aarch64-apple-ios --features tauri/custom-protocol
       - name: Point the Xcode project at the prebuilt library
         # Replace the generated tauri xcode-script phase with a copy of the
         # prebuilt .a into the exact spots the template's linker settings expect
