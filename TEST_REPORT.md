@@ -4,6 +4,14 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-07-17 — Chat-first redesign + prairie aesthetic (`main.ts`, `styles.css`)
+
+**Change:** presentation only — boot into chat, mic button, gear→Storage, back-nav to chat, warm gradient theme via CSS tokens. No backend/logic touched (model picker, `choose_chat_model`, chat command, parsers all unchanged), so **no new unit tests** — there is no new pure logic to assert.
+
+**Verified:** `tsc --noEmit` clean (strict, `noUnusedLocals`); `vite build` clean. Existing decider/porter test suites unaffected (no imports changed in shared code).
+
+**Not done — honestly:** the design.md **visual self-review loop** (render + look) could not be automated in this environment — the Chrome extension wasn't connected and no Playwright/Puppeteer is installed (and installing a headless browser on the tight-disk founder Mac wasn't warranted). Reviewed manually via `vite preview`; the authoritative visual check is on-device in the next iPad build. Follow-up worth doing: wire an `app/scripts/shots.mjs` (referenced in `.gitignore` but absent) so app UI has the same screenshot loop the website has.
+
 ### 2026-07-04 — iPad test build (`build-ipad.yml`, cfg-gated backend) [OQ-65]
 
 **Change:** iOS-compatible backend (`model.rs` download split, `device.rs` syscall probes) + a CI workflow producing an unsigned iPad IPA.

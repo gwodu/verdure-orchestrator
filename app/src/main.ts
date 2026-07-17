@@ -109,7 +109,12 @@ function classKey(c: IntentCard["classification"]): string {
   return `${c.modality}:${c.task}`;
 }
 
-// --- Screen 1: pick an intent ----------------------------------------------
+// --- Legacy front door: the task grid ---------------------------------------
+// No longer the entry screen (the app opens straight into chat as of the 2026-07
+// redesign). Retained — with the intent-grid / recommendation / porter flow it
+// leads to — as the only path to un-wrapped modalities (image/video), pending the
+// legacy-porter keep-or-remove decision ([OQ-60]/gap #2). Not currently reachable
+// from the UI; wire a link back to it if that flow is kept.
 function renderHome(): void {
   clearDrop();
   root.innerHTML = "";
@@ -148,7 +153,7 @@ function renderStorage(): void {
   clearDrop();
   root.innerHTML = "";
   root.appendChild(brandBar());
-  root.appendChild(backButton(renderHome));
+  root.appendChild(backButton(renderChat));
 
   const panel = el("section", "panel");
   panel.appendChild(el("h1", "title", "Storage"));
@@ -260,16 +265,17 @@ function intentCard(card: IntentCard): HTMLElement {
 function renderChat(): void {
   clearDrop();
   root.innerHTML = "";
-  root.appendChild(brandBar());
-  root.appendChild(backButton(renderHome));
+  // Chat is now the home screen (opens straight here — no task grid). The only
+  // header action is a quiet gear to the storage/computer screen.
+  root.appendChild(brandBar([iconButton(ICON_GEAR, "Storage & your computer", renderStorage)]));
 
   const panel = el("section", "panel");
-  panel.appendChild(el("h1", "title", "Chat"));
+  panel.appendChild(el("h1", "title", "What's on your mind?"));
   panel.appendChild(
     el(
       "p",
       "subtitle",
-      "Ask anything — it runs entirely on your computer, private and free. The first time, Verdure downloads a chat model sized to your computer (about 0.4–1.4 GB).",
+      "Type to chat, or tap the microphone to turn speech into text. Everything runs on your device — private, no account. The first message downloads a chat model (about 0.4–1.4 GB).",
     ),
   );
 
@@ -306,11 +312,20 @@ function renderChat(): void {
   input.className = "chat-input";
   input.rows = 2;
   input.placeholder = "Type a message…";
+  // Microphone → dictation (the Whisper flow). One tap from chat, as asked.
+  const mic = document.createElement("button");
+  mic.className = "mic-btn";
+  mic.type = "button";
+  mic.title = "Turn speech into text";
+  mic.setAttribute("aria-label", "Turn speech into text");
+  mic.innerHTML = ICON_MIC;
+  mic.addEventListener("click", renderTranscribe);
   const send = document.createElement("button");
   send.className = "primary chat-send";
   send.type = "button";
   send.textContent = "Send";
   rowEl.appendChild(input);
+  rowEl.appendChild(mic);
   rowEl.appendChild(send);
   panel.appendChild(rowEl);
 
@@ -393,7 +408,7 @@ function renderTranscribe(): void {
   clearDrop();
   root.innerHTML = "";
   root.appendChild(brandBar());
-  root.appendChild(backButton(renderHome));
+  root.appendChild(backButton(renderChat));
 
   const panel = el("section", "panel");
   panel.appendChild(el("h1", "title", "Turn speech into text"));
@@ -791,11 +806,36 @@ function tabButton(label: string): HTMLButtonElement {
   return b;
 }
 
-function brandBar(): HTMLElement {
+function brandBar(actions?: HTMLElement[]): HTMLElement {
   const bar = el("div", "brand");
   bar.appendChild(el("span", "brand-dot", ""));
   bar.appendChild(el("span", "brand-name", "Verdure"));
+  if (actions && actions.length) {
+    const box = el("div", "brand-actions");
+    for (const a of actions) box.appendChild(a);
+    bar.appendChild(box);
+  }
   return bar;
+}
+
+// Inline SVGs (no external assets — the app's CSP blocks remote fetches). They
+// inherit color via `currentColor`, so CSS controls their tint.
+const ICON_MIC =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg>';
+const ICON_GEAR =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-1.1 2.7H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>';
+
+// A small, quiet header action (gear, etc.). aria-label so it's not a mystery
+// glyph to a screen reader (skills/design.md — signifiers).
+function iconButton(svg: string, label: string, onClick: () => void): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.className = "icon-btn";
+  b.type = "button";
+  b.title = label;
+  b.setAttribute("aria-label", label);
+  b.innerHTML = svg;
+  b.addEventListener("click", onClick);
+  return b;
 }
 
 function badge(text: string, kind: "muted" | "ok"): HTMLElement {
@@ -823,7 +863,7 @@ function escapeHtml(s: string): string {
 
 // --- boot -------------------------------------------------------------------
 async function boot(): Promise<void> {
-  renderHome(); // paint immediately; detection refines the tier in the background
+  renderChat(); // open straight into chat; detection refines the tier in the background
   try {
     tier = await detectDevice();
   } catch {

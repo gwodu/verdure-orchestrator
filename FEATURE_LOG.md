@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-07-17 — Chat-first redesign + "prairie" aesthetic
+
+**What:** Reworked the app's front door and visual language. (1) **Opens straight into chat** — the 4/6-tile task grid is no longer the entry (`boot()` → `renderChat()`); chat is the home. (2) A **microphone button** in the chat input row opens dictation (the Whisper flow) in one tap. (3) A quiet **gear icon** in the header reaches Storage; back-nav from Storage/Transcribe now returns to chat. (4) New **"prairie on a summer day" palette** — a layered gradient background (summer sky → sun-glow → meadow-green → wheat-cream, fixed), warm meadow green replacing cold emerald, earth-olive ink, a sun-dot brand mark, soft gradient bubbles/buttons, frosted warm-paper panels. Retinted through the CSS design tokens so the change cascades everywhere at low risk, with targeted gradient overrides on the hero surfaces (background, bubbles, buttons, mic). Icons are inline SVG (CSP-safe, no remote assets).
+
+**User-impact statement:** *After this change, the user lands where the value is — a calm, warm chat they can talk or type to — instead of a cold grid of choices; dictation is one tap away.*
+
+**Problem it solves:** the old front door made the user choose a "task" before doing anything, and the visual tone was hard-edged/clinical. The redesign removes a whole decision step (design.md — "remove a step") and softens the feel to something inviting.
+
+**Legacy:** the task grid + recommendation/porter flow (`renderHome` and friends) is retained but **unwired** — the only path to un-wrapped modalities (image/video) — pending the legacy-porter keep-or-remove decision (`[OQ-60]`). Flagged in-code.
+
+**Verification:** `tsc --noEmit` clean; `vite build` clean. **Visual self-review (design.md) NOT automated** — the browser extension wasn't connected and no headless browser is installed; reviewed via local `vite preview` and to be confirmed on-device in the next iPad build. No new unit tests (pure presentation; no logic changed — the model picker, chat command, and parsers are untouched).
+
 ### 2026-07-04 — iPad test build: the app runs on iOS (unsigned IPA via CI) [OQ-65]
 
 **What:** A temporary iPad port of the whole app as a **test vehicle** — the founder's 8 GB Mac can't exercise the ByteShape 4B (`[OQ-64]`); his iPad can. Deliberate, flagged deviation from `knowledge/11`'s thin-decider iOS strategy (the shippable-iOS decision stays with `11`). Backend made iOS-compatible behind `cfg` gates with the **macOS paths byte-identical**: `model.rs` downloads via in-process `ureq`/rustls on iOS (no process spawning there; macOS keeps its on-device-verified `curl`); `device.rs` reads syscalls instead of shell-outs — `sysctlbyname` (RAM), `statvfs` (disk), and `os_proc_available_memory()` — the app's **real headroom before iOS jetsam-kills it**, feeding the existing chat RAM gate so the picker sizes against iOS's true constraint. New `build-ipad.yml` (tag `ipad-build-N`): `tauri ios init` fresh each run, mic-permission plist injected, Rust lib pre-built with cargo (bypassing the generated xcode-script phase, which requires a parent tauri-CLI process CI can't provide), project rewritten to link the prebuilt lib, xcodebuild unsigned → `verdure-ipad-unsigned.ipa` artifact.

@@ -1,34 +1,48 @@
-/* Verdure porter — calm, plain, floor-user-first (skills/design.md).
-   No jargon on screen; the action leads, the tool is the clear answer. */
+/* Verdure — warm, calm, floor-user-first (skills/design.md).
+   Aesthetic: a prairie on a summer day — soft sky, sun-warmed light, meadow
+   green rising from a wheat-cream field. Natural gradients, nothing hard-edged. */
 
 :root {
-  --bg: #f6f8f5;
-  --surface: #ffffff;
-  --ink: #15241c;
-  --ink-soft: #4f6357;
-  --green: #1f7a4d;
-  --green-deep: #155c39;
-  --green-tint: #e7f3ec;
-  --line: #dde7e0;
-  --shadow: 0 1px 2px rgba(21, 36, 28, 0.05), 0 8px 24px rgba(21, 36, 28, 0.06);
-  --radius: 16px;
+  --bg: #f4efe1;            /* wheat-cream field (fallback under the gradient) */
+  --surface: #fffdf7;       /* warm sunlit paper */
+  --ink: #2c3327;           /* deep earth-olive, not cold near-black */
+  --ink-soft: #6d7460;      /* soft sage */
+  --green: #5f8f4c;         /* sunny meadow */
+  --green-deep: #4a7539;    /* deeper grass */
+  --green-tint: #eaf0d6;    /* pale sun-warmed meadow */
+  --wheat: #e6b25a;         /* golden wheat / warm sun */
+  --wheat-deep: #cf9636;
+  --sky: #dde9e8;           /* hazy summer sky */
+  --line: #e6dfcc;          /* soft wheat line */
+  --shadow: 0 1px 2px rgba(76, 62, 28, 0.05), 0 10px 30px rgba(96, 82, 40, 0.09);
+  --radius: 18px;
 }
 
 * { box-sizing: border-box; }
 
 html, body {
   margin: 0;
-  background: var(--bg);
+  min-height: 100vh;
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* The prairie: warm sun glow upper-right, meadow rising bottom-left, sky-to-
+     wheat wash top-to-bottom. Fixed so it stays put as chat scrolls. */
+  background:
+    radial-gradient(1100px 480px at 82% -10%, rgba(230, 178, 90, 0.34), transparent 60%),
+    radial-gradient(900px 520px at 8% 110%, rgba(120, 160, 78, 0.20), transparent 58%),
+    linear-gradient(178deg, var(--sky) 0%, #ecefd9 40%, #f3efdf 72%, var(--bg) 100%);
+  background-attachment: fixed;
 }
 
 #app {
   max-width: 680px;
   margin: 0 auto;
-  padding: 28px 24px 56px;
+  padding: 28px 24px 40px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Brand */
@@ -36,19 +50,59 @@ html, body {
   display: flex;
   align-items: center;
   gap: 9px;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 .brand-dot {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #4cc283, var(--green));
+  /* a little summer sun */
+  background: radial-gradient(circle at 32% 30%, #ffe6a3, var(--wheat-deep));
+  box-shadow: 0 0 10px rgba(230, 178, 90, 0.5);
 }
 .brand-name {
   font-weight: 650;
   letter-spacing: 0.2px;
   color: var(--green-deep);
 }
+.brand-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-soft);
+  padding: 7px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  line-height: 0;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.icon-btn:hover { background: rgba(90, 110, 70, 0.10); color: var(--ink); }
+.icon-btn svg { width: 20px; height: 20px; }
+
+/* Microphone button — dictation (the Whisper flow), one tap from chat */
+.mic-btn {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  color: #4a370f;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #f3cd77, var(--wheat-deep));
+  box-shadow: 0 3px 10px rgba(190, 145, 55, 0.35);
+  transition: transform 0.1s ease, filter 0.12s ease;
+}
+.mic-btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
+.mic-btn:active { transform: translateY(0); }
+.mic-btn svg { width: 22px; height: 22px; }
 
 /* Headings */
 .intro { margin-bottom: 22px; }
@@ -114,13 +168,18 @@ html, body {
 }
 .back:hover { text-decoration: underline; }
 
-/* Recommendation panel */
+/* Panel — the frosted card the content sits in */
 .panel {
-  background: var(--surface);
+  background: rgba(255, 253, 247, 0.82);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 28px 26px 30px;
+  padding: 26px 26px 26px;
   box-shadow: var(--shadow);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  flex: 1;                 /* let the chat panel fill; harmless elsewhere */
+  display: flex;
+  flex-direction: column;
 }
 .panel .title { font-size: 24px; }
 
@@ -154,18 +213,20 @@ html, body {
 .setup { margin-top: 22px; }
 .primary {
   width: 100%;
-  background: var(--green);
+  background: linear-gradient(135deg, #66964f, var(--green-deep));
   color: #fff;
   border: none;
-  border-radius: 12px;
+  border-radius: 13px;
   padding: 16px 20px;
   font-size: 17px;
   font-weight: 650;
   cursor: pointer;
-  transition: background 0.12s ease;
+  box-shadow: 0 3px 10px rgba(74, 117, 57, 0.25);
+  transition: filter 0.12s ease, transform 0.1s ease;
 }
-.primary:hover { background: var(--green-deep); }
-.primary:disabled { background: #9bbfa9; cursor: default; }
+.primary:hover { filter: brightness(1.06); }
+.primary:active { transform: translateY(1px); }
+.primary:disabled { background: #a9c39a; box-shadow: none; cursor: default; filter: none; }
 .status {
   font-size: 14.5px;
   color: var(--ink-soft);
@@ -374,29 +435,32 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 18px 0;
-  max-height: 420px;
+  margin: 16px 0;
+  flex: 1;                 /* fill the screen — app-like, input pinned below */
+  min-height: 200px;
   overflow-y: auto;
 }
 .msg {
   max-width: 85%;
-  padding: 10px 14px;
-  border-radius: 14px;
+  padding: 11px 15px;
+  border-radius: 16px;
   font-size: 15px;
   line-height: 1.5;
   white-space: pre-wrap;
 }
 .msg.user {
   align-self: flex-end;
-  background: var(--green);
+  background: linear-gradient(135deg, #6d9c54, #4e7b3e);
   color: #fff;
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: 5px;
+  box-shadow: 0 2px 8px rgba(74, 117, 57, 0.18);
 }
 .msg.ai {
   align-self: flex-start;
-  background: #f1f4f1;
+  background: #fbf6e9;     /* warm paper */
+  border: 1px solid var(--line);
   color: var(--ink);
-  border-bottom-left-radius: 4px;
+  border-bottom-left-radius: 5px;
 }
 .chat-input-row {
   display: flex;
@@ -405,17 +469,25 @@ html, body {
 }
 .chat-input {
   flex: 1;
-  resize: vertical;
+  resize: none;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 12px 14px;
+  border-radius: 14px;
+  padding: 13px 15px;
   font-size: 15px;
   font-family: inherit;
   line-height: 1.5;
+  background: #fffdf8;
+  color: var(--ink);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.chat-input:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(95, 143, 76, 0.15);
 }
 .chat-send {
   width: auto;
-  padding: 12px 22px;
+  padding: 13px 22px;
   white-space: nowrap;
 }
 .chat-action {
