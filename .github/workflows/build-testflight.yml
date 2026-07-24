@@ -1,0 +1,177 @@
+name: TestFlight (signed, upload to App Store Connect)
+
+# Signed iOS build → uploaded to TestFlight. Same app as the unsigned iPad test
+# vehicle (build-ipad.yml), but code-SIGNED with the founder's paid Apple
+# Developer account and delivered through TestFlight (no 7-day sideload expiry).
+#
+# BOUNDARY: this workflow never contains any credentials. It reads four GitHub
+# repository SECRETS the founder creates once (Settings → Secrets and variables →
+# Actions). Claude never sees their values.
+#   ASC_API_KEY_P8      — contents of the App Store Connect API key .p8 file
+#   ASC_API_KEY_ID      — that key's Key ID
+#   ASC_API_ISSUER_ID   — the App Store Connect API Issuer ID
+#   APPLE_TEAM_ID       — the 10-char Apple Developer Team ID
+#
+# One-time account setup (see knowledge/11 + the session hand-off):
+#   1. App Store Connect → register the Bundle ID `ai.verdure.porter` (explicit).
+#   2. Create the app record with that bundle ID.
+#   3. Users and Access → Integrations → App Store Connect API → generate a key
+#      with the "App Manager" role; download the .p8 ONCE; note Key ID + Issuer ID.
+#   4. Add the four secrets above.
+# Then tag `testflight-N` to ship a build. Internal testers install immediately;
+# external testers need a one-time Beta App Review.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "testflight-*"
+
+env:
+  IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+  BUNDLE_ID: ai.verdure.porter
+
+jobs:
+  testflight:
+    name: Build signed + upload to TestFlight
+    runs-on: macos-latest # full Xcode + signing toolchain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Rust (with the iOS targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - name: Install workspaces
+        run: npm ci
+      - name: Build the frontend
+        working-directory: app
+        run: npm run build
+      - name: Generate the iOS project (tauri ios init)
+        working-directory: app
+        run: npx tauri ios init --ci
+      - name: Pre-build the Rust library for iOS
+        # Same reasoning as build-ipad.yml: build the staticlib (whisper.cpp +
+        # llama.cpp for aarch64-apple-ios) with cargo directly, in production mode
+        # (custom-protocol → embed the UI, not the dev server).
+        working-directory: app/src-tauri
+        run: cargo build --lib --release --target aarch64-apple-ios --features tauri/custom-protocol
+      - name: Point the Xcode project at the prebuilt library
+        working-directory: app/src-tauri/gen/apple
+        run: |
+          python3 - <<'PY'
+          import re
+          spec = open("project.yml").read()
+          copy = (
+              "set -e; "
+              "for d in \"${SRCROOT}/Externals/arm64/${CONFIGURATION}\" \"${SRCROOT}/Externals\"; do "
+              "mkdir -p \"$d\"; "
+              "cp \"${SRCROOT}/../../target/aarch64-apple-ios/release/libverdure_porter_lib.a\" \"$d/libapp.a\"; "
+              "done"
+          )
+          new, n = re.subn(r"script:.*tauri ios xcode-script.*", "script: " + copy, spec)
+          assert n >= 1, "no tauri xcode-script line found in project.yml"
+          open("project.yml", "w").write(new)
+          print(f"replaced {n} script line(s)")
+          PY
+          brew install xcodegen
+          xcodegen generate
+      - name: Patch Info.plist — mic permission, build number, encryption compliance
+        # After xcodegen so it can't be wiped. CFBundleVersion must increase per
+        # upload → use the run number. ITSAppUsesNonExemptEncryption=false declares
+        # we use only standard HTTPS/TLS (exempt), skipping the manual export-
+        # compliance question on every TestFlight upload.
+        run: |
+          MIC_TEXT="Verdure transcribes your microphone into text entirely on your computer. Your audio is never uploaded or stored anywhere else."
+          for plist in $(find app/src-tauri/gen/apple -maxdepth 2 -name Info.plist); do
+            echo "patching $plist"
+            /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string $MIC_TEXT" "$plist" \
+              || /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription $MIC_TEXT" "$plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string ${{ github.run_number }}" "$plist" \
+              || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" "$plist"
+            /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$plist" \
+              || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$plist"
+          done
+      - name: Stage the App Store Connect API key
+        # Write the .p8 secret to the location xcodebuild + altool look for it.
+        # Never printed; lives only on the ephemeral runner for this job.
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys ~/private_keys
+          printf '%s' "$ASC_API_KEY_P8" > ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8
+          cp ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8 ~/private_keys/
+      - name: Archive (Xcode-managed automatic signing via the API key)
+        # -allowProvisioningUpdates + the API key let Xcode create/fetch the
+        # distribution cert + App Store profile for BUNDLE_ID automatically — no
+        # cert wrangling. The prebuilt-lib link settings match the unsigned build.
+        working-directory: app
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          PROJ=$(ls -d src-tauri/gen/apple/*.xcodeproj | head -1)
+          SCHEME=$(xcodebuild -project "$PROJ" -list | sed -n '/Schemes:/,$p' | sed -n '2p' | xargs)
+          echo "project: $PROJ  scheme: $SCHEME"
+          xcodebuild \
+            -project "$PROJ" \
+            -scheme "$SCHEME" \
+            -configuration release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build-ios/Verdure.xcarchive \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_API_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID" \
+            -allowProvisioningUpdates \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            LIBRARY_SEARCH_PATHS='$(inherited) '"$PWD/src-tauri/target/aarch64-apple-ios/release" \
+            OTHER_LDFLAGS='$(inherited) -framework AudioToolbox -framework CoreAudio -framework AVFoundation -framework Accelerate' \
+            archive
+      - name: Export a signed App Store .ipa
+        working-directory: app
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cat > ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>destination</key><string>export</string>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath build-ios/Verdure.xcarchive \
+            -exportPath build-ios/export \
+            -exportOptionsPlist ExportOptions.plist \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_API_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID" \
+            -allowProvisioningUpdates
+      - name: Upload to TestFlight
+        working-directory: app
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: |
+          IPA=$(find build-ios/export -maxdepth 1 -name "*.ipa" | head -1)
+          echo "uploading: $IPA"
+          test -n "$IPA"
+          xcrun altool --upload-app --type ios --file "$IPA" \
+            --apiKey "$ASC_API_KEY_ID" --apiIssuer "$ASC_API_ISSUER_ID"
+      - name: Keep the signed .ipa as an artifact too
+        uses: actions/upload-artifact@v4
+        with:
+          name: verdure-testflight-signed
+          path: app/build-ios/export/*.ipa
+          if-no-files-found: error

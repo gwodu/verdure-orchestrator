@@ -68,6 +68,15 @@ import "./styles.css";
 const WRAPPED = new Set(["audio:transcription"]);
 // Chat setting: use the best model only (no silent fallback to a smaller one).
 const BEST_MODEL_ONLY_KEY = "verdure.chat.bestModelOnly";
+// Example questions shown in the empty chat — playful + informational, to invite
+// a first message. Tapping one fills the input (the user still hits Send, since a
+// first message triggers the one-time model download).
+const CHAT_EXAMPLES = [
+  { emoji: "💧", text: "What's the chemical composition of water?" },
+  { emoji: "🥧", text: "How do you bake a pie?" },
+  { emoji: "🌌", text: "How do the northern lights work?" },
+  { emoji: "🐝", text: "Tell me a surprising fact about honeybees" },
+];
 const AUDIO_EXTS = ["mp3", "m4a", "wav", "flac", "aac", "mp4", "ogg", "aiff", "caf"];
 
 // The MVP's wired ports: which catalog tool backs which classification, and the
@@ -267,10 +276,10 @@ function renderChat(): void {
   root.innerHTML = "";
   // Chat is now the home screen (opens straight here — no task grid). The only
   // header action is a quiet gear to the storage/computer screen.
-  root.appendChild(brandBar([iconButton(ICON_GEAR, "Storage & your computer", renderStorage)]));
+  root.appendChild(brandBar([iconButton(ICON_STORAGE, "Storage & your computer", renderStorage)]));
 
   const panel = el("section", "panel");
-  panel.appendChild(el("h1", "title", "What's on your mind?"));
+  panel.appendChild(el("h1", "title", "Ask me anything"));
   panel.appendChild(
     el(
       "p",
@@ -331,6 +340,23 @@ function renderChat(): void {
 
   root.appendChild(panel);
 
+  // Empty-state example questions. Tapping one loads it into the box so the user
+  // can send when ready. Removed as soon as the first message goes out.
+  const examples = el("div", "suggestions");
+  for (const ex of CHAT_EXAMPLES) {
+    const chip = document.createElement("button");
+    chip.className = "suggest-chip";
+    chip.type = "button";
+    chip.innerHTML = `<span class="suggest-emoji" aria-hidden="true">${ex.emoji}</span>`;
+    chip.appendChild(document.createTextNode(ex.text));
+    chip.addEventListener("click", () => {
+      input.value = ex.text;
+      input.focus();
+    });
+    examples.appendChild(chip);
+  }
+  thread.appendChild(examples);
+
   const addMsg = (who: "user" | "ai", text: string) => {
     const m = el("div", `msg ${who}`, text);
     thread.appendChild(m);
@@ -358,6 +384,7 @@ function renderChat(): void {
     busy = true;
     send.disabled = true;
     input.value = "";
+    examples.remove(); // empty-state examples make way for the conversation
     addMsg("user", text);
     status.textContent = "Thinking…";
     try {
@@ -820,10 +847,12 @@ function brandBar(actions?: HTMLElement[]): HTMLElement {
 
 // Inline SVGs (no external assets — the app's CSP blocks remote fetches). They
 // inherit color via `currentColor`, so CSS controls their tint.
+// Lucide (github.com/lucide-icons/lucide, ISC) — clean, evenly-weighted paths.
 const ICON_MIC =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg>';
-const ICON_GEAR =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-1.1 2.7H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>';
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>';
+// Hard-drive — reads as "storage / what's on your computer" more clearly than a gear.
+const ICON_STORAGE =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>';
 
 // A small, quiet header action (gear, etc.). aria-label so it's not a mystery
 // glyph to a screen reader (skills/design.md — signifiers).
