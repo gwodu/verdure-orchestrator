@@ -28,7 +28,13 @@ on:
 
 env:
   IPHONEOS_DEPLOYMENT_TARGET: "14.0"
-  BUNDLE_ID: ai.verdure.porter
+  # Must match the bundle ID of the "Verdure AI" App Store Connect record, which
+  # is the explicit App ID `ai.verdure.porter.898PY37K5S` (= ai.verdure.porter +
+  # Team ID; a tool made this "unique" variant). We override PRODUCT_BUNDLE_IDENTIFIER
+  # at archive time, so only the iOS/TestFlight build uses it — the macOS build and
+  # tauri.conf.json's `ai.verdure.porter` are untouched. (Cleaning up the two-App-ID
+  # situation belongs with the identifier rename, [OQ-60].)
+  BUNDLE_ID: ai.verdure.porter.898PY37K5S
 
 jobs:
   testflight:
