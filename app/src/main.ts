@@ -12,53 +12,24 @@
 import {
   INTENT_CARDS,
   recommend,
-  estimateTranscriptionSpeed,
   classifyIntent,
   type IntentCard,
   type Tier,
-  type SpeedEstimate,
 } from "@verdure/decider";
 import {
   detectDevice,
   portTool,
-  transcribeAudio,
-  onAudioDrop,
   startLiveTranscription,
   stopLiveTranscription,
   chatSend,
   chatModelOptions,
   listModels,
   removeModel,
-  deviceSpec,
   systemResources,
   inTauri,
   type PortOutcome,
   type ChatModelOption,
 } from "./bridge";
-
-// The pre-run prediction line (from device specs).
-function predictionLine(e: SpeedEstimate): string {
-  if (e.category === "wont-fit") return `Estimate: ${e.note}`;
-  const [lo, hi] = e.realtimeFactor!;
-  const range = lo === hi ? `${lo}×` : `${lo}–${hi}×`;
-  return `Estimate: ${e.note} (about ${range} faster than real-time).`;
-}
-
-// Audio length as m:ss (or Ns under a minute).
-function fmtDuration(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
-}
-
-// The post-run measured line, with the raw timing (our real calibration anchor).
-function measuredLine(audioSeconds: number, processingSeconds: number): string {
-  const factor = audioSeconds / processingSeconds;
-  const shown = factor >= 2 ? Math.round(factor) : Math.round(factor * 10) / 10;
-  return `Measured on your computer: ${fmtDuration(audioSeconds)} of audio in ${Math.round(
-    processingSeconds,
-  )}s — about ${shown}× faster than real-time.`;
-}
 
 const WHISPER_MODEL_ID = "whisper-base-en";
 const fmtMb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1_048_576))} MB`;
@@ -90,7 +61,6 @@ const CHAT_EXAMPLES = [
   { emoji: "🌌", text: "How do the northern lights work?" },
   { emoji: "🐝", text: "Tell me a surprising fact about honeybees" },
 ];
-const AUDIO_EXTS = ["mp3", "m4a", "wav", "flac", "aac", "mp4", "ogg", "aiff", "caf"];
 
 // The MVP's wired ports: which catalog tool backs which classification, and the
 // name to SHOW the user. Only transcription→Buzz is one-click in v1.0
@@ -276,8 +246,7 @@ function intentCard(card: IntentCard): HTMLElement {
   `;
   btn.addEventListener("click", () => {
     const key = classKey(card.classification);
-    if (key === "text:general") renderChat();
-    else if (WRAPPED.has(key)) renderTranscribe();
+    if (key === "text:general" || WRAPPED.has(key)) renderChat();
     else renderRecommendation(card);
   });
   return btn;
@@ -409,27 +378,38 @@ function renderChat(): void {
     mic.classList.toggle("recording", on);
     mic.title = on ? "Stop dictation" : "Dictate — turn speech into text";
   };
-  const toggleMic = async () => {
-    if (recording) {
-      setRecording(false);
-      await stopLiveTranscription(); // emits the final segment, then live:stopped
-      return;
-    }
+  // Begin dictation. `needsInstall` shows the one-time speech-model download
+  // notice; it clears as soon as the first words come back.
+  const startDictation = async (needsInstall: boolean) => {
     setRecording(true);
-    status.textContent = "Listening… speak, then tap the mic again.";
+    status.textContent = needsInstall ? "Setting up speech-to-text…" : "Listening… speak, then tap the mic again.";
+    let note: HTMLElement | null = needsInstall
+      ? el(
+          "div",
+          "install-note",
+          "Installing the speech model — a one-time ~140 MB download. It runs on your device and can take a minute…",
+        )
+      : null;
+    if (note) {
+      thread.appendChild(note);
+      thread.scrollTop = thread.scrollHeight;
+    }
     try {
       liveCleanup = await startLiveTranscription({
         onStatus: (m) => (status.textContent = m),
         onSegment: (seg) => {
+          note?.remove();
+          note = null; // first words → the download finished
           const t = seg.trim();
-          if (!t) return;
-          input.value = input.value ? `${input.value} ${t}` : t; // dictate into the box
+          if (t) input.value = input.value ? `${input.value} ${t}` : t; // into the box
         },
         onError: (m) => {
+          note?.remove();
           status.textContent = m;
           setRecording(false);
         },
         onStopped: () => {
+          note?.remove();
           setRecording(false);
           status.textContent = "";
           if (liveCleanup) {
@@ -440,9 +420,32 @@ function renderChat(): void {
         },
       });
     } catch (err) {
+      note?.remove();
       status.textContent = String(err);
       setRecording(false);
     }
+  };
+  // Tap the mic: stop if recording; otherwise, if the speech model isn't installed
+  // yet, ask permission first (with its size — the same honest prompt as the chat
+  // model), then dictate. The user opts into the extra download.
+  const toggleMic = async () => {
+    if (recording) {
+      setRecording(false);
+      await stopLiveTranscription(); // emits the final segment, then live:stopped
+      return;
+    }
+    const installed = (await listModels().catch(() => [])).some(
+      (m) => m.id === WHISPER_MODEL_ID && m.installed,
+    );
+    if (!installed) {
+      addActionMsg(
+        "To talk to Verdure by voice, I'll install a small speech model (Whisper) — a one-time ~140 MB download that runs entirely on your device.",
+        "Install & start talking",
+        () => void startDictation(true),
+      );
+      return;
+    }
+    void startDictation(false);
   };
   mic.addEventListener("click", () => void toggleMic());
   const send = document.createElement("button");
@@ -534,9 +537,10 @@ function renderChat(): void {
         (cls.modality === "audio" && cls.task === "transcription");
       if (wantsTranscription) {
         addActionMsg(
-          decision.reply || "I can set you up to turn recordings into text.",
-          "Set it up →",
-          renderTranscribe,
+          decision.reply ||
+            "You can talk to me instead of typing — tap the microphone and I'll turn your speech into text, right on your device.",
+          "Start talking →",
+          () => void toggleMic(),
         );
       } else {
         addMsg("ai", decision.reply || "(no reply)");
@@ -561,287 +565,6 @@ function renderChat(): void {
   input.focus();
 }
 
-// --- Screen 2a: transcription, wrapped IN-APP (the pivot, knowledge/18) ------
-// Two ways to the same on-device result: drop a file, or record live from the
-// mic. They share the transcript box, Copy, and the storage row; only the input
-// (dropzone vs mic) and the status differ.
-function renderTranscribe(): void {
-  clearDrop();
-  root.innerHTML = "";
-  root.appendChild(brandBar());
-  root.appendChild(backButton(renderChat));
-
-  const panel = el("section", "panel");
-  panel.appendChild(el("h1", "title", "Turn speech into text"));
-  panel.appendChild(
-    el(
-      "p",
-      "subtitle",
-      "Drop an audio file, or record live from your microphone. It's transcribed right on your computer — private, free, no account. The first time, Verdure downloads a small speech model (~140 MB).",
-    ),
-  );
-
-  // Mode toggle: a file you already have, vs the mic right now.
-  const modeToggle = el("div", "mode-toggle");
-  const uploadTab = tabButton("Upload a file");
-  const liveTab = tabButton("Record live");
-  modeToggle.appendChild(uploadTab);
-  modeToggle.appendChild(liveTab);
-  panel.appendChild(modeToggle);
-
-  // --- Upload mode: the dropzone + performance prediction --------------------
-  const uploadArea = el("div", "upload-area");
-
-  // Performance prediction (before any download) — honest expectation from the
-  // machine's specs, calibrated to a real number after the first transcription.
-  const perf = el("p", "perf");
-  perf.style.display = "none";
-  let perfReady = false;
-  uploadArea.appendChild(perf);
-
-  // Separate, persistent line for the real measured speed after a run (so the
-  // estimate above stays visible — predicted vs actual).
-  const measured = el("p", "perf measured");
-  measured.style.display = "none";
-  uploadArea.appendChild(measured);
-
-  const zone = el("div", "dropzone");
-  zone.innerHTML = `<span class="dropzone-emoji" aria-hidden="true">📄</span>
-    <span class="dropzone-text">Drop an audio file here</span>
-    <span class="dropzone-hint">mp3, m4a, wav, and more</span>`;
-  uploadArea.appendChild(zone);
-  panel.appendChild(uploadArea);
-
-  // --- Live mode: the mic button + a recording indicator ---------------------
-  const liveArea = el("div", "live-area");
-  liveArea.style.display = "none";
-  const recordBtn = document.createElement("button");
-  recordBtn.className = "primary record";
-  recordBtn.type = "button";
-  recordBtn.textContent = "🎙️ Start recording";
-  const recIndicator = el("span", "rec-indicator");
-  recIndicator.style.display = "none";
-  recIndicator.innerHTML = `<span class="rec-dot" aria-hidden="true"></span><span class="rec-time">0:00</span>`;
-  liveArea.appendChild(recordBtn);
-  liveArea.appendChild(recIndicator);
-  panel.appendChild(liveArea);
-
-  // --- Shared: status, transcript, copy, storage -----------------------------
-  const status = el("p", "status");
-  panel.appendChild(status);
-
-  const result = document.createElement("textarea");
-  result.className = "transcript";
-  result.readOnly = true;
-  result.placeholder = "Your transcript will appear here.";
-  result.style.display = "none";
-  panel.appendChild(result);
-
-  const actions = el("div", "transcript-actions");
-  actions.style.display = "none";
-  const copyBtn = document.createElement("button");
-  copyBtn.className = "secondary";
-  copyBtn.type = "button";
-  copyBtn.textContent = "Copy text";
-  copyBtn.addEventListener("click", () => {
-    result.select();
-    void navigator.clipboard?.writeText(result.value).catch(() => {});
-    copyBtn.textContent = "Copied ✓";
-    setTimeout(() => (copyBtn.textContent = "Copy text"), 1500);
-  });
-  actions.appendChild(copyBtn);
-  panel.appendChild(actions);
-
-  // Storage row — shows the downloaded model's size with a one-click Remove, so
-  // space can be reclaimed anytime (knowledge/18, the floor user's tight disk).
-  const storage = el("div", "storage");
-  storage.style.display = "none";
-  panel.appendChild(storage);
-
-  const refreshStorage = async () => {
-    const models = await listModels();
-    const whisper = models.find((m) => m.id === WHISPER_MODEL_ID);
-    if (!whisper?.installed) {
-      storage.style.display = "none";
-      return;
-    }
-    storage.style.display = "flex";
-    storage.innerHTML = `<span class="storage-label">Speech model on this computer · ${fmtMb(whisper.sizeBytes)}</span>`;
-    const remove = document.createElement("button");
-    remove.className = "link-danger";
-    remove.type = "button";
-    remove.textContent = "Remove";
-    remove.addEventListener("click", async () => {
-      remove.disabled = true;
-      remove.textContent = "Removing…";
-      try {
-        await removeModel(whisper.id);
-      } finally {
-        await refreshStorage();
-      }
-    });
-    storage.appendChild(remove);
-  };
-
-  root.appendChild(panel);
-  void refreshStorage();
-
-  // Predict the speed from this machine's specs (before any download).
-  const showPrediction = async () => {
-    const spec = await deviceSpec();
-    const est = estimateTranscriptionSpeed(spec, "base");
-    perf.textContent = predictionLine(est);
-    perfReady = true;
-    if (uploadArea.style.display !== "none") perf.style.display = "block";
-  };
-  void showPrediction();
-
-  // --- Upload transcription (drop a file) ------------------------------------
-  let busy = false;
-  const run = async (path: string) => {
-    if (busy) return;
-    setMode("upload"); // a dropped file always belongs to the upload flow
-    busy = true;
-    zone.classList.add("working");
-    result.style.display = "none";
-    actions.style.display = "none";
-    status.textContent = "Starting…";
-    try {
-      const r = await transcribeAudio(path, (msg) => (status.textContent = msg));
-      const hasText = r.text.trim().length > 0;
-      status.textContent = hasText ? "Done — transcript below." : "Done — but no speech was found.";
-      result.value = r.text;
-      result.style.display = "block";
-      actions.style.display = hasText ? "flex" : "none";
-      // Show the real measured speed alongside the estimate (predicted vs actual).
-      if (r.audioSeconds > 0 && r.processingSeconds > 0) {
-        measured.style.display = "block";
-        measured.textContent = measuredLine(r.audioSeconds, r.processingSeconds);
-      }
-    } catch (err) {
-      status.textContent = String(err);
-      zone.classList.add("failed");
-    } finally {
-      busy = false;
-      zone.classList.remove("working");
-      void refreshStorage(); // the model now exists — show its size + Remove
-    }
-  };
-
-  // --- Live transcription (record from the mic) ------------------------------
-  let recording = false;
-  let seconds = 0;
-  let timer: number | undefined;
-  const drawTimer = () => {
-    const t = recIndicator.querySelector(".rec-time");
-    if (t) t.textContent = fmtDuration(seconds);
-  };
-
-  // Reset the UI once a session has fully ended (driven by live:stopped/error).
-  const finalize = () => {
-    recording = false;
-    recordBtn.disabled = false;
-    recordBtn.textContent = "🎙️ Start recording";
-    recordBtn.classList.remove("recording");
-    recIndicator.style.display = "none";
-    if (timer) {
-      clearInterval(timer);
-      timer = undefined;
-    }
-    if (liveCleanup) {
-      liveCleanup();
-      liveCleanup = null;
-    }
-    void refreshStorage();
-  };
-
-  const startRecording = async () => {
-    if (recording) return;
-    recording = true;
-    recordBtn.textContent = "■ Stop recording";
-    recordBtn.classList.add("recording");
-    result.value = "";
-    result.style.display = "block";
-    actions.style.display = "none";
-    status.textContent = "Starting…";
-    recIndicator.style.display = "inline-flex";
-    seconds = 0;
-    drawTimer();
-    timer = window.setInterval(() => {
-      seconds += 1;
-      drawTimer();
-    }, 1000);
-    try {
-      liveCleanup = await startLiveTranscription({
-        onStatus: (msg) => (status.textContent = msg),
-        onSegment: (text) => {
-          const t = text.trim();
-          if (!t) return;
-          result.value = result.value ? `${result.value} ${t}` : t;
-          result.scrollTop = result.scrollHeight;
-          actions.style.display = "flex";
-        },
-        onError: (msg) => {
-          status.textContent = msg;
-          finalize();
-        },
-        onStopped: () => {
-          status.textContent = result.value.trim()
-            ? "Stopped — transcript above."
-            : "Stopped — no speech captured.";
-          finalize();
-        },
-      });
-    } catch (err) {
-      status.textContent = String(err);
-      finalize();
-    }
-  };
-
-  recordBtn.addEventListener("click", () => {
-    if (recording) {
-      // Ask the backend to finish; the final segment + live:stopped drive finalize.
-      status.textContent = "Finishing up…";
-      recordBtn.disabled = true;
-      void stopLiveTranscription();
-    } else {
-      void startRecording();
-    }
-  });
-
-  // --- Mode switching --------------------------------------------------------
-  function setMode(mode: "upload" | "live"): void {
-    // Leaving live mode while recording must release the mic.
-    if (mode !== "live" && recording) void stopLiveTranscription();
-    uploadTab.classList.toggle("active", mode === "upload");
-    liveTab.classList.toggle("active", mode === "live");
-    uploadArea.style.display = mode === "upload" ? "block" : "none";
-    liveArea.style.display = mode === "live" ? "flex" : "none";
-    perf.style.display = mode === "upload" && perfReady ? "block" : "none";
-    measured.style.display = "none";
-    result.value = "";
-    result.style.display = "none";
-    actions.style.display = "none";
-    status.textContent =
-      mode === "live" && !inTauri ? "Live recording runs in the desktop app." : "";
-  }
-  uploadTab.addEventListener("click", () => setMode("upload"));
-  liveTab.addEventListener("click", () => setMode("live"));
-  setMode("upload");
-
-  if (inTauri) {
-    onAudioDrop(
-      (paths) => {
-        const audio = paths.find((p) => AUDIO_EXTS.includes(p.split(".").pop()?.toLowerCase() ?? ""));
-        if (audio) void run(audio);
-        else status.textContent = "That doesn't look like an audio file — try an mp3, m4a, or wav.";
-      },
-      (hovering) => zone.classList.toggle("hover", hovering),
-    ).then((un) => (dropUnlisten = un));
-  } else if (uploadArea.style.display !== "none") {
-    status.textContent = "Drag-and-drop transcription runs in the desktop app.";
-  }
-}
 
 // --- Screen 2b: the recommendation + one-click setup (legacy, un-wrapped) ----
 function renderRecommendation(card: IntentCard): void {
@@ -959,13 +682,6 @@ function backButton(onClick: () => void): HTMLElement {
   return back;
 }
 
-function tabButton(label: string): HTMLButtonElement {
-  const b = document.createElement("button");
-  b.className = "tab";
-  b.type = "button";
-  b.textContent = label;
-  return b;
-}
 
 function brandBar(actions?: HTMLElement[]): HTMLElement {
   const bar = el("div", "brand");

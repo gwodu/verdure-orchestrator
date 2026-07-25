@@ -20,6 +20,8 @@ Three chat improvements:
 
 **Verification:** `tsc` + `vite build` clean; new `model.rs` unit tests for the explicit-choice + options logic. Rust compiled in CI (below); on-device behavior (real dictation, real download) confirmed in the next TestFlight build.
 
+**Follow-up (same day, on founder review):** deleted the standalone transcription screen entirely (`renderTranscribe` + file-drop/tabs/speed-estimate helpers, ~280 lines) — dictation lives in chat now, so the page was vestigial. The mic now **asks permission before installing the speech model**: first tap (when Whisper isn't downloaded) shows a consent message with the size ("~140 MB, runs on your device") and an "Install & start talking" button, matching the chat-model install prompt; confirm → download → record. The chat "set up transcription" action routes into that same mic flow instead of the deleted page. Unused transcription CSS left for a later sweep.
+
 ### 2026-07-25 — TestFlight distribution working (signed iOS build via CI) [OQ-65]
 
 **What:** `build-testflight.yml` (tag `testflight-N`) now builds a **code-signed** iOS app with the founder's paid Apple Developer account and uploads it to **TestFlight** — replacing the unsigned-sideload path (no more 7-day cert, no Sideloadly). Reuses the proven iOS build steps, then: patch build number (run number) + `ITSAppUsesNonExemptEncryption=false`, stage the App Store Connect API key, archive with Xcode-managed automatic signing, export a signed App-Store `.ipa`, upload via `xcrun altool`.
