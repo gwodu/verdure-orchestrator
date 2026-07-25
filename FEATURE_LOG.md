@@ -6,6 +6,20 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-07-25 — Dictation-into-chat, model picker, install notice
+
+Three chat improvements:
+
+**1. Mic dictates into the chat box** (not a separate screen). The chat mic is now a record toggle: tap → live transcription streams words into the input as you pause, tap again to stop, then edit + Send. Reuses the `live.rs` engine (`startLiveTranscription`/`onSegment`); the mic pulses red while listening. The standalone transcription screen stays for file transcription (still reached from the "set it up" chat action), just not behind the mic. Closes the core of the AI-first dictation vision (`[OQ-57]`).
+
+**2. First-launch model picker** (Small · Balanced · Powerful). New `Choose your model` screen shows the three chat models with plain tier names, one-line blurbs, **download size, and whether each fits this device's free memory** (design.md — honest space, model name demoted). Choice persists (`localStorage`), is shown as a chip in the chat header, and is changeable anytime. Backend: `chat_model_options` command (size + `fitsMemory`/`fitsDisk` per device) and `chat_model_choice(id, available)` — loads the picked model if it fits, else declines honestly; unknown/empty id falls back to the auto-picker. Replaces the old "best model only" toggle (the explicit pick supersedes it). The lineup is all-lightweight (0.4 / 1.1 / 1.4 GB) per the founder's call.
+
+**3. "Installing your model" notice.** On the first message with an un-downloaded model, a prominent one-time notice names the tier + size ("Setting up your Powerful model — a one-time 1.4 GB download…") instead of a silent wait.
+
+**User-impact statement:** *the user talks or types to Verdure, sees clearly which model they're using and what it costs in space, and is told plainly when a one-time download is happening.*
+
+**Verification:** `tsc` + `vite build` clean; new `model.rs` unit tests for the explicit-choice + options logic. Rust compiled in CI (below); on-device behavior (real dictation, real download) confirmed in the next TestFlight build.
+
 ### 2026-07-25 — TestFlight distribution working (signed iOS build via CI) [OQ-65]
 
 **What:** `build-testflight.yml` (tag `testflight-N`) now builds a **code-signed** iOS app with the founder's paid Apple Developer account and uploads it to **TestFlight** — replacing the unsigned-sideload path (no more 7-day cert, no Sideloadly). Reuses the proven iOS build steps, then: patch build number (run number) + `ITSAppUsesNonExemptEncryption=false`, stage the App Store Connect API key, archive with Xcode-managed automatic signing, export a signed App-Store `.ipa`, upload via `xcrun altool`.

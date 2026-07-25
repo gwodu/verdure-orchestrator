@@ -55,16 +55,40 @@ export async function portTool(
 /** The model's decision: answer, or invoke a tool (grammar-locked). */
 export type ChatDecision = { action: string; reply: string };
 
+/** One chat model as the picker needs it: size + whether it fits this device. */
+export type ChatModelOption = {
+  id: string;
+  name: string;
+  downloadMb: number;
+  runtimeMb: number;
+  installed: boolean;
+  fitsMemory: boolean;
+  fitsDisk: boolean;
+};
+
+/** The chat models the user chooses from, with per-device fit flags. */
+export async function chatModelOptions(): Promise<ChatModelOption[]> {
+  if (!inTauri) {
+    // Browser preview: plausible options so the picker is reviewable.
+    return [
+      { id: "qwen2.5-0.5b-instruct", name: "Chat model (Qwen2.5 0.5B)", downloadMb: 400, runtimeMb: 1100, installed: false, fitsMemory: true, fitsDisk: true },
+      { id: "qwen2.5-1.5b-instruct", name: "Chat model (Qwen2.5 1.5B)", downloadMb: 1100, runtimeMb: 2400, installed: false, fitsMemory: true, fitsDisk: true },
+      { id: "qwen3-4b-instruct-2507-byteshape", name: "Chat model (Qwen3 4B)", downloadMb: 1400, runtimeMb: 2300, installed: false, fitsMemory: true, fitsDisk: true },
+    ];
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<ChatModelOption[]>("chat_model_options");
+}
+
 /**
- * Send a chat message to the local model, streaming a status line.
- * `allowFallback` = false ("best model only") tells the backend to use the
- * preferred chat model or explain why it can't, instead of silently switching to a
- * smaller one — so a tester knows which model actually answered.
+ * Send a chat message to the local model, streaming a status line. `modelId` is
+ * the model the user picked (Small/Balanced/Powerful); the backend loads it if it
+ * fits, or explains why it can't — never a silent downgrade. Empty id → auto-pick.
  */
 export async function chatSend(
   message: string,
   onProgress: ProgressFn,
-  allowFallback = true,
+  modelId = "",
 ): Promise<ChatDecision> {
   if (!inTauri) {
     onProgress("Thinking…");
@@ -87,7 +111,7 @@ export async function chatSend(
     onProgress(e.payload),
   );
   try {
-    return await invoke<ChatDecision>("chat", { message, allowFallback });
+    return await invoke<ChatDecision>("chat", { message, modelId });
   } finally {
     unlisten();
   }

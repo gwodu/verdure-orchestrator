@@ -243,6 +243,82 @@ pub fn choose_chat_model(
     }
 }
 
+/// The chat models the user chooses from on first launch (Small · Balanced ·
+/// Powerful), smallest first. This is the explicit MENU — distinct from
+/// `chat_candidates` (the internal auto-picker). All three are proven small
+/// footprints so any of them is a safe pick on a modern device. Friendly tier
+/// names + copy live in the UI (design.md — the words belong with the surface).
+pub const CHAT_MODEL_CHOICES: &[&ModelInfo] = &[&QWEN_CHAT_SMALL, &QWEN_CHAT, &BYTESHAPE_QWEN3_4B];
+
+/// One chat model as the picker needs it: what it is, how big the download is, and
+/// whether it fits THIS device right now (memory + disk). Honest space up front
+/// (design.md) so the user chooses with real numbers, not guesses.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatModelOption {
+    pub id: String,
+    pub name: String,
+    /// One-time download size, MB (what the user is spending on disk).
+    pub download_mb: u32,
+    /// Resident footprint estimate, MB (what it needs free to run).
+    pub runtime_mb: u32,
+    pub installed: bool,
+    /// Enough free memory to run it without OOM-aborting.
+    pub fits_memory: bool,
+    /// Already downloaded, or enough free disk to download it.
+    pub fits_disk: bool,
+}
+
+/// Build the picker's options for this device: each choice with its size and
+/// whether it fits the memory/disk free right now.
+pub fn chat_model_options(
+    data_dir: &Path,
+    available_mb: u64,
+    free_disk_mb: u64,
+) -> Vec<ChatModelOption> {
+    CHAT_MODEL_CHOICES
+        .iter()
+        .map(|m| {
+            let installed = model_path(data_dir, m).exists();
+            ChatModelOption {
+                id: m.id.to_string(),
+                name: m.name.to_string(),
+                download_mb: m.approx_mb,
+                runtime_mb: m.runtime_mb,
+                installed,
+                fits_memory: (m.runtime_mb as u64) <= available_mb,
+                fits_disk: installed || (m.approx_mb as u64) <= free_disk_mb,
+            }
+        })
+        .collect()
+}
+
+/// Resolve the user's chosen chat model for loading. If `id` names one of the
+/// choices and it fits available memory, use it. If it's chosen but won't fit,
+/// return the shortfall so the UI can say so honestly (never load one that would
+/// OOM-abort). If `id` is empty/unknown (no choice yet, or a stale value), fall
+/// back to auto-picking the largest that fits.
+pub fn chat_model_choice(
+    id: &str,
+    available_mb: u64,
+) -> Result<&'static ModelInfo, ChatModelTooBig> {
+    match CHAT_MODEL_CHOICES.iter().copied().find(|m| m.id == id) {
+        Some(m) if (m.runtime_mb as u64) <= available_mb => Ok(m),
+        Some(m) => Err(ChatModelTooBig {
+            model_name: m.name,
+            needed_mb: m.runtime_mb,
+            available_mb,
+            strict: true,
+        }),
+        None => chat_model_for_available(available_mb).ok_or(ChatModelTooBig {
+            model_name: QWEN_CHAT_SMALL.name,
+            needed_mb: QWEN_CHAT_SMALL.runtime_mb,
+            available_mb,
+            strict: false,
+        }),
+    }
+}
+
 /// Every model Verdure can download today. Gemma 4 E2B is listed so the Storage
 /// screen can show + manage it uniformly, but the chat picker won't auto-select it
 /// until it's verified (see `chat_model_for_available`).
@@ -498,6 +574,45 @@ mod tests {
         // Nothing fits → Err flagged non-strict (the "close some apps" message).
         let err = choose_chat_model(QWEN_CHAT_SMALL.runtime_mb as u64 - 1, true).unwrap_err();
         assert!(!err.strict);
+    }
+
+    #[test]
+    fn explicit_choice_used_when_it_fits_declined_when_it_does_not() {
+        let big = &BYTESHAPE_QWEN3_4B;
+        // Chosen + fits → exactly that model, no auto-substitution.
+        assert_eq!(
+            chat_model_choice(big.id, big.runtime_mb as u64).unwrap().id,
+            big.id
+        );
+        // Chosen + doesn't fit → honest error (strict), never a silent smaller model.
+        let err = chat_model_choice(big.id, big.runtime_mb as u64 - 1).unwrap_err();
+        assert!(err.strict);
+        assert_eq!(err.model_name, big.name);
+    }
+
+    #[test]
+    fn unknown_choice_falls_back_to_auto_pick() {
+        // No choice yet / stale id → largest that fits, non-strict error only if
+        // nothing fits at all.
+        assert_eq!(
+            chat_model_choice("", 8000).unwrap().id,
+            chat_model_for_available(8000).unwrap().id
+        );
+        assert!(chat_model_choice("nope", 100).unwrap_err().strict == false);
+    }
+
+    #[test]
+    fn chat_options_report_fit_against_the_device() {
+        // Roomy machine, empty dir → every choice fits memory, none installed.
+        let opts = chat_model_options(Path::new("/tmp/verdure-none-xyz"), 64_000, 64_000);
+        assert_eq!(opts.len(), CHAT_MODEL_CHOICES.len());
+        assert!(opts.iter().all(|o| o.fits_memory && o.fits_disk && !o.installed));
+        // Tiny free memory → the Powerful (4B) no longer fits; the Small one still does.
+        let tight = chat_model_options(Path::new("/tmp/verdure-none-xyz"), 1200, 64_000);
+        let small = tight.iter().find(|o| o.id == QWEN_CHAT_SMALL.id).unwrap();
+        let powerful = tight.iter().find(|o| o.id == BYTESHAPE_QWEN3_4B.id).unwrap();
+        assert!(small.fits_memory);
+        assert!(!powerful.fits_memory);
     }
 
     #[test]

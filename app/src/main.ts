@@ -26,12 +26,14 @@ import {
   startLiveTranscription,
   stopLiveTranscription,
   chatSend,
+  chatModelOptions,
   listModels,
   removeModel,
   deviceSpec,
   systemResources,
   inTauri,
   type PortOutcome,
+  type ChatModelOption,
 } from "./bridge";
 
 // The pre-run prediction line (from device specs).
@@ -66,8 +68,19 @@ import "./styles.css";
 // separate app). Transcription is the first. Others still fall back to the
 // legacy recommendation/porter view until they're wrapped too.
 const WRAPPED = new Set(["audio:transcription"]);
-// Chat setting: use the best model only (no silent fallback to a smaller one).
-const BEST_MODEL_ONLY_KEY = "verdure.chat.bestModelOnly";
+// The chat model the user picked (Small/Balanced/Powerful), by model id.
+const MODEL_CHOICE_KEY = "verdure.chat.modelId";
+// Plain-language tier names + one-line blurbs for the picker, keyed by model id
+// (design.md: the headline is the benefit; the model name is a demoted detail).
+// Order here is the display order (smallest → most capable).
+const MODEL_TIERS: { id: string; tier: string; blurb: string }[] = [
+  { id: "qwen2.5-0.5b-instruct", tier: "Small", blurb: "Quick and light — runs on any device. Great for short questions." },
+  { id: "qwen2.5-1.5b-instruct", tier: "Balanced", blurb: "A capable all-rounder for everyday chat." },
+  { id: "qwen3-4b-instruct-2507-byteshape", tier: "Powerful", blurb: "The most capable — richer answers, needs a little more room." },
+];
+const tierName = (id: string): string =>
+  MODEL_TIERS.find((t) => t.id === id)?.tier ?? "Chat model";
+const chosenModelId = (): string => localStorage.getItem(MODEL_CHOICE_KEY) ?? "";
 // Example questions shown in the empty chat — playful + informational, to invite
 // a first message. Tapping one fills the input (the user still hits Send, since a
 // first message triggers the one-time model download).
@@ -270,13 +283,96 @@ function intentCard(card: IntentCard): HTMLElement {
   return btn;
 }
 
+// --- Choose your model: first-launch pick + change-anytime -------------------
+// The user picks Small / Balanced / Powerful, with each one's download size and
+// whether it fits this device (design.md: honest space, no jargon on the surface —
+// the model name is a demoted detail). `onboarding` = the first-run flow (no way
+// back until a choice is made); otherwise it's reached from chat, with a back.
+async function renderModelPicker(onboarding: boolean): Promise<void> {
+  clearDrop();
+  root.innerHTML = "";
+  root.appendChild(brandBar());
+  if (!onboarding) root.appendChild(backButton(renderChat));
+
+  const panel = el("section", "panel");
+  panel.appendChild(el("h1", "title", "Choose your model"));
+  panel.appendChild(
+    el(
+      "p",
+      "subtitle",
+      onboarding
+        ? "Verdure runs a chat model right on your device — nothing leaves it. Pick one to start; you can change it anytime. It downloads the first time you chat."
+        : "Switch the model Verdure uses to chat. The new one downloads the first time you use it.",
+    ),
+  );
+
+  const list = el("div", "model-picker");
+  panel.appendChild(list);
+  root.appendChild(panel);
+
+  let selected = chosenModelId() || MODEL_TIERS[0].id;
+  const options = await chatModelOptions().catch(() => [] as ChatModelOption[]);
+
+  const gb = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);
+  const render = () => {
+    list.innerHTML = "";
+    // Show in tier order (small → powerful), pairing tier copy with device facts.
+    for (const t of MODEL_TIERS) {
+      const opt = options.find((o) => o.id === t.id);
+      const card = document.createElement("button");
+      card.className = "pick" + (selected === t.id ? " selected" : "");
+      card.type = "button";
+      const fits = !opt || opt.fitsMemory; // unknown (preview) → assume fine
+      const sizeText = opt
+        ? opt.installed
+          ? "Downloaded"
+          : `${gb(opt.downloadMb)} download`
+        : "";
+      card.innerHTML = `
+        <span class="pick-radio" aria-hidden="true"></span>
+        <span class="pick-body">
+          <span class="pick-head">
+            <span class="pick-tier">${t.tier}</span>
+            <span class="pick-size">${escapeHtml(sizeText)}</span>
+          </span>
+          <span class="pick-blurb">${escapeHtml(t.blurb)}</span>
+          ${fits ? "" : '<span class="pick-warn">Not enough free memory for this one right now</span>'}
+        </span>`;
+      card.addEventListener("click", () => {
+        selected = t.id;
+        render();
+      });
+      list.appendChild(card);
+    }
+    const go = document.createElement("button");
+    go.className = "primary";
+    go.type = "button";
+    go.textContent = onboarding ? "Start chatting" : "Use this model";
+    go.addEventListener("click", () => {
+      localStorage.setItem(MODEL_CHOICE_KEY, selected);
+      renderChat();
+    });
+    list.appendChild(go);
+  };
+  render();
+}
+
 // --- Chat: the conversational front door (knowledge/18) ---------------------
 function renderChat(): void {
   clearDrop();
   root.innerHTML = "";
-  // Chat is now the home screen (opens straight here — no task grid). The only
-  // header action is a quiet gear to the storage/computer screen.
-  root.appendChild(brandBar([iconButton(ICON_STORAGE, "Storage & your computer", renderStorage)]));
+  // Chat is the home screen (opens straight here — no task grid). Header actions:
+  // the current model (tap to change) and a quiet gear to storage.
+  const modelBtn = document.createElement("button");
+  modelBtn.className = "model-chip";
+  modelBtn.type = "button";
+  modelBtn.title = "Change the chat model";
+  modelBtn.setAttribute("aria-label", "Change the chat model");
+  modelBtn.textContent = tierName(chosenModelId());
+  modelBtn.addEventListener("click", () => void renderModelPicker(false));
+  root.appendChild(
+    brandBar([modelBtn, iconButton(ICON_STORAGE, "Storage & your computer", renderStorage)]),
+  );
 
   const panel = el("section", "panel");
   panel.appendChild(el("h1", "title", "Ask me anything"));
@@ -287,28 +383,6 @@ function renderChat(): void {
       "Type to chat, or tap the microphone to turn speech into text. Everything runs on your device — private, no account. The first message downloads a chat model (about 0.4–1.4 GB).",
     ),
   );
-
-  // "Best model only" — when on, chat uses the most capable model or tells you why
-  // it can't fit, instead of quietly falling back to a smaller, weaker one. Off by
-  // default (the friendly path for any computer); a deliberate choice for anyone who
-  // wants to know exactly which model is answering. Persisted so it sticks.
-  const bestOnly = document.createElement("label");
-  bestOnly.className = "chat-setting";
-  const bestOnlyBox = document.createElement("input");
-  bestOnlyBox.type = "checkbox";
-  bestOnlyBox.checked = localStorage.getItem(BEST_MODEL_ONLY_KEY) === "1";
-  bestOnlyBox.addEventListener("change", () =>
-    localStorage.setItem(BEST_MODEL_ONLY_KEY, bestOnlyBox.checked ? "1" : "0"),
-  );
-  bestOnly.appendChild(bestOnlyBox);
-  bestOnly.appendChild(
-    el(
-      "span",
-      "chat-setting-label",
-      "Use the best chat model only — tell me if it won't fit, don't switch to a smaller one",
-    ),
-  );
-  panel.appendChild(bestOnly);
 
   const thread = el("div", "chat-thread");
   panel.appendChild(thread);
@@ -321,14 +395,56 @@ function renderChat(): void {
   input.className = "chat-input";
   input.rows = 2;
   input.placeholder = "Type a message…";
-  // Microphone → dictation (the Whisper flow). One tap from chat, as asked.
+  // Microphone → dictation straight into the box (the Whisper flow). Tap to start,
+  // speak (words stream in as you pause), tap again to stop; then edit + Send.
   const mic = document.createElement("button");
   mic.className = "mic-btn";
   mic.type = "button";
-  mic.title = "Turn speech into text";
-  mic.setAttribute("aria-label", "Turn speech into text");
+  mic.title = "Dictate — turn speech into text";
+  mic.setAttribute("aria-label", "Dictate — turn speech into text");
   mic.innerHTML = ICON_MIC;
-  mic.addEventListener("click", renderTranscribe);
+  let recording = false;
+  const setRecording = (on: boolean) => {
+    recording = on;
+    mic.classList.toggle("recording", on);
+    mic.title = on ? "Stop dictation" : "Dictate — turn speech into text";
+  };
+  const toggleMic = async () => {
+    if (recording) {
+      setRecording(false);
+      await stopLiveTranscription(); // emits the final segment, then live:stopped
+      return;
+    }
+    setRecording(true);
+    status.textContent = "Listening… speak, then tap the mic again.";
+    try {
+      liveCleanup = await startLiveTranscription({
+        onStatus: (m) => (status.textContent = m),
+        onSegment: (seg) => {
+          const t = seg.trim();
+          if (!t) return;
+          input.value = input.value ? `${input.value} ${t}` : t; // dictate into the box
+        },
+        onError: (m) => {
+          status.textContent = m;
+          setRecording(false);
+        },
+        onStopped: () => {
+          setRecording(false);
+          status.textContent = "";
+          if (liveCleanup) {
+            liveCleanup();
+            liveCleanup = null;
+          }
+          input.focus();
+        },
+      });
+    } catch (err) {
+      status.textContent = String(err);
+      setRecording(false);
+    }
+  };
+  mic.addEventListener("click", () => void toggleMic());
   const send = document.createElement("button");
   send.className = "primary chat-send";
   send.type = "button";
@@ -356,6 +472,12 @@ function renderChat(): void {
     examples.appendChild(chip);
   }
   thread.appendChild(examples);
+
+  // The chosen model's size + install state, for the one-time "installing" notice.
+  let chosen: ChatModelOption | undefined;
+  void chatModelOptions()
+    .then((opts) => (chosen = opts.find((o) => o.id === chosenModelId())))
+    .catch(() => {});
 
   const addMsg = (who: "user" | "ai", text: string) => {
     const m = el("div", `msg ${who}`, text);
@@ -386,14 +508,25 @@ function renderChat(): void {
     input.value = "";
     examples.remove(); // empty-state examples make way for the conversation
     addMsg("user", text);
+    // One-time install notice: if the chosen model isn't downloaded yet, say so
+    // prominently (named tier + size) instead of a silent wait.
+    let installEl: HTMLElement | null = null;
+    if (chosen && !chosen.installed) {
+      const mb = chosen.downloadMb;
+      const size = mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+      installEl = el(
+        "div",
+        "install-note",
+        `Setting up your ${tierName(chosen.id)} model — a one-time ${size} download. This can take a minute…`,
+      );
+      thread.appendChild(installEl);
+      thread.scrollTop = thread.scrollHeight;
+    }
     status.textContent = "Thinking…";
     try {
-      const decision = await chatSend(
-        text,
-        (msg) => (status.textContent = msg),
-        !bestOnlyBox.checked, // best-model-only → don't allow fallback
-      );
+      const decision = await chatSend(text, (msg) => (status.textContent = msg), chosenModelId());
       status.textContent = "";
+      if (chosen) chosen.installed = true; // downloaded now — don't renotify
       // Cross-check the model's pick with our deterministic classifier.
       const cls = classifyIntent(text);
       const wantsTranscription =
@@ -411,6 +544,7 @@ function renderChat(): void {
     } catch (err) {
       status.textContent = String(err);
     } finally {
+      installEl?.remove();
       busy = false;
       send.disabled = false;
       input.focus();
@@ -892,7 +1026,10 @@ function escapeHtml(s: string): string {
 
 // --- boot -------------------------------------------------------------------
 async function boot(): Promise<void> {
-  renderChat(); // open straight into chat; detection refines the tier in the background
+  // First launch (no model chosen yet) → the "Choose your model" screen; otherwise
+  // straight into chat. Detection refines the tier in the background either way.
+  if (chosenModelId()) renderChat();
+  else void renderModelPicker(true);
   try {
     tier = await detectDevice();
   } catch {

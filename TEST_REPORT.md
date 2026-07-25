@@ -4,6 +4,17 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-07-25 — Dictation-into-chat + model picker (`model.rs`, `lib.rs`, frontend)
+
+**New pure-logic tests (`model.rs`):**
+- `explicit_choice_used_when_it_fits_declined_when_it_does_not` — a chosen model is loaded when it fits and returns a strict `ChatModelTooBig` (no silent downgrade) when it doesn't.
+- `unknown_choice_falls_back_to_auto_pick` — empty/stale id → largest that fits; only a non-strict error when nothing fits.
+- `chat_options_report_fit_against_the_device` — the picker options report `fitsMemory` correctly (Powerful drops out on a tight machine, Small stays), and none show installed for an empty data dir.
+
+**Frontend:** `tsc --noEmit` clean (strict); `vite build` clean. The dictation flow and the picker were reviewed in `vite preview` (the browser build simulates live segments + returns plausible model options, so the UI is exercisable); real mic + real download are on-device (next TestFlight build).
+
+**Note:** the `chat` command signature changed (`allow_fallback: bool` → `model_id: String`) and a `chat_model_options` command was added — both compile-checked in CI.
+
 ### 2026-07-25 — TestFlight pipeline verified end-to-end (`build-testflight.yml`) [OQ-65]
 
 **Verified in CI** (`testflight-4`, run 30163433105, all steps green): signed archive → export signed App-Store `.ipa` → **upload to TestFlight accepted by App Store Connect**. This exercises the whole distribution path: Xcode automatic signing via the App Store Connect API key, provisioning-profile creation, and altool upload authentication.

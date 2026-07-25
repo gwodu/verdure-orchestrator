@@ -82,6 +82,25 @@ fn system_resources<R: Runtime>(app: AppHandle<R>) -> Result<device::SystemResou
     Ok(device::system_resources(&data_dir))
 }
 
+/// The chat models the user picks from (Small/Balanced/Powerful), each with its
+/// download size and whether it fits THIS device's free memory + disk right now —
+/// what the first-launch picker renders (design.md: honest space up front).
+#[tauri::command]
+fn chat_model_options<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<Vec<model::ChatModelOption>, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    let res = device::system_resources(&data_dir);
+    Ok(model::chat_model_options(
+        &data_dir,
+        res.available_ram_mb,
+        res.free_disk_mb,
+    ))
+}
+
 /// A finished transcription plus the timing that calibrates the predictor: how
 /// long the audio was vs how long it took (→ the real "× real-time" factor).
 #[derive(serde::Serialize)]
@@ -134,7 +153,7 @@ async fn transcribe_audio<R: Runtime>(
 async fn chat<R: Runtime>(
     app: AppHandle<R>,
     message: String,
-    allow_fallback: bool,
+    model_id: String,
 ) -> Result<llm::ToolDecision, String> {
     let data_dir = app
         .path()
@@ -145,19 +164,18 @@ async fn chat<R: Runtime>(
         let progress = |msg: &str| {
             let _ = app_for_progress.emit("chat:progress", msg);
         };
-        // Choose the chat model against the memory AVAILABLE right now — not just
-        // total RAM. A model "fits" an 8 GB Mac on paper but still OOM-aborts when
-        // the WebView leaves only ~1 GB free, so we never load one that doesn't fit
-        // (knowledge/21 — the chat-crash fix). `allow_fallback` = false is "best
-        // model only": use the preferred model or say why it can't, never a silent
-        // downgrade — the switch that lets a tester know which model actually ran.
+        // Load the model the user picked (Small/Balanced/Powerful) — but always
+        // checked against the memory AVAILABLE right now, not just total RAM. A
+        // model "fits" on paper but still OOM-aborts when the WebView leaves only
+        // ~1 GB free, so we never load one that doesn't fit (knowledge/21 — the
+        // chat-crash fix); we say why instead. Empty/unknown id → auto-pick.
         let res = device::system_resources(&data_dir);
         let gb = |mb: u64| format!("{:.1} GB", mb as f64 / 1024.0);
-        let info = model::choose_chat_model(res.available_ram_mb, allow_fallback).map_err(|e| {
+        let info = model::chat_model_choice(&model_id, res.available_ram_mb).map_err(|e| {
             if e.strict {
                 format!(
                     "\u{201c}{}\u{201d} needs about {} of free memory, but only {} is free right now. \
-                     Close some apps to free memory — or turn off \u{201c}best model only\u{201d} to use a smaller one.",
+                     Close some apps to free memory — or pick a smaller model in Settings.",
                     e.model_name,
                     gb(e.needed_mb as u64),
                     gb(e.available_mb)
@@ -283,6 +301,7 @@ pub fn run() {
             detect_device,
             device_spec,
             system_resources,
+            chat_model_options,
             transcribe_audio,
             start_live_transcription,
             stop_live_transcription,
