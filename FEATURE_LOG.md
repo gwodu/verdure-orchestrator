@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-07-25 — TestFlight distribution working (signed iOS build via CI) [OQ-65]
+
+**What:** `build-testflight.yml` (tag `testflight-N`) now builds a **code-signed** iOS app with the founder's paid Apple Developer account and uploads it to **TestFlight** — replacing the unsigned-sideload path (no more 7-day cert, no Sideloadly). Reuses the proven iOS build steps, then: patch build number (run number) + `ITSAppUsesNonExemptEncryption=false`, stage the App Store Connect API key, archive with Xcode-managed automatic signing, export a signed App-Store `.ipa`, upload via `xcrun altool`.
+
+**Problem it solves:** the founder's 8 GB Mac can't run the models; the iPad can, but sideloaded builds expired weekly and needed a Mac to re-sign. TestFlight installs through the TestFlight app, no expiry, and can add testers — the sustainable test channel.
+
+**The four-round debug (all account-side, no code bugs):** (1) export failed "Cloud signing permission error" — the **App Manager** API key can't do cloud *distribution* signing; fixed by regenerating the key as **Admin**. (2) Two agreements (Paid Apps + EU trader) were unaccepted, which also blocks distribution signing. (3) Upload failed "Cannot determine the Apple ID from Bundle ID `ai.verdure.porter`" — the build signed as `ai.verdure.porter` (Xcode-managed XC App ID) but the "Verdure AI" App Store record is bound to the explicit App ID `ai.verdure.porter.898PY37K5S`; fixed by overriding the iOS bundle ID at archive time to match (macOS build + `tauri.conf.json` untouched). (4) Green end-to-end.
+
+**Boundary honored:** all signing credentials are the founder's, created by them and added as GitHub secrets (`ASC_API_KEY_P8` / `ASC_API_KEY_ID` / `ASC_API_ISSUER_ID` / `APPLE_TEAM_ID`); Claude never handled a private key.
+
+**Follow-up:** the dual-App-ID mess (`ai.verdure.porter` vs `…898PY37K5S`) is cosmetic debt to fold into the identifier rename (`[OQ-60]`). `build-ipad.yml` (unsigned) kept as a fallback.
+
 ### 2026-07-17 — Chat-first redesign + "prairie" aesthetic
 
 **What:** Reworked the app's front door and visual language. (1) **Opens straight into chat** — the 4/6-tile task grid is no longer the entry (`boot()` → `renderChat()`); chat is the home. (2) A **microphone button** in the chat input row opens dictation (the Whisper flow) in one tap. (3) A quiet **gear icon** in the header reaches Storage; back-nav from Storage/Transcribe now returns to chat. (4) New **"prairie on a summer day" palette** — a layered gradient background (summer sky → sun-glow → meadow-green → wheat-cream, fixed), warm meadow green replacing cold emerald, earth-olive ink, a sun-dot brand mark, soft gradient bubbles/buttons, frosted warm-paper panels. Retinted through the CSS design tokens so the change cascades everywhere at low risk, with targeted gradient overrides on the hero surfaces (background, bubbles, buttons, mic). Icons are inline SVG (CSP-safe, no remote assets).
