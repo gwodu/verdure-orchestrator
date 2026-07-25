@@ -4,6 +4,17 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-07-25 — TestFlight pipeline verified end-to-end (`build-testflight.yml`) [OQ-65]
+
+**Verified in CI** (`testflight-4`, run 30163433105, all steps green): signed archive → export signed App-Store `.ipa` → **upload to TestFlight accepted by App Store Connect**. This exercises the whole distribution path: Xcode automatic signing via the App Store Connect API key, provisioning-profile creation, and altool upload authentication.
+
+**Failure ladder (each a real config gate, fixed in order — useful for the next platform):**
+- `testflight-1/2`: `exportArchive Cloud signing permission error` → App Manager API key lacks cloud *distribution* signing; **Admin** role required. (Accepting the pending Paid-Apps/EU agreements was also necessary — both block distribution signing.)
+- `testflight-3`: export passed; upload failed `Cannot determine the Apple ID from Bundle ID 'ai.verdure.porter'` → build bundle ID ≠ app-record bundle ID.
+- `testflight-4`: bundle ID overridden to `ai.verdure.porter.898PY37K5S` (the record's) → green.
+
+**Not automatable here:** the on-device install + run from TestFlight (Apple-side processing + the founder's iPad) — that's the human verification step, same class as the sideload runs. On-device chat/transcription results still feed `[OQ-64]`/`[OQ-65]`.
+
 ### 2026-07-17 — Chat-first redesign + prairie aesthetic (`main.ts`, `styles.css`)
 
 **Change:** presentation only — boot into chat, mic button, gear→Storage, back-nav to chat, warm gradient theme via CSS tokens. No backend/logic touched (model picker, `choose_chat_model`, chat command, parsers all unchanged), so **no new unit tests** — there is no new pure logic to assert.
