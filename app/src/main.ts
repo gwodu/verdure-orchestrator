@@ -12,7 +12,6 @@
 import {
   INTENT_CARDS,
   recommend,
-  classifyIntent,
   type IntentCard,
   type Tier,
 } from "@verdure/decider";
@@ -275,29 +274,46 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
     ),
   );
 
+  // Live free-space readout (the transparency the founder liked from Storage),
+  // right where you're deciding what to download.
+  const freeEl = el("p", "picker-free", "");
+  panel.appendChild(freeEl);
   const list = el("div", "model-picker");
   panel.appendChild(list);
   root.appendChild(panel);
 
   let selected = chosenModelId() || MODEL_TIERS[0].id;
-  const options = await chatModelOptions().catch(() => [] as ChatModelOption[]);
+  let options = await chatModelOptions().catch(() => [] as ChatModelOption[]);
 
   const gb = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);
+  const fillFree = async () => {
+    try {
+      const r = await systemResources();
+      freeEl.textContent = `${gb(r.freeDiskMb)} free space · ${gb(r.availableRamMb)} memory free`;
+    } catch {
+      freeEl.textContent = "";
+    }
+  };
+  void fillFree();
+
   const render = () => {
     list.innerHTML = "";
     // Show in tier order (small → powerful), pairing tier copy with device facts.
     for (const t of MODEL_TIERS) {
       const opt = options.find((o) => o.id === t.id);
-      const card = document.createElement("button");
-      card.className = "pick" + (selected === t.id ? " selected" : "");
-      card.type = "button";
-      const fits = !opt || opt.fitsMemory; // unknown (preview) → assume fine
-      const sizeText = opt
-        ? opt.installed
-          ? "Downloaded"
-          : `${gb(opt.downloadMb)} download`
-        : "";
-      card.innerHTML = `
+      const card = el("div", "pick" + (selected === t.id ? " selected" : ""));
+
+      const main = document.createElement("button");
+      main.className = "pick-main";
+      main.type = "button";
+      const fitsMem = !opt || opt.fitsMemory; // unknown (preview) → assume fine
+      const fitsDisk = !opt || opt.fitsDisk;
+      const sizeText = opt ? (opt.installed ? "Downloaded" : `${gb(opt.downloadMb)} download`) : "";
+      let warn = "";
+      if (!fitsMem) warn = "Not enough free memory to run this one right now.";
+      else if (!fitsDisk)
+        warn = `Not enough free space to download (needs ${gb(opt!.downloadMb)}). Remove a model to make room.`;
+      main.innerHTML = `
         <span class="pick-radio" aria-hidden="true"></span>
         <span class="pick-body">
           <span class="pick-head">
@@ -305,12 +321,35 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
             <span class="pick-size">${escapeHtml(sizeText)}</span>
           </span>
           <span class="pick-blurb">${escapeHtml(t.blurb)}</span>
-          ${fits ? "" : '<span class="pick-warn">Not enough free memory for this one right now</span>'}
+          ${warn ? `<span class="pick-warn">${escapeHtml(warn)}</span>` : ""}
         </span>`;
-      card.addEventListener("click", () => {
+      main.addEventListener("click", () => {
         selected = t.id;
         render();
       });
+      card.appendChild(main);
+
+      // Remove — only for downloaded models, so you can free space to fit another
+      // right here, no separate trip to Storage.
+      if (opt?.installed) {
+        const rm = document.createElement("button");
+        rm.className = "pick-remove";
+        rm.type = "button";
+        rm.textContent = "Remove";
+        rm.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          rm.disabled = true;
+          rm.textContent = "Removing…";
+          try {
+            await removeModel(t.id);
+            options = await chatModelOptions().catch(() => options);
+            void fillFree(); // space freed — refresh the readout + fit flags
+          } finally {
+            render();
+          }
+        });
+        card.appendChild(rm);
+      }
       list.appendChild(card);
     }
     const go = document.createElement("button");
@@ -400,7 +439,8 @@ function renderChat(): void {
         onSegment: (seg) => {
           note?.remove();
           note = null; // first words → the download finished
-          const t = seg.trim();
+          // Drop Whisper's non-speech markers ([BLANK_AUDIO], [ Silence ], …).
+          const t = seg.replace(/\[[A-Za-z_ ]+\]/g, "").trim();
           if (t) input.value = input.value ? `${input.value} ${t}` : t; // into the box
         },
         onError: (m) => {
@@ -530,21 +570,10 @@ function renderChat(): void {
       const decision = await chatSend(text, (msg) => (status.textContent = msg), chosenModelId());
       status.textContent = "";
       if (chosen) chosen.installed = true; // downloaded now — don't renotify
-      // Cross-check the model's pick with our deterministic classifier.
-      const cls = classifyIntent(text);
-      const wantsTranscription =
-        decision.action === "set_up_transcription" ||
-        (cls.modality === "audio" && cls.task === "transcription");
-      if (wantsTranscription) {
-        addActionMsg(
-          decision.reply ||
-            "You can talk to me instead of typing — tap the microphone and I'll turn your speech into text, right on your device.",
-          "Start talking →",
-          () => void toggleMic(),
-        );
-      } else {
-        addMsg("ai", decision.reply || "(no reply)");
-      }
+      // Chat is a plain conversation now — just show the reply. (Transcription is
+      // the mic button; the old JSON tool-call routed here and misfired on the tiny
+      // model — observed on-device 2026-07-27.)
+      addMsg("ai", decision.reply || "(no reply)");
     } catch (err) {
       status.textContent = String(err);
     } finally {

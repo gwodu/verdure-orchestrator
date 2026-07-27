@@ -41,23 +41,26 @@ const MAX_NEW_TOKENS: i32 = 256;
 // pins which of several good continuations we take.
 const SEED: u32 = 0x5EED;
 
-/// The model's decision: which action, and the user-facing text.
+/// The model's reply. `action` is always "answer" now — chat is a plain
+/// conversation. (The JSON tool-calling wrapper was removed: on-device 2026-07-27
+/// the tiny model over-triggered the `set_up_transcription` action on ordinary
+/// questions AND leaked malformed JSON into the chat. Dictation is the mic button;
+/// capabilities-as-tools returns later, likely constrained + process-isolated.
+/// [OQ-55].) The struct is kept so the frontend contract is unchanged.
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolDecision {
-    /// "answer" | "set_up_transcription"
     pub action: String,
-    /// The answer text, or a confirmation line for a tool action.
     pub reply: String,
 }
 
-/// The system instruction is the same across families; only the turn framing
-/// differs (knowledge/03 — model details).
-const SYSTEM: &str = "You are Verdure, a local personal AI. Decide what the user wants and reply ONLY in JSON. If they want to turn audio, recordings, voice notes, meetings, or dictation into text, reply {\"action\":\"set_up_transcription\"}. Otherwise answer helpfully and concisely with {\"action\":\"answer\",\"reply\":\"...\"}.";
+/// Plain conversational instruction — no JSON, no tools. Same across families;
+/// only the turn framing differs (knowledge/03).
+const SYSTEM: &str = "You are Verdure, a warm and helpful personal AI that runs entirely on the user's own device. Answer the user's message directly, clearly, and concisely.";
 
 /// Frame the prompt for the model's family. Getting this wrong yields garbage, so
 /// the family travels with the model (`PromptStyle`) rather than being assumed.
-fn format_tool_prompt(user: &str, style: PromptStyle) -> String {
+fn format_chat_prompt(user: &str, style: PromptStyle) -> String {
     match style {
         // ChatML — Qwen et al. No BOS (the tokenizer adds none for this family).
         PromptStyle::ChatMl => format!(
@@ -72,7 +75,7 @@ fn format_tool_prompt(user: &str, style: PromptStyle) -> String {
     }
 }
 
-/// BOS convention for the family — see `format_tool_prompt`.
+/// BOS convention for the family — see `format_chat_prompt`.
 fn add_bos_for(style: PromptStyle) -> AddBos {
     match style {
         PromptStyle::ChatMl => AddBos::Never,
@@ -80,8 +83,8 @@ fn add_bos_for(style: PromptStyle) -> AddBos {
     }
 }
 
-/// Decide what to do about `user_message` — answer, or invoke a tool. We sample
-/// plainly (no grammar) and parse the output leniently; the UI cross-checks intent.
+/// Answer `user_message`. Plain sampling (no grammar, no JSON/tool-calling) — the
+/// generated text IS the reply, shown as-is.
 pub fn decide(
     model_path: &Path,
     user_message: &str,
@@ -98,7 +101,7 @@ pub fn decide(
         .new_context(&backend, ctx_params)
         .map_err(|e| format!("couldn't start a chat session: {e}"))?;
 
-    let prompt = format_tool_prompt(user_message, style);
+    let prompt = format_chat_prompt(user_message, style);
     let tokens = model
         .str_to_token(&prompt, add_bos_for(style))
         .map_err(|e| format!("couldn't read the message: {e}"))?;
@@ -130,7 +133,7 @@ pub fn decide(
         LlamaSampler::dist(SEED),
     ]);
 
-    let mut json = String::new();
+    let mut reply = String::new();
     let mut n_cur = batch.n_tokens();
     for _ in 0..MAX_NEW_TOKENS {
         let token = sampler.sample(&ctx, batch.n_tokens() - 1);
@@ -139,7 +142,7 @@ pub fn decide(
             break;
         }
         if let Ok(piece) = model.token_to_str(token, Special::Tokenize) {
-            json.push_str(&piece);
+            reply.push_str(&piece);
         }
         batch.clear();
         batch
@@ -153,56 +156,11 @@ pub fn decide(
         }
     }
 
-    parse_decision(&json)
-}
-
-/// Parse the model's output into a decision. Without a grammar the model may wrap
-/// its JSON in prose (or skip JSON entirely), so this is lenient: pull the first
-/// `{...}` object if there is one, else treat the whole text as a plain answer.
-/// Tool ROUTING does not depend on this being perfect — the UI cross-checks intent
-/// deterministically (`classifyIntent`).
-fn parse_decision(text: &str) -> Result<ToolDecision, String> {
-    let trimmed = text.trim();
-
-    if let Some(obj) = extract_json_object(trimmed) {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&obj) {
-            let raw_action = value.get("action").and_then(|a| a.as_str()).unwrap_or("answer");
-            // Only honor the one tool action we know; anything else is an answer.
-            let action = if raw_action == "set_up_transcription" {
-                "set_up_transcription"
-            } else {
-                "answer"
-            };
-            let mut reply = value
-                .get("reply")
-                .and_then(|r| r.as_str())
-                .unwrap_or("")
-                .to_string();
-            if action == "set_up_transcription" && reply.is_empty() {
-                reply = "I can set you up to turn recordings into text — right here on your computer."
-                    .to_string();
-            }
-            if action == "answer" && reply.is_empty() {
-                // Valid JSON but no usable reply — fall back to the raw text.
-                reply = trimmed.to_string();
-            }
-            return Ok(ToolDecision { action: action.to_string(), reply });
-        }
-    }
-
-    // No usable JSON — the model just chatted. Show what it said.
+    // The generated text is the reply — shown verbatim. No JSON, no tool routing.
     Ok(ToolDecision {
         action: "answer".to_string(),
-        reply: trimmed.to_string(),
+        reply: reply.trim().to_string(),
     })
-}
-
-/// Pull the first balanced-ish JSON object out of a string (first `{` … last `}`).
-/// Good enough for the single flat object the model emits; prose around it is fine.
-fn extract_json_object(s: &str) -> Option<String> {
-    let start = s.find('{')?;
-    let end = s.rfind('}')?;
-    (end > start).then(|| s[start..=end].to_string())
 }
 
 #[cfg(test)]
@@ -210,44 +168,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_an_answer() {
-        let d = parse_decision(r#"{"action":"answer","reply":"hello there"}"#).unwrap();
-        assert_eq!(d.action, "answer");
-        assert_eq!(d.reply, "hello there");
-    }
-
-    #[test]
-    fn parses_a_tool_call_and_fills_a_default_reply() {
-        let d = parse_decision(r#"{"action":"set_up_transcription"}"#).unwrap();
-        assert_eq!(d.action, "set_up_transcription");
-        assert!(!d.reply.is_empty());
-    }
-
-    #[test]
-    fn plain_text_without_json_becomes_an_answer() {
-        // No grammar → the model might just talk. We show what it said, not an error.
-        let d = parse_decision("Sure! The capital of France is Paris.").unwrap();
-        assert_eq!(d.action, "answer");
-        assert_eq!(d.reply, "Sure! The capital of France is Paris.");
-    }
-
-    #[test]
-    fn extracts_json_wrapped_in_prose() {
-        let d = parse_decision("Here you go: {\"action\":\"answer\",\"reply\":\"hi\"} hope that helps")
-            .unwrap();
-        assert_eq!(d.action, "answer");
-        assert_eq!(d.reply, "hi");
-    }
-
-    #[test]
-    fn unknown_action_falls_back_to_answer() {
-        let d = parse_decision(r#"{"action":"launch_missiles","reply":"no"}"#).unwrap();
-        assert_eq!(d.action, "answer");
-    }
-
-    #[test]
     fn chatml_prompt_frames_the_turn() {
-        let p = format_tool_prompt("hi", PromptStyle::ChatMl);
+        let p = format_chat_prompt("hi", PromptStyle::ChatMl);
         assert!(p.contains("<|im_start|>system"));
         assert!(p.contains("<|im_start|>user\nhi<|im_end|>"));
         assert!(p.trim_end().ends_with("<|im_start|>assistant"));
@@ -257,7 +179,7 @@ mod tests {
 
     #[test]
     fn gemma_prompt_uses_turn_markers_not_chatml() {
-        let p = format_tool_prompt("hi", PromptStyle::Gemma);
+        let p = format_chat_prompt("hi", PromptStyle::Gemma);
         assert!(p.contains("<start_of_turn>user"));
         assert!(p.contains("hi<end_of_turn>"));
         assert!(p.trim_end().ends_with("<start_of_turn>model"));

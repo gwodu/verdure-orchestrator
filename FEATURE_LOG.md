@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-07-27 — On-device fixes: plain chat (no JSON tool-calling), picker delete, disk fail-states
+
+**First real on-device run (TestFlight build 6) — big signal:** the chat model **loads and generates on the iPad** (wrote a poem, answered "Hey"). `[OQ-64]`'s core question — does the model run on-device — is **answered YES**. Two bugs surfaced, both from the JSON tool-calling wrapper:
+
+**Bug 1 — chat replied with a transcription prompt to normal questions** (a poem request → "I can set you up to turn recordings into text"). The tiny model over-triggered the `set_up_transcription` tool-action. **Bug 2 — raw JSON leaked into the chat** (the poem came out as `{"action":"answer","reply":…}`) when the model emitted malformed/nested JSON that the lenient parser dumped verbatim.
+
+**Fix — chat is now a plain conversation.** Removed the JSON tool-calling entirely: `llm.rs` system prompt is plain ("answer directly, clearly, concisely"), `decide()` returns the generated text as the reply (no JSON parse, no `parse_decision`/`extract_json_object`), and the UI always shows the reply (removed the `set_up_transcription` action branch + `classifyIntent` cross-check). Transcription is the mic button; capabilities-as-tools returns later, constrained + process-isolated (`[OQ-55]`). Also filter Whisper's non-speech markers (`[BLANK_AUDIO]`, `[ Silence ]`) out of dictated text.
+
+**Model management (founder ask):** added a **Remove** button to each downloaded model **in the picker** (delete one to free room for another, in one screen), a **disk fail-state warning** ("Not enough free space to download (needs X). Remove a model to make room"), and a **free-space readout** at the top of the picker (space + memory free) — the Storage-screen transparency, where you choose.
+
+**Verification:** `tsc` + `vite build` clean; `llm.rs` prompt-framing tests kept, obsolete parser tests removed; Rust compiled in CI. Shipped in TestFlight build 7.
+
 ### 2026-07-25 — Dictation-into-chat, model picker, install notice
 
 Three chat improvements:
