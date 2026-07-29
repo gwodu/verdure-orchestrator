@@ -1,0 +1,130 @@
+name: Build Android test app (APK)
+
+# The Android TEST VEHICLE ([OQ-66], knowledge/11 update note): cross-compiles
+# the app — llama.cpp + whisper.cpp included — for aarch64-linux-android via the
+# NDK and packages a test-signed .apk. Same shared Rust core and GGUF flow as
+# macOS/iOS (NOT MediaPipe); same-branch cfg(target_os = "android") gating.
+#
+# Signed with a THROWAWAY key generated per run — fine for sideload smoke tests,
+# but each build is "a different app" to Android: uninstall the old one before
+# installing a new build. Play-Console distribution (the shareable testing link)
+# comes later with a persistent upload keystore held as a GitHub secret.
+#
+# Runs on Linux runners — 1/10 the per-minute cost of the macOS ones.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "android-build-*"
+
+jobs:
+  build:
+    name: Package Verdure for Android (.apk, test-signed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install Rust (with the Android target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: Point the build at the runner's Android NDK
+        # ubuntu-latest images ship the SDK + an NDK; tauri's cargo integration
+        # reads NDK_HOME / ANDROID_NDK_HOME.
+        run: |
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          echo "NDK at: $ANDROID_NDK_LATEST_HOME"
+      - name: Install workspaces
+        run: npm ci
+      - name: Generate the Android project (tauri android init)
+        # Creates app/src-tauri/gen/android (Gradle project + manifest). Generated
+        # fresh each build — nothing under gen/ is committed (same policy as iOS).
+        working-directory: app
+        run: npx tauri android init --ci
+      - name: Show the generated project (ground truth for iteration)
+        # If a later step fails, the log carries exactly what the template looks
+        # like — the same practice that got the iOS build green in 3 rounds.
+        run: |
+          find app/src-tauri/gen/android -maxdepth 4 -name "AndroidManifest.xml" -o -maxdepth 4 -name "MainActivity.kt" -o -maxdepth 3 -name "*.gradle*" | head -20
+          MAIN_MANIFEST=$(find app/src-tauri/gen/android -path "*app/src/main/AndroidManifest.xml" | head -1)
+          echo "===== $MAIN_MANIFEST ====="; cat "$MAIN_MANIFEST"
+          MAIN_ACTIVITY=$(find app/src-tauri/gen/android -name "MainActivity.kt" | head -1)
+          echo "===== $MAIN_ACTIVITY ====="; cat "$MAIN_ACTIVITY"
+      - name: Grant + request the microphone permission
+        # Two Android-specific requirements for live dictation (cpal/AAudio):
+        # 1. RECORD_AUDIO declared in the manifest;
+        # 2. a RUNTIME permission request (Android prompts in-app, unlike iOS's
+        #    plist-driven prompt). Patched into MainActivity for the test build —
+        #    requested at launch; moving it to first mic tap is a later refinement.
+        run: |
+          python3 - <<'PY'
+          import pathlib, re
+          root = pathlib.Path("app/src-tauri/gen/android")
+          manifest = next(p for p in root.rglob("AndroidManifest.xml") if "app/src/main" in str(p))
+          xml = manifest.read_text()
+          if "RECORD_AUDIO" not in xml:
+              assert "<application" in xml, "unexpected manifest layout"
+              xml = xml.replace(
+                  "<application",
+                  '<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <application',
+                  1,
+              )
+              manifest.write_text(xml)
+              print(f"patched {manifest}")
+          activity = next(root.rglob("MainActivity.kt"))
+          kt = activity.read_text()
+          if "RECORD_AUDIO" not in kt:
+              new, n = re.subn(
+                  r"class MainActivity\s*:\s*TauriActivity\(\)",
+                  (
+                      "class MainActivity : TauriActivity() {\n"
+                      "  override fun onCreate(savedInstanceState: android.os.Bundle?) {\n"
+                      "    super.onCreate(savedInstanceState)\n"
+                      "    if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=\n"
+                      "        android.content.pm.PackageManager.PERMISSION_GRANTED) {\n"
+                      "      requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 1)\n"
+                      "    }\n"
+                      "  }\n"
+                      "}"
+                  ),
+                  kt,
+              )
+              assert n == 1, f"MainActivity shape changed — see the ground-truth log above:\n{kt}"
+              activity.write_text(new)
+              print(f"patched {activity}")
+          PY
+      - name: Build the APK (release, aarch64)
+        # The tauri CLI drives gradle + cargo itself (it is the parent process, so
+        # there's no orphaned-build-script problem like iOS's xcode-script). It
+        # also runs beforeBuildCommand (npm run build) for the frontend dist.
+        working-directory: app
+        run: npx tauri android build --apk --target aarch64
+      - name: Sign with a throwaway test key
+        # Gradle's release APK is unsigned (no keystore configured). zipalign +
+        # apksigner make it installable. The key is generated per run — see the
+        # header note about uninstalling between builds.
+        run: |
+          APK=$(find app/src-tauri/gen/android -name "*.apk" -path "*release*" | head -1)
+          echo "apk: $APK"
+          test -n "$APK"
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          keytool -genkeypair -keystore test.keystore -alias verdure -keyalg RSA \
+            -keysize 2048 -validity 10000 -storepass verduretest -keypass verduretest \
+            -dname "CN=Verdure Test"
+          "$BT/zipalign" -p -f 4 "$APK" aligned.apk
+          "$BT/apksigner" sign --ks test.keystore --ks-pass pass:verduretest \
+            --key-pass pass:verduretest --out verdure-android-test.apk aligned.apk
+          "$BT/apksigner" verify verdure-android-test.apk
+      - name: Upload the Android test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: verdure-android-test
+          path: verdure-android-test.apk
+          if-no-files-found: error

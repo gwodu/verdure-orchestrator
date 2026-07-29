@@ -174,7 +174,10 @@ function renderStorage(): void {
     };
     row("Memory free now", `${gb(r.availableRamMb)} of ${gb(r.totalRamMb)}`);
     row("Disk free", gb(r.freeDiskMb));
-    row("Processor", `${r.cores} cores · ${r.arch === "apple-silicon" ? "Apple Silicon" : "Intel"}`);
+    // arch is "apple-silicon" | "intel" | "arm" (Android) — name it honestly.
+    const archName =
+      r.arch === "apple-silicon" ? "Apple Silicon" : r.arch === "intel" ? "Intel" : "ARM";
+    row("Processor", `${r.cores} cores · ${archName}`);
     if (r.lowPower) row("Low Power Mode", "On — runs slower to save battery");
     sysBox.appendChild(grid);
   };

@@ -779,6 +779,20 @@ html, body {
   text-align: right;
 }
 
+/* Phone-width (Android ~360–412px CSS): tighten the frame so the chat input row
+   (box + mic + Send) and the picker cards fit without crowding. */
+@media (max-width: 480px) {
+  #app { padding: 14px 12px 20px; }
+  .panel { padding: 18px 14px 16px; border-radius: 14px; }
+  .title { font-size: 24px; }
+  .subtitle { font-size: 14.5px; }
+  .chat-send { padding: 13px 14px; }
+  .mic-btn { width: 44px; height: 44px; }
+  .chat-input-row { gap: 7px; }
+  .pick-main { padding: 13px 13px; gap: 10px; }
+  .brand { margin-bottom: 14px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card { transition: none; }
   .dropzone { transition: none; }

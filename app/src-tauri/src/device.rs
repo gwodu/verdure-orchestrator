@@ -196,6 +196,100 @@ mod ios {
     }
 }
 
+/// Detect this machine's specs — Android. An ARM device; readings come from
+/// Linux syscalls/procfs, no shell tools ([OQ-66]).
+#[cfg(target_os = "android")]
+pub fn detect_spec() -> DeviceSpec {
+    DeviceSpec {
+        arch: "arm".to_string(),
+        cores: std::thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(4),
+        ram_gb: android::total_ram_bytes()
+            .map(|b| (b as f64 / 1_073_741_824.0).round() as u32)
+            .unwrap_or(4),
+    }
+}
+
+/// Take a live snapshot of free resources — Android. `available_ram_mb` is the
+/// kernel's own `MemAvailable` estimate from /proc/meminfo (free + reclaimable
+/// page cache) — the honest "can I hand this out now" number that feeds the chat
+/// RAM gate. Android's low-memory killer still has the last word, so the gate
+/// stays conservative ([OQ-66]).
+#[cfg(target_os = "android")]
+pub fn system_resources(data_dir: &Path) -> SystemResources {
+    let total_ram_mb = android::total_ram_bytes().map(|b| b / 1_048_576).unwrap_or(4096);
+    let available_ram_mb = android::available_ram_mb()
+        // If /proc/meminfo can't be read, assume a conservative quarter of total.
+        .unwrap_or(total_ram_mb / 4);
+    SystemResources {
+        arch: "arm".to_string(),
+        cores: std::thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(4),
+        total_ram_mb,
+        available_ram_mb,
+        free_disk_mb: android::free_disk_bytes(data_dir).map(|b| b / 1_048_576).unwrap_or(0),
+        // Reading battery-saver state needs a Java bridge; not worth it for the
+        // test build — "off" only skips a speed warning.
+        low_power: false,
+    }
+}
+
+/// Android syscall/procfs probes. Everything goes through the audited `libc`
+/// wrapper crate — no hand-rolled bindings (skills/testing.md, FFI rules 1 & 4).
+#[cfg(target_os = "android")]
+mod android {
+    /// Total physical RAM via the sysinfo(2) syscall.
+    pub fn total_ram_bytes() -> Option<u64> {
+        let mut info: libc::sysinfo = unsafe { std::mem::zeroed() };
+        // SAFETY: sysinfo fills the struct we own on the stack; nothing is
+        // allocated across the boundary, so there is nothing to free.
+        let rc = unsafe { libc::sysinfo(&mut info) };
+        (rc == 0).then(|| (info.totalram as u64) * (info.mem_unit as u64))
+    }
+
+    /// Memory the kernel can hand out right now: MemAvailable from /proc/meminfo
+    /// (readable inside the app sandbox; no syscall wrapper needed).
+    pub fn available_ram_mb() -> Option<u64> {
+        let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+        super::parse_meminfo_available_kb(&text).map(|kb| kb / 1024)
+    }
+
+    /// Free space on the volume holding `path`, via statvfs (same call as iOS).
+    pub fn free_disk_bytes(path: &std::path::Path) -> Option<u64> {
+        let c = std::ffi::CString::new(path.to_str()?).ok()?;
+        let mut sv: libc::statvfs = unsafe { std::mem::zeroed() };
+        // SAFETY: statvfs fills the struct we own on the stack; `c` outlives the
+        // call; nothing is allocated across the boundary.
+        let rc = unsafe { libc::statvfs(c.as_ptr(), &mut sv) };
+        (rc == 0).then(|| sv.f_bavail as u64 * sv.f_frsize as u64)
+    }
+}
+
+/// Parse `MemAvailable:` (kB) out of /proc/meminfo. Pure — unit-tested.
+#[cfg(any(target_os = "android", test))]
+fn parse_meminfo_available_kb(meminfo: &str) -> Option<u64> {
+    meminfo
+        .lines()
+        .find(|l| l.starts_with("MemAvailable:"))
+        .and_then(|l| l.split_whitespace().nth(1)?.parse().ok())
+}
+
+/// Detect the device's tier — Android. ARM phones/tablets vary widely; a middle
+/// default keeps the legacy recommendation honest without overpromising. The RAM
+/// gate does the real per-device sizing at model-pick time ([OQ-66]).
+#[cfg(target_os = "android")]
+pub fn detect_tier() -> &'static str {
+    "L2-high"
+}
+
+/// Never on Android — used by the legacy porter to pick Mac download flavors.
+#[cfg(target_os = "android")]
+pub(crate) fn is_apple_silicon() -> bool {
+    false
+}
+
 /// Available RAM (MB) from `vm_stat`: free + reclaimable pages × page size.
 #[cfg(target_os = "macos")]
 fn read_available_ram_mb() -> Option<u64> {
@@ -354,5 +448,19 @@ mod tests {
         assert!(parse_low_power(" lowpowermode         1"));
         assert!(!parse_low_power(" lowpowermode         0"));
         assert!(!parse_low_power(" hibernatemode        3"));
+    }
+
+    #[test]
+    fn parses_meminfo_available() {
+        // The Android available-RAM probe: MemAvailable, in kB. Other fields
+        // (MemFree, MemTotal) must be ignored — MemAvailable is the kernel's own
+        // "can hand out now" estimate, the honest gating number.
+        let sample = "MemTotal:        8000000 kB\n\
+            MemFree:          200000 kB\n\
+            MemAvailable:    3500000 kB\n\
+            Buffers:          100000 kB\n";
+        assert_eq!(parse_meminfo_available_kb(sample), Some(3_500_000));
+        assert_eq!(parse_meminfo_available_kb("MemTotal: 8000000 kB"), None);
+        assert_eq!(parse_meminfo_available_kb(""), None);
     }
 }

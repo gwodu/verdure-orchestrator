@@ -39,6 +39,8 @@ This file documents the practical realities of shipping Verdure on each platform
 
 **[GAP — needs research]** Current Android 14+ background service policies and Play Store review requirements for system-level access in 2026. Tracked as `[OQ-25]`.
 
+**Update (2026-07-28): the Android build in flight is the app, not the daemon.** The bullets above describe the pre-pivot daemon idea — superseded. What's actually being built is an **Android port of the Tauri test-vehicle app** (same one interface as macOS/iOS, `[OQ-65]`'s sibling): llama.cpp + whisper.cpp cross-compiled for `aarch64-linux-android` via the NDK — **not MediaPipe** (a second runtime + different model formats would abandon the shared Rust core for no gain). Same-branch `cfg(target_os = "android")` gating, `build-android.yml` on Linux runners, distribution via Play Console testing tracks (founder has the developer account). Tracked as `[OQ-66]`; the daemon/system-service questions (`[OQ-25]`) stay open and separate.
+
 ## iOS
 
 **[OQ-26] is resolved: the daemon model is not feasible on iOS — and no longer needs to be.** Background execution restrictions and the app sandbox rule out a Verdure system service. But as of iOS 27 (WWDC 2026), the OS itself ships the shared inference service Verdure would have had to build: a resident ~3B system model behind Apple's Foundation Models framework, accessible to every app via the public `LanguageModel` protocol.
