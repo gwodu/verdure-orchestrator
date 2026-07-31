@@ -4,6 +4,19 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-07-31 — Android test build (`build-android.yml`, cfg-gated `device.rs`) [OQ-66]
+
+**Verified in CI (2 rounds, `android-build-1..2`):**
+- **`aarch64-linux-android` cross-compile succeeds** — whisper.cpp, llama.cpp, cpal, ureq/rustls, libc, and the tauri android runtime all build via the NDK. The port's decisive unknown, answered yes.
+- Full pipeline green: `tauri android init` → manifest/permission patch → NDK build → zipalign + apksigner (verified) → 9 MB test-signed `.apk`.
+- **Mac regression:** branch CI green after the cfg split — macOS porter compiles, all porter tests pass (incl. the new `parses_meminfo_available` parser test), iOS cross-compile + model-URL checks hold.
+
+**New pure-logic test:** `parses_meminfo_available` — the Android available-RAM gate parses `MemAvailable` from `/proc/meminfo` and ignores `MemTotal`/`MemFree`.
+
+**Failure history:** round 1 — native compile fully succeeded; Kotlin failed (`Expecting a top level declaration`) because the MainActivity patch rewrote a class that already had an `onCreate`. Round 2 — inject at the stable `super.onCreate` anchor → green.
+
+**Not covered (on-device only, [OQ-66]):** whether the model runs within Android's LMK limits on a real device; cpal/AAudio mic capture + the runtime permission grant; UI at true phone width.
+
 ### 2026-07-25 — Dictation-into-chat + model picker (`model.rs`, `lib.rs`, frontend)
 
 **New pure-logic tests (`model.rs`):**

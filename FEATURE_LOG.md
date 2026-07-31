@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-07-31 — Android test build green (APK via CI) [OQ-66]
+
+**What:** Verdure builds for Android — the same one-interface app, same shared Rust core and GGUF flow, cross-compiled for `aarch64-linux-android` via the NDK. Same-branch `cfg(target_os = "android")` gating; macOS/iOS paths untouched (Mac CI stayed green). New `build-android.yml` (tag `android-build-N`, **Linux runners — 1/10 the macOS cost**): `tauri android init`, manifest `RECORD_AUDIO` + runtime permission request patched into MainActivity, NDK build, zipalign + apksigner with a throwaway key → 9 MB installable `.apk` artifact.
+
+**Key finding: whisper.cpp + llama.cpp + cpal cross-compile for Android** — proven in CI (the decisive `[OQ-66]` unknown; **NOT MediaPipe** — the shared Rust runtime ports directly). Confirms the same "compile the engines in, wrap them" approach works on a third platform.
+
+**Backend (cfg-gated `device.rs`):** total RAM via `libc::sysinfo`, available via `/proc/meminfo MemAvailable` (pure parser + unit test), disk via `statvfs`, ARM tier default. Frontend: Storage screen names ARM correctly (was hardcoded Intel/Apple), plus a phone-width CSS pass (~360–412px) since Android phones are narrower than the iPad.
+
+**Two rounds (iOS-style iteration):** round 1 — native compile fully succeeded, Kotlin failed because the MainActivity permission patch rewrote the class (the template already has an `onCreate`); round 2 — inject at the stable `super.onCreate` anchor → green.
+
+**Install:** sideload the APK (enable "install unknown apps"). Test-signed with a per-run throwaway key, so uninstall an old build before installing a new one. Play-Console testing link (shareable URL) comes next with a persistent upload keystore.
+
 ### 2026-07-27 — On-device fixes: plain chat (no JSON tool-calling), picker delete, disk fail-states
 
 **First real on-device run (TestFlight build 6) — big signal:** the chat model **loads and generates on the iPad** (wrote a poem, answered "Hey"). `[OQ-64]`'s core question — does the model run on-device — is **answered YES**. Two bugs surfaced, both from the JSON tool-calling wrapper:
