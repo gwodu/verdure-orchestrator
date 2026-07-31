@@ -81,23 +81,22 @@ jobs:
           activity = next(root.rglob("MainActivity.kt"))
           kt = activity.read_text()
           if "RECORD_AUDIO" not in kt:
-              new, n = re.subn(
-                  r"class MainActivity\s*:\s*TauriActivity\(\)",
-                  (
-                      "class MainActivity : TauriActivity() {\n"
-                      "  override fun onCreate(savedInstanceState: android.os.Bundle?) {\n"
-                      "    super.onCreate(savedInstanceState)\n"
-                      "    if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=\n"
-                      "        android.content.pm.PackageManager.PERMISSION_GRANTED) {\n"
-                      "      requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 1)\n"
-                      "    }\n"
-                      "  }\n"
-                      "}"
-                  ),
-                  kt,
+              # The generated template already has its own onCreate (with
+              # enableEdgeToEdge etc.) — do NOT rewrite the class (round 1 did that
+              # and produced broken Kotlin). Inject the runtime permission request
+              # right after the stable `super.onCreate(...)` line, leaving the rest
+              # of the template's body intact.
+              anchor = "super.onCreate(savedInstanceState)"
+              assert anchor in kt, f"onCreate shape changed — see ground-truth log above:\n{kt}"
+              inject = (
+                  anchor + "\n"
+                  "    if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=\n"
+                  "        android.content.pm.PackageManager.PERMISSION_GRANTED) {\n"
+                  "      requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 1)\n"
+                  "    }"
               )
-              assert n == 1, f"MainActivity shape changed — see the ground-truth log above:\n{kt}"
-              activity.write_text(new)
+              kt = kt.replace(anchor, inject, 1)
+              activity.write_text(kt)
               print(f"patched {activity}")
           PY
       - name: Build the APK (release, aarch64)
