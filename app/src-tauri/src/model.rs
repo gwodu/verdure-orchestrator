@@ -375,10 +375,17 @@ pub fn list(data_dir: &Path) -> Vec<ModelEntry> {
 /// - **iOS (and anything else)**: in-process HTTP via `ureq` (rustls). iOS apps
 ///   cannot spawn processes — there is no `/usr/bin/curl` to shell out to — so the
 ///   download must happen in-process. [OQ-65]
+/// Download `url` into `dest`, RESUMING from whatever is already there. On mobile
+/// the network dies whenever the OS suspends the app (screen off / backgrounded →
+/// `ECONNABORTED`), so a big model rarely finishes in one shot. Resuming means each
+/// attempt continues from the last byte instead of restarting — the user just
+/// reopens and it picks up (`[OQ-66]`). Range requests are served by Hugging Face's
+/// CDN. `dest` is the `.part` file, kept across attempts by `ensure`.
 #[cfg(target_os = "macos")]
 fn download(url: &str, dest: &Path) -> Result<(), String> {
+    // curl `-C -` auto-resumes from the existing output file's length.
     let output = Command::new("/usr/bin/curl")
-        .args(["-fL", "--retry", "3", "-o", &dest.to_string_lossy(), url])
+        .args(["-fL", "-C", "-", "--retry", "3", "-o", &dest.to_string_lossy(), url])
         .output()
         .map_err(|e| format!("the download couldn't start: {e}"))?;
     if !output.status.success() {
@@ -389,15 +396,44 @@ fn download(url: &str, dest: &Path) -> Result<(), String> {
 
 #[cfg(not(target_os = "macos"))]
 fn download(url: &str, dest: &Path) -> Result<(), String> {
-    let response = ureq::get(url)
-        .call()
-        .map_err(|e| format!("the download couldn't start: {e}"))?;
-    let mut file = std::fs::File::create(dest)
-        .map_err(|e| format!("couldn't create the download file: {e}"))?;
-    // Stream body → disk; a multi-GB model must never be buffered in memory
-    // (ggml aborts on failed allocations, and iOS jetsam-kills memory hogs).
-    std::io::copy(&mut response.into_reader(), &mut file)
-        .map_err(|e| format!("the download was interrupted: {e}"))?;
+    use std::io::{Read, Write};
+
+    // Bytes already downloaded — resume from here with a Range request.
+    let have = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
+    let req = ureq::get(url);
+    let req = if have > 0 {
+        req.set("Range", &format!("bytes={have}-"))
+    } else {
+        req
+    };
+    let response = req.call().map_err(|e| format!("the download couldn't start: {e}"))?;
+
+    // 206 = the server honored the resume; 200 = it sent the whole file from the
+    // start, so we must overwrite (append would corrupt). Anything else with a body
+    // we also treat as a fresh start.
+    let resuming = response.status() == 206;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(resuming)
+        .truncate(!resuming)
+        .open(dest)
+        .map_err(|e| format!("couldn't open the download file: {e}"))?;
+
+    // Stream body → disk in chunks; a multi-GB model must never be buffered in
+    // memory (ggml aborts on failed allocations, and mobile OSes kill memory hogs).
+    let mut reader = response.into_reader();
+    let mut buf = vec![0u8; 256 * 1024];
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| format!("the download was interrupted: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        file.write_all(&buf[..n])
+            .map_err(|e| format!("couldn't write the download: {e}"))?;
+    }
     Ok(())
 }
 
@@ -425,17 +461,30 @@ pub fn ensure<F: Fn(&str)>(
     std::fs::create_dir_all(data_dir)
         .map_err(|e| format!("couldn't create the app folder: {e}"))?;
 
-    progress(&format!(
-        "Getting the {} ready — a one-time ~{} MB download…",
-        info.name.to_lowercase(),
-        info.approx_mb
-    ));
-
-    // Download to a .part file, rename on success — an interrupted download is
-    // never mistaken for a complete model.
+    // Resumable download to a .part file (kept across attempts so an interruption
+    // continues instead of restarting — critical for big models on mobile, where
+    // the OS kills the network on suspend). Report progress relative to any bytes
+    // already downloaded from a previous attempt.
     let part = path.with_extension("part");
+    let already_mb = std::fs::metadata(&part).map(|m| m.len() / 1_048_576).unwrap_or(0);
+    if already_mb > 0 {
+        progress(&format!(
+            "Resuming the {} download — {} of ~{} MB so far…",
+            info.name.to_lowercase(),
+            already_mb,
+            info.approx_mb
+        ));
+    } else {
+        progress(&format!(
+            "Getting the {} ready — a one-time ~{} MB download…",
+            info.name.to_lowercase(),
+            info.approx_mb
+        ));
+    }
+
     if let Err(msg) = download(info.url, &part) {
-        let _ = std::fs::remove_file(&part);
+        // Keep the .part on interruption — the next attempt resumes from it. Only
+        // report the failure so the UI can invite a retry.
         return Err(format!("{} couldn't be downloaded. {}", info.name, msg));
     }
 

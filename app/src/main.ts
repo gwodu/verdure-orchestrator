@@ -51,6 +51,33 @@ const MODEL_TIERS: { id: string; tier: string; blurb: string }[] = [
 const tierName = (id: string): string =>
   MODEL_TIERS.find((t) => t.id === id)?.tier ?? "Chat model";
 const chosenModelId = (): string => localStorage.getItem(MODEL_CHOICE_KEY) ?? "";
+
+// Keep the screen awake during a long download so an idle screen doesn't suspend
+// the app and kill the network mid-download (the big-model failure on Android).
+// Best-effort: the Wake Lock API is a no-op where unsupported, and resumable
+// downloads (model.rs) cover any interruption that slips through. Run `work` with
+// the lock held, always releasing it — even on error.
+type WakeLockLike = { release: () => Promise<void> };
+async function withScreenAwake<T>(work: () => Promise<T>): Promise<T> {
+  let lock: WakeLockLike | null = null;
+  try {
+    const nav = navigator as unknown as {
+      wakeLock?: { request: (t: "screen") => Promise<WakeLockLike> };
+    };
+    lock = (await nav.wakeLock?.request("screen")) ?? null;
+  } catch {
+    // Unsupported or denied — proceed without it.
+  }
+  try {
+    return await work();
+  } finally {
+    try {
+      await lock?.release();
+    } catch {
+      /* already released (e.g. screen turned off) */
+    }
+  }
+}
 // Example questions shown in the empty chat — playful + informational, to invite
 // a first message. Tapping one fills the input (the user still hits Send, since a
 // first message triggers the one-time model download).
@@ -563,14 +590,21 @@ function renderChat(): void {
       installEl = el(
         "div",
         "install-note",
-        `Setting up your ${tierName(chosen.id)} model — a one-time ${size} download. This can take a minute…`,
+        `Setting up your ${tierName(chosen.id)} model — a one-time ${size} download. Keep Verdure open; this can take a few minutes.`,
       );
       thread.appendChild(installEl);
       thread.scrollTop = thread.scrollHeight;
     }
     status.textContent = "Thinking…";
+    const downloading = !!(chosen && !chosen.installed);
     try {
-      const decision = await chatSend(text, (msg) => (status.textContent = msg), chosenModelId());
+      // Hold a screen wake lock while a (possibly large) model downloads, so the
+      // screen doesn't sleep and suspend the app mid-download.
+      const decision = downloading
+        ? await withScreenAwake(() =>
+            chatSend(text, (msg) => (status.textContent = msg), chosenModelId()),
+          )
+        : await chatSend(text, (msg) => (status.textContent = msg), chosenModelId());
       status.textContent = "";
       if (chosen) chosen.installed = true; // downloaded now — don't renotify
       // Chat is a plain conversation now — just show the reply. (Transcription is

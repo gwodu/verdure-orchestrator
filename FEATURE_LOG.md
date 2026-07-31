@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-07-31 — Resumable model downloads + keep-screen-awake (mobile reliability)
+
+**Problem (on-device Android):** big-model downloads (1.4 GB) never finished — when the screen sleeps or the app backgrounds, Android suspends the process and tears down the socket (`ECONNABORTED` / "Software caused connection abort, os error 103"). Worse, the old flow *deleted* the partial file on any interruption and restarted from zero, so a big model over mobile never caught up.
+
+**Fix — resumable downloads (the robust foundation, all platforms):** `model.rs` `download()` now resumes from the existing `.part` file — macOS via `curl -C -`, iOS/Android via an HTTP `Range: bytes=N-` request (served by Hugging Face's CDN; 206 → append, 200 → restart). `ensure()` keeps the `.part` across attempts (no longer deletes on interruption) and reports "Resuming — N of ~M MB…". So every interruption just costs a pause: reopen Verdure and it continues from where it stopped, instead of restarting.
+
+**Fix — keep screen awake during download:** a best-effort Screen Wake Lock (`withScreenAwake`, no-op where unsupported) is held while a model downloads, so an idle screen doesn't suspend the app mid-download. Install copy updated ("Keep Verdure open; this can take a few minutes").
+
+**Deferred (the gold standard):** a true background download (Android foreground service / DownloadManager) so it continues with the app fully closed — real Kotlin/plugin work, noted for later. Resume + wake-lock covers the common case now.
+
+**Verification:** frontend `tsc` + `vite` clean; the `download`/`ensure` changes compile in CI. On-device confirmation (big model finishing across an interruption) in the next Android build. `[OQ-66]`.
+
 ### 2026-07-31 — Android test build green (APK via CI) [OQ-66]
 
 **What:** Verdure builds for Android — the same one-interface app, same shared Rust core and GGUF flow, cross-compiled for `aarch64-linux-android` via the NDK. Same-branch `cfg(target_os = "android")` gating; macOS/iOS paths untouched (Mac CI stayed green). New `build-android.yml` (tag `android-build-N`, **Linux runners — 1/10 the macOS cost**): `tauri android init`, manifest `RECORD_AUDIO` + runtime permission request patched into MainActivity, NDK build, zipalign + apksigner with a throwaway key → 9 MB installable `.apk` artifact.
