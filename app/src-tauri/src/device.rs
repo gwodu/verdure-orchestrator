@@ -211,17 +211,22 @@ pub fn detect_spec() -> DeviceSpec {
     }
 }
 
-/// Take a live snapshot of free resources — Android. `available_ram_mb` is the
-/// kernel's own `MemAvailable` estimate from /proc/meminfo (free + reclaimable
-/// page cache) — the honest "can I hand this out now" number that feeds the chat
-/// RAM gate. Android's low-memory killer still has the last word, so the gate
-/// stays conservative ([OQ-66]).
+/// Take a live snapshot of free resources — Android. `available_ram_mb` here is an
+/// *allocatable budget*, not raw `MemAvailable`. On Android that distinction
+/// matters: `/proc/meminfo MemAvailable` systematically UNDERSTATES what a
+/// foreground app can use, because the low-memory killer reclaims background apps
+/// on demand when the foreground app allocates — memory `MemAvailable` doesn't
+/// count. Gating on the raw number wrongly blocked every model on a phone that
+/// reported ~1 GB free (observed on-device 2026-07-31). So we budget against total
+/// RAM with headroom for the OS + our WebView, and never report less than the real
+/// `MemAvailable`. Still an estimate to calibrate on real devices ([OQ-66]).
 #[cfg(target_os = "android")]
 pub fn system_resources(data_dir: &Path) -> SystemResources {
     let total_ram_mb = android::total_ram_bytes().map(|b| b / 1_048_576).unwrap_or(4096);
-    let available_ram_mb = android::available_ram_mb()
-        // If /proc/meminfo can't be read, assume a conservative quarter of total.
-        .unwrap_or(total_ram_mb / 4);
+    let mem_available_mb = android::available_ram_mb().unwrap_or(total_ram_mb / 4);
+    // ~60% of total is a realistic ceiling a foreground app can claim once Android
+    // reclaims cache + background apps; keep the honest MemAvailable as a floor.
+    let available_ram_mb = (total_ram_mb * 6 / 10).max(mem_available_mb);
     SystemResources {
         arch: "arm".to_string(),
         cores: std::thread::available_parallelism()

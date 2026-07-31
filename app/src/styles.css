@@ -43,7 +43,14 @@ html, body {
 #app {
   max-width: 680px;
   margin: 0 auto;
-  padding: 28px 24px 40px;
+  /* Inset for the system bars (Android edge-to-edge / iOS notch) so the brand
+     bar never sits under the status bar and the input never under the gesture
+     bar. `env(safe-area-inset-*)` needs viewport-fit=cover (set in index.html);
+     max() keeps a sensible minimum on platforms that report 0. */
+  padding-top: max(28px, env(safe-area-inset-top));
+  padding-right: max(24px, env(safe-area-inset-right));
+  padding-bottom: max(40px, env(safe-area-inset-bottom));
+  padding-left: max(24px, env(safe-area-inset-left));
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -782,7 +789,12 @@ html, body {
 /* Phone-width (Android ~360–412px CSS): tighten the frame so the chat input row
    (box + mic + Send) and the picker cards fit without crowding. */
 @media (max-width: 480px) {
-  #app { padding: 14px 12px 20px; }
+  #app {
+    padding-top: max(14px, env(safe-area-inset-top));
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    padding-left: max(12px, env(safe-area-inset-left));
+  }
   .panel { padding: 18px 14px 16px; border-radius: 14px; }
   .title { font-size: 24px; }
   .subtitle { font-size: 14.5px; }
