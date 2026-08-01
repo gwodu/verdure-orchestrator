@@ -6,6 +6,15 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-08-01 — Download UX: live progress bar + friendly one-tap resume; mic button states
+
+On-device Android polish:
+- **Progress bar.** The resumable download now emits `PROGRESS <done> <total>` MB lines (`model.rs` `download` computes total from Content-Range/Content-Length, falls back to the model's approx size); the chat install card renders a filling bar + "377 of 400 MB · 94%" instead of a static "installing…" line.
+- **Friendly pause + resume.** An interrupted download no longer shows a raw "os error 103" — it shows "Download paused — your progress is saved" with a **Resume download →** button that re-attempts (which resumes from the `.part` on disk). Refactored `submit` → `runChat(text)` so resume re-runs without re-posting the question.
+- **Mic button states** (from the same review): idle → **preparing** (neutral dim) → **recording** (red) — the mic only goes red once capture is really live, and a 30s watchdog replaces an infinite "Starting the microphone…" hang with an actionable "allow microphone in Settings" message. The Android build also re-requests mic permission on `onResume`.
+
+**Verification:** frontend `tsc` + `vite` clean; the `download`/`ensure` signature change compiles in CI. On-device confirmation in the next Android build. `[OQ-66]`.
+
 ### 2026-07-31 — Resumable model downloads + keep-screen-awake (mobile reliability)
 
 **Problem (on-device Android):** big-model downloads (1.4 GB) never finished — when the screen sleeps or the app backgrounds, Android suspends the process and tears down the socket (`ECONNABORTED` / "Software caused connection abort, os error 103"). Worse, the old flow *deleted* the partial file on any interruption and restarted from zero, so a big model over mobile never caught up.

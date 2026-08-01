@@ -381,9 +381,13 @@ pub fn list(data_dir: &Path) -> Vec<ModelEntry> {
 /// attempt continues from the last byte instead of restarting — the user just
 /// reopens and it picks up (`[OQ-66]`). Range requests are served by Hugging Face's
 /// CDN. `dest` is the `.part` file, kept across attempts by `ensure`.
+/// A resumable download reports progress as `PROGRESS <done_mb> <total_mb>` lines
+/// so the UI can draw a bar (the front end parses this prefix). `approx_mb` is the
+/// total-size fallback when the server doesn't send a size.
 #[cfg(target_os = "macos")]
-fn download(url: &str, dest: &Path) -> Result<(), String> {
-    // curl `-C -` auto-resumes from the existing output file's length.
+fn download(url: &str, dest: &Path, _approx_mb: u32, _progress: &dyn Fn(&str)) -> Result<(), String> {
+    // curl `-C -` auto-resumes from the existing output file's length. (macOS is
+    // the dev machine, not a shipped mobile target — coarse progress is fine here.)
     let output = Command::new("/usr/bin/curl")
         .args(["-fL", "-C", "-", "--retry", "3", "-o", &dest.to_string_lossy(), url])
         .output()
@@ -395,7 +399,7 @@ fn download(url: &str, dest: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn download(url: &str, dest: &Path) -> Result<(), String> {
+fn download(url: &str, dest: &Path, approx_mb: u32, progress: &dyn Fn(&str)) -> Result<(), String> {
     use std::io::{Read, Write};
 
     // Bytes already downloaded — resume from here with a Range request.
@@ -407,6 +411,20 @@ fn download(url: &str, dest: &Path) -> Result<(), String> {
         req
     };
     let response = req.call().map_err(|e| format!("the download couldn't start: {e}"))?;
+
+    // Total size for the progress bar: from Content-Range (`bytes X-Y/TOTAL`) on a
+    // resumed 206, else `have + Content-Length`, else the model's approx size.
+    let total_bytes = response
+        .header("Content-Range")
+        .and_then(|r| r.rsplit('/').next()?.parse::<u64>().ok())
+        .or_else(|| {
+            response
+                .header("Content-Length")
+                .and_then(|c| c.parse::<u64>().ok())
+                .map(|len| have + len)
+        })
+        .unwrap_or((approx_mb as u64) * 1_048_576)
+        .max(have.max(1));
 
     // 206 = the server honored the resume; 200 = it sent the whole file from the
     // start, so we must overwrite (append would corrupt). Anything else with a body
@@ -422,8 +440,13 @@ fn download(url: &str, dest: &Path) -> Result<(), String> {
 
     // Stream body → disk in chunks; a multi-GB model must never be buffered in
     // memory (ggml aborts on failed allocations, and mobile OSes kill memory hogs).
+    // Emit a PROGRESS line every ~2 MB so the UI's bar advances without spamming.
     let mut reader = response.into_reader();
     let mut buf = vec![0u8; 256 * 1024];
+    let mut written = if resuming { have } else { 0 };
+    let mut last_emit = 0u64;
+    let mb = |b: u64| b / 1_048_576;
+    progress(&format!("PROGRESS {} {}", mb(written), mb(total_bytes)));
     loop {
         let n = reader
             .read(&mut buf)
@@ -433,6 +456,11 @@ fn download(url: &str, dest: &Path) -> Result<(), String> {
         }
         file.write_all(&buf[..n])
             .map_err(|e| format!("couldn't write the download: {e}"))?;
+        written += n as u64;
+        if written - last_emit >= 2 * 1_048_576 {
+            last_emit = written;
+            progress(&format!("PROGRESS {} {}", mb(written), mb(total_bytes)));
+        }
     }
     Ok(())
 }
@@ -482,7 +510,7 @@ pub fn ensure<F: Fn(&str)>(
         ));
     }
 
-    if let Err(msg) = download(info.url, &part) {
+    if let Err(msg) = download(info.url, &part, info.approx_mb, progress) {
         // Keep the .part on interruption — the next attempt resumes from it. Only
         // report the failure so the UI can invite a retry.
         return Err(format!("{} couldn't be downloaded. {}", info.name, msg));

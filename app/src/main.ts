@@ -612,52 +612,87 @@ function renderChat(): void {
   };
 
   let busy = false;
-  const submit = async () => {
-    const text = input.value.trim();
-    if (!text || busy) return;
+
+  // A download-progress card: a filling bar + "N of M MB". `update` is driven by
+  // the backend's "PROGRESS done total" lines; a fresh one is built per attempt.
+  const makeInstallCard = (headline: string) => {
+    const card = el("div", "install-note");
+    card.appendChild(el("div", "install-headline", headline));
+    const bar = el("div", "dlbar");
+    const fill = el("div", "dlbar-fill");
+    bar.appendChild(fill);
+    card.appendChild(bar);
+    const label = el("div", "dlbar-label", "Starting…");
+    card.appendChild(label);
+    thread.appendChild(card);
+    thread.scrollTop = thread.scrollHeight;
+    return {
+      el: card,
+      update(doneMb: number, totalMb: number) {
+        const pct = totalMb > 0 ? Math.min(100, Math.round((doneMb / totalMb) * 100)) : 0;
+        fill.style.width = `${pct}%`;
+        label.textContent = `${doneMb} of ${totalMb} MB · ${pct}%`;
+      },
+    };
+  };
+
+  // Run one chat turn for `text`. Split out from `submit` so the "Resume" button
+  // can re-attempt (which resumes the download) without re-posting the question.
+  const runChat = async (text: string) => {
     busy = true;
     send.disabled = true;
-    input.value = "";
-    examples.remove(); // empty-state examples make way for the conversation
-    addMsg("user", text);
-    // One-time install notice: if the chosen model isn't downloaded yet, say so
-    // prominently (named tier + size) instead of a silent wait.
-    let installEl: HTMLElement | null = null;
-    if (chosen && !chosen.installed) {
-      const mb = chosen.downloadMb;
-      const size = mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
-      installEl = el(
-        "div",
-        "install-note",
-        `Setting up your ${tierName(chosen.id)} model — a one-time ${size} download. Keep Verdure open; this can take a few minutes.`,
-      );
-      thread.appendChild(installEl);
-      thread.scrollTop = thread.scrollHeight;
-    }
-    status.textContent = "Thinking…";
     const downloading = !!(chosen && !chosen.installed);
+    let card: ReturnType<typeof makeInstallCard> | null = null;
+    if (downloading) {
+      const mb = chosen!.downloadMb;
+      const size = mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+      card = makeInstallCard(`Setting up your ${tierName(chosen!.id)} model — one-time ${size} download.`);
+    }
+    const onProgress = (msg: string) => {
+      const m = /^PROGRESS (\d+) (\d+)$/.exec(msg);
+      if (m && card) card.update(+m[1], +m[2]);
+      else status.textContent = msg;
+    };
+    status.textContent = "Thinking…";
     try {
-      // Hold a screen wake lock while a (possibly large) model downloads, so the
-      // screen doesn't sleep and suspend the app mid-download.
+      // Hold a screen wake lock while a (possibly large) model downloads.
       const decision = downloading
-        ? await withScreenAwake(() =>
-            chatSend(text, (msg) => (status.textContent = msg), chosenModelId()),
-          )
-        : await chatSend(text, (msg) => (status.textContent = msg), chosenModelId());
+        ? await withScreenAwake(() => chatSend(text, onProgress, chosenModelId()))
+        : await chatSend(text, onProgress, chosenModelId());
       status.textContent = "";
+      card?.el.remove();
       if (chosen) chosen.installed = true; // downloaded now — don't renotify
-      // Chat is a plain conversation now — just show the reply. (Transcription is
-      // the mic button; the old JSON tool-call routed here and misfired on the tiny
-      // model — observed on-device 2026-07-27.)
+      // Chat is a plain conversation now — just show the reply.
       addMsg("ai", decision.reply || "(no reply)");
     } catch (err) {
-      status.textContent = String(err);
+      card?.el.remove();
+      status.textContent = "";
+      // A download that was interrupted (screen off / app left) keeps its progress
+      // on disk — offer a friendly one-tap resume instead of a raw OS error.
+      const msg = String(err);
+      if (downloading && /interrupt|abort|connection|os error|timed? ?out|network/i.test(msg)) {
+        addActionMsg(
+          "Download paused — your progress is saved. Tap to pick up where it left off. (If it keeps pausing, check your connection or allow background data for Verdure in Settings.)",
+          "Resume download →",
+          () => void runChat(text),
+        );
+      } else {
+        addMsg("ai", msg);
+      }
     } finally {
-      installEl?.remove();
       busy = false;
       send.disabled = false;
       input.focus();
     }
+  };
+
+  const submit = async () => {
+    const text = input.value.trim();
+    if (!text || busy) return;
+    input.value = "";
+    examples.remove(); // empty-state examples make way for the conversation
+    addMsg("user", text);
+    await runChat(text);
   };
 
   send.addEventListener("click", () => void submit());
