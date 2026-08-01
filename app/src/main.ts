@@ -441,17 +441,30 @@ function renderChat(): void {
   mic.title = "Dictate — turn speech into text";
   mic.setAttribute("aria-label", "Dictate — turn speech into text");
   mic.innerHTML = ICON_MIC;
+  // Mic states: idle → preparing (neutral, while the model downloads / mic opens)
+  // → recording (red, pulsing, actually listening). The button only goes red once
+  // audio capture is really live, so "installing" never looks like "recording".
   let recording = false;
+  let preparing = false;
   const setRecording = (on: boolean) => {
     recording = on;
+    preparing = false;
     mic.classList.toggle("recording", on);
+    mic.classList.remove("preparing");
     mic.title = on ? "Stop dictation" : "Dictate — turn speech into text";
+  };
+  const setPreparing = () => {
+    preparing = true;
+    recording = false;
+    mic.classList.remove("recording");
+    mic.classList.add("preparing");
+    mic.title = "Getting the microphone ready…";
   };
   // Begin dictation. `needsInstall` shows the one-time speech-model download
   // notice; it clears as soon as the first words come back.
   const startDictation = async (needsInstall: boolean) => {
-    setRecording(true);
-    status.textContent = needsInstall ? "Setting up speech-to-text…" : "Listening… speak, then tap the mic again.";
+    setPreparing(); // neutral — NOT red — until capture is actually live
+    status.textContent = needsInstall ? "Setting up speech-to-text…" : "Getting the microphone ready…";
     let note: HTMLElement | null = needsInstall
       ? el(
           "div",
@@ -463,33 +476,58 @@ function renderChat(): void {
       thread.appendChild(note);
       thread.scrollTop = thread.scrollHeight;
     }
+    // Watchdog: if capture never reaches "listening" (e.g. microphone permission
+    // wasn't granted), don't hang silently — surface a clear, actionable message.
+    let live = false;
+    const watchdog = window.setTimeout(() => {
+      if (live || !preparing) return;
+      note?.remove();
+      void stopLiveTranscription();
+      setRecording(false);
+      status.textContent =
+        "Couldn't reach the microphone. Please allow microphone access — Settings › Apps › Verdure › Permissions › Microphone — then tap the mic again.";
+    }, 30000);
     try {
-      liveCleanup = await startLiveTranscription({
-        onStatus: (m) => (status.textContent = m),
-        onSegment: (seg) => {
-          note?.remove();
-          note = null; // first words → the download finished
-          // Drop Whisper's non-speech markers ([BLANK_AUDIO], [ Silence ], …).
-          const t = seg.replace(/\[[A-Za-z_ ]+\]/g, "").trim();
-          if (t) input.value = input.value ? `${input.value} ${t}` : t; // into the box
-        },
-        onError: (m) => {
-          note?.remove();
-          status.textContent = m;
-          setRecording(false);
-        },
-        onStopped: () => {
-          note?.remove();
-          setRecording(false);
-          status.textContent = "";
-          if (liveCleanup) {
-            liveCleanup();
-            liveCleanup = null;
-          }
-          input.focus();
-        },
-      });
+      liveCleanup = await withScreenAwake(() =>
+        startLiveTranscription({
+          onStatus: (m) => {
+            status.textContent = m;
+            // live.rs emits "Listening… speak now." once the stream is really open.
+            if (/listening/i.test(m) && !live) {
+              live = true;
+              window.clearTimeout(watchdog);
+              setRecording(true); // now — and only now — turn red
+            }
+          },
+          onSegment: (seg) => {
+            note?.remove();
+            note = null; // first words → the download finished
+            // Drop Whisper's non-speech markers ([BLANK_AUDIO], [ Silence ], …).
+            const t = seg.replace(/\[[A-Za-z_ ]+\]/g, "").trim();
+            if (t) input.value = input.value ? `${input.value} ${t}` : t; // into the box
+          },
+          onError: (m) => {
+            live = true;
+            window.clearTimeout(watchdog);
+            note?.remove();
+            status.textContent = m;
+            setRecording(false);
+          },
+          onStopped: () => {
+            window.clearTimeout(watchdog);
+            note?.remove();
+            setRecording(false);
+            status.textContent = "";
+            if (liveCleanup) {
+              liveCleanup();
+              liveCleanup = null;
+            }
+            input.focus();
+          },
+        }),
+      );
     } catch (err) {
+      window.clearTimeout(watchdog);
       note?.remove();
       status.textContent = String(err);
       setRecording(false);
@@ -499,6 +537,7 @@ function renderChat(): void {
   // yet, ask permission first (with its size — the same honest prompt as the chat
   // model), then dictate. The user opts into the extra download.
   const toggleMic = async () => {
+    if (preparing) return; // mid-setup — ignore extra taps
     if (recording) {
       setRecording(false);
       await stopLiveTranscription(); // emits the final segment, then live:stopped

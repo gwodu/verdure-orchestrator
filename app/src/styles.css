@@ -114,6 +114,16 @@ html, body {
 .mic-btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
 .mic-btn:active { transform: translateY(0); }
 .mic-btn svg { width: 22px; height: 22px; }
+/* Preparing: neutral (keeps the wheat/gold look) with a gentle breathing dim, so
+   installing/opening never looks like active recording. */
+.mic-btn.preparing {
+  opacity: 0.85;
+  animation: mic-prep 1.4s ease-in-out infinite;
+}
+@keyframes mic-prep {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.9; }
+}
 /* Recording: switch to a warm red and pulse so it's obvious we're listening. */
 .mic-btn.recording {
   background: linear-gradient(135deg, #e2705a, #b83b25);
@@ -127,6 +137,7 @@ html, body {
 }
 @media (prefers-reduced-motion: reduce) {
   .mic-btn.recording { animation: none; }
+  .mic-btn.preparing { animation: none; opacity: 0.7; }
 }
 
 /* Headings */

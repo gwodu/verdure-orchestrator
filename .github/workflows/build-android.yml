@@ -83,19 +83,29 @@ jobs:
           if "RECORD_AUDIO" not in kt:
               # The generated template already has its own onCreate (with
               # enableEdgeToEdge etc.) — do NOT rewrite the class (round 1 did that
-              # and produced broken Kotlin). Inject the runtime permission request
-              # right after the stable `super.onCreate(...)` line, leaving the rest
-              # of the template's body intact.
+              # and produced broken Kotlin). Inject a helper that requests the mic
+              # permission when it isn't granted, call it after the stable
+              # `super.onCreate(...)`, and re-check on resume (so reopening the app
+              # after a missed/denied prompt re-asks). Leaves the template intact.
               anchor = "super.onCreate(savedInstanceState)"
               assert anchor in kt, f"onCreate shape changed — see ground-truth log above:\n{kt}"
-              inject = (
-                  anchor + "\n"
+              kt = kt.replace(anchor, anchor + "\n    ensureMicPermission()", 1)
+              # Add the helper + onResume just before the class's final closing brace.
+              helper = (
+                  "\n"
+                  "  private fun ensureMicPermission() {\n"
                   "    if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=\n"
                   "        android.content.pm.PackageManager.PERMISSION_GRANTED) {\n"
                   "      requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 1)\n"
-                  "    }"
+                  "    }\n"
+                  "  }\n"
+                  "  override fun onResume() {\n"
+                  "    super.onResume()\n"
+                  "    ensureMicPermission()\n"
+                  "  }\n"
               )
-              kt = kt.replace(anchor, inject, 1)
+              idx = kt.rstrip().rfind("}")
+              kt = kt[:idx] + helper + kt[idx:]
               activity.write_text(kt)
               print(f"patched {activity}")
           PY
