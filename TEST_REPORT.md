@@ -12,7 +12,7 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 **Mac regression:** the new deps are under `[target.'cfg(target_os = "android")'.dependencies]`, so the macOS porter build + tests are unaffected (target-gated; nothing extra compiled).
 
-**Still on-device only:** whether oboe delivers actual mic samples after the context is set (AAudio input routing) — verified on the `android-build-7` APK, not in CI.
+**On-device confirmation (Pixel 8a, 2026-08-03, `android-build-7`):** ✅ passed. `adb logcat` shows the `ndk-context: not initialized` panic gone (grep count 0) and `AudioRecord` reached for the first time; oboe negotiates a channel config (`getMinBufferSize: Invalid channel configuration` probe lines are benign) and live transcription streams. Method as above (install, tap mic, watch the PID-filtered log).
 
 ### 2026-07-31 — Android test build (`build-android.yml`, cfg-gated `device.rs`) [OQ-66]
 
