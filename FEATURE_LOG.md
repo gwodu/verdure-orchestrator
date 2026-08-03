@@ -6,6 +6,21 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-08-02 — Android mic fix: initialize the `ndk_context` oboe reads (root cause found on-device)
+
+**Problem (on-device Android, `[OQ-66]`):** the live mic never worked — tap the mic, it hangs on "preparing" and the 30s watchdog fires; no text, no error. Debugged on-device with `adb logcat`. Ruled out permission (force-granting `RECORD_AUDIO` via `adb` didn't help) and the model (Whisper `base.en` loads cleanly in the log). The smoking gun:
+
+```
+thread 'verdure-live' panicked at ndk-context-0.1.1/src/lib.rs:72:30:
+android context was not initialized
+```
+
+**Root cause:** cpal's Android backend (oboe) enumerates the microphone over JNI and reads the app's `JavaVM` + `Context` from the process-global `ndk_context`. **Tauri v2 never populates that global.** So the first mic-open on the capture thread panics, the thread dies, and — because a panic emits no `live:error` — the UI just hangs until the watchdog. macOS/iOS never hit this (CoreAudio, no JNI); Android is the only platform on this path.
+
+**Fix:** initialize `ndk_context` ourselves at launch. `MainActivity.onCreate` now calls a native `initAudioContext(applicationContext)` (`lib.rs` `Java_ai_verdure_porter_MainActivity_initAudioContext`, `#[cfg(android)]`), which stores the `JavaVM` + a global ref to the Application context into `ndk_context` (once, leaked deliberately — the Application context is process-lifetime). New Android-only deps (`jni`, `ndk-context`), decoupled from cpal via raw pointers; the macOS dependency tree is untouched (target-gated). The CI `MainActivity` patch gained the `external fun` declaration + the call, plus a package assertion so a future Tauri package rename fails the build loudly instead of an `UnsatisfiedLinkError` at runtime.
+
+**Verification:** the porter compiles on macOS CI (Android code is cfg-gated out there); the Android cross-compile + APK build is exercised by the `android-build-7` tag. This removes the crash definitively; whether oboe then actually **delivers mic samples** on-device (AAudio input routing) is the next thing to confirm on the new build. `[OQ-66]`.
+
 ### 2026-08-01 — Download UX: live progress bar + friendly one-tap resume; mic button states
 
 On-device Android polish:

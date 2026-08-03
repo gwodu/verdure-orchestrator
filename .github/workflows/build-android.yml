@@ -80,6 +80,14 @@ jobs:
               print(f"patched {manifest}")
           activity = next(root.rglob("MainActivity.kt"))
           kt = activity.read_text()
+          # The native init symbol in lib.rs is hard-coded to this package
+          # (Java_ai_verdure_porter_MainActivity_initAudioContext). If Tauri ever
+          # generates a different package, fail HERE with a clear message rather
+          # than at runtime with an UnsatisfiedLinkError.
+          assert "package ai.verdure.porter" in kt, (
+              "MainActivity package changed — update the JNI symbol in lib.rs "
+              f"(Java_ai_verdure_porter_MainActivity_initAudioContext):\n{kt}"
+          )
           if "RECORD_AUDIO" not in kt:
               # The generated template already has its own onCreate (with
               # enableEdgeToEdge etc.) — do NOT rewrite the class (round 1 did that
@@ -89,10 +97,20 @@ jobs:
               # after a missed/denied prompt re-asks). Leaves the template intact.
               anchor = "super.onCreate(savedInstanceState)"
               assert anchor in kt, f"onCreate shape changed — see ground-truth log above:\n{kt}"
-              kt = kt.replace(anchor, anchor + "\n    ensureMicPermission()", 1)
-              # Add the helper + onResume just before the class's final closing brace.
+              # initAudioContext MUST run before any mic open: it populates the
+              # ndk_context global that cpal/oboe reads to enumerate the mic over
+              # JNI (Tauri v2 leaves it unset → "android context was not
+              # initialized" panic). The native symbol is
+              # Java_ai_verdure_porter_MainActivity_initAudioContext in lib.rs.
+              kt = kt.replace(
+                  anchor,
+                  anchor + "\n    initAudioContext(applicationContext)\n    ensureMicPermission()",
+                  1,
+              )
+              # Add the helpers + onResume just before the class's final closing brace.
               helper = (
                   "\n"
+                  "  external fun initAudioContext(ctx: android.content.Context)\n"
                   "  private fun ensureMicPermission() {\n"
                   "    if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=\n"
                   "        android.content.pm.PackageManager.PERMISSION_GRANTED) {\n"

@@ -4,6 +4,16 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-08-02 — Android mic capture: `ndk_context` initialization [OQ-66]
+
+**Diagnosis method (on-device, no local toolchain):** `adb logcat --pid=$(adb shell pidof ai.verdure.porter)` while tapping the mic. Isolated the fault in three steps — (1) `adb pm grant` + `appops set … allow` force-granting `RECORD_AUDIO` did **not** fix it → not permission; (2) the log shows Whisper `base.en` loading fully → not the model; (3) immediately after load, `thread 'verdure-live' panicked … ndk-context: android context was not initialized` → cpal/oboe's JNI device enumeration on an unpopulated `ndk_context`.
+
+**Fix coverage:** native glue (`Java_..._initAudioContext`) is Android-only FFI — not unit-testable; CI compiles it via the `android-build-7` cross-build. A build-time **assertion** guards the hard-coded JNI package (`package ai.verdure.porter` must be present in the generated `MainActivity.kt`), converting a would-be runtime `UnsatisfiedLinkError` into a loud build failure.
+
+**Mac regression:** the new deps are under `[target.'cfg(target_os = "android")'.dependencies]`, so the macOS porter build + tests are unaffected (target-gated; nothing extra compiled).
+
+**Still on-device only:** whether oboe delivers actual mic samples after the context is set (AAudio input routing) — verified on the `android-build-7` APK, not in CI.
+
 ### 2026-07-31 — Android test build (`build-android.yml`, cfg-gated `device.rs`) [OQ-66]
 
 **Verified in CI (2 rounds, `android-build-1..2`):**

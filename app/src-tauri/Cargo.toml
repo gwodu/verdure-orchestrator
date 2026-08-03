@@ -59,6 +59,18 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 # FFI rule 1 — reach C through audited wrapper crates, don't hand-write bindings.
 libc = "0.2"
 
+# Android-only ([OQ-66]). cpal's Android backend (oboe) enumerates the mic over
+# JNI and reads the app's JavaVM + Context from the process-global `ndk_context`.
+# Tauri v2 does NOT populate that global, so opening the mic panics "android
+# context was not initialized" (the verdure-live thread dies → the UI hangs on
+# "preparing" until the watchdog). We initialize it ourselves from MainActivity
+# — see lib.rs `Java_..._initAudioContext` + the MainActivity patch in
+# build-android.yml. Our use is decoupled from cpal's via raw pointers, so the
+# jni version is independent; `ndk-context = 0.1` unifies with cpal's global.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
+
 [dev-dependencies]
 # The `test` feature exposes tauri::test (MockRuntime, mock_builder,
 # get_ipc_response) so we can invoke the real command handlers headlessly in CI.

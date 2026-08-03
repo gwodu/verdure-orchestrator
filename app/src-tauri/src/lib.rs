@@ -293,6 +293,37 @@ fn build_context<R: Runtime>() -> tauri::Context<R> {
     tauri::generate_context!()
 }
 
+/// Android: hand cpal's oboe backend the JavaVM + Application context it needs to
+/// enumerate the microphone over JNI. Oboe reads them from the process-global
+/// `ndk_context`, which Tauri v2 leaves unset — so without this, the first mic
+/// open panics "android context was not initialized" and the capture thread dies
+/// silently (the UI then hangs on "preparing" until the watchdog). `MainActivity`
+/// calls this once on launch (see the patch in `.github/workflows/build-android.yml`).
+/// [OQ-66]
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_ai_verdure_porter_MainActivity_initAudioContext(
+    env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    context: jni::objects::JObject,
+) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let Ok(vm) = env.get_java_vm() else { return };
+        // Global ref so the Context survives past this JNI call; oboe reads it on
+        // every mic open. Leaked deliberately — the Application context lives for
+        // the whole process anyway, so there's nothing to release.
+        let Ok(ctx) = env.new_global_ref(&context) else { return };
+        unsafe {
+            ndk_context::initialize_android_context(
+                vm.get_java_vm_pointer() as *mut _,
+                ctx.as_raw() as *mut _,
+            );
+        }
+        std::mem::forget(ctx);
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
