@@ -57,76 +57,10 @@ jobs:
           echo "===== $MAIN_MANIFEST ====="; cat "$MAIN_MANIFEST"
           MAIN_ACTIVITY=$(find app/src-tauri/gen/android -name "MainActivity.kt" | head -1)
           echo "===== $MAIN_ACTIVITY ====="; cat "$MAIN_ACTIVITY"
-      - name: Grant + request the microphone permission
-        # Two Android-specific requirements for live dictation (cpal/AAudio):
-        # 1. RECORD_AUDIO declared in the manifest;
-        # 2. a RUNTIME permission request (Android prompts in-app, unlike iOS's
-        #    plist-driven prompt). Patched into MainActivity for the test build —
-        #    requested at launch; moving it to first mic tap is a later refinement.
-        run: |
-          python3 - <<'PY'
-          import pathlib, re
-          root = pathlib.Path("app/src-tauri/gen/android")
-          manifest = next(p for p in root.rglob("AndroidManifest.xml") if "app/src/main" in str(p))
-          xml = manifest.read_text()
-          if "RECORD_AUDIO" not in xml:
-              assert "<application" in xml, "unexpected manifest layout"
-              xml = xml.replace(
-                  "<application",
-                  '<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <application',
-                  1,
-              )
-              manifest.write_text(xml)
-              print(f"patched {manifest}")
-          activity = next(root.rglob("MainActivity.kt"))
-          kt = activity.read_text()
-          # The native init symbol in lib.rs is hard-coded to this package
-          # (Java_ai_verdure_porter_MainActivity_initAudioContext). If Tauri ever
-          # generates a different package, fail HERE with a clear message rather
-          # than at runtime with an UnsatisfiedLinkError.
-          assert "package ai.verdure.porter" in kt, (
-              "MainActivity package changed — update the JNI symbol in lib.rs "
-              f"(Java_ai_verdure_porter_MainActivity_initAudioContext):\n{kt}"
-          )
-          if "RECORD_AUDIO" not in kt:
-              # The generated template already has its own onCreate (with
-              # enableEdgeToEdge etc.) — do NOT rewrite the class (round 1 did that
-              # and produced broken Kotlin). Inject a helper that requests the mic
-              # permission when it isn't granted, call it after the stable
-              # `super.onCreate(...)`, and re-check on resume (so reopening the app
-              # after a missed/denied prompt re-asks). Leaves the template intact.
-              anchor = "super.onCreate(savedInstanceState)"
-              assert anchor in kt, f"onCreate shape changed — see ground-truth log above:\n{kt}"
-              # initAudioContext MUST run before any mic open: it populates the
-              # ndk_context global that cpal/oboe reads to enumerate the mic over
-              # JNI (Tauri v2 leaves it unset → "android context was not
-              # initialized" panic). The native symbol is
-              # Java_ai_verdure_porter_MainActivity_initAudioContext in lib.rs.
-              kt = kt.replace(
-                  anchor,
-                  anchor + "\n    initAudioContext(applicationContext)\n    ensureMicPermission()",
-                  1,
-              )
-              # Add the helpers + onResume just before the class's final closing brace.
-              helper = (
-                  "\n"
-                  "  external fun initAudioContext(ctx: android.content.Context)\n"
-                  "  private fun ensureMicPermission() {\n"
-                  "    if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=\n"
-                  "        android.content.pm.PackageManager.PERMISSION_GRANTED) {\n"
-                  "      requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 1)\n"
-                  "    }\n"
-                  "  }\n"
-                  "  override fun onResume() {\n"
-                  "    super.onResume()\n"
-                  "    ensureMicPermission()\n"
-                  "  }\n"
-              )
-              idx = kt.rstrip().rfind("}")
-              kt = kt[:idx] + helper + kt[idx:]
-              activity.write_text(kt)
-              print(f"patched {activity}")
-          PY
+      - name: Patch the Android project (mic permission + audio-context init)
+        # Shared with build-android-play.yml — one script so the mic wiring can't
+        # drift between the test-APK and the signed-AAB build paths.
+        run: python3 app/scripts/patch-android-project.py
       - name: Build the APK (release, aarch64)
         # The tauri CLI drives gradle + cargo itself (it is the parent process, so
         # there's no orphaned-build-script problem like iOS's xcode-script). It

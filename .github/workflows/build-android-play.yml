@@ -1,0 +1,108 @@
+name: Build Android for Play (.aab, signed)
+
+# The Play-distribution build ([OQ-66]): same app as the test-APK workflow
+# (build-android.yml), but packaged as a Play-ready Android App Bundle (.aab)
+# signed with the PERSISTENT upload key (a GitHub secret, founder-owned — the
+# same trust model as the iOS App Store Connect keys). Google Play App Signing
+# takes it from here: we upload signed with our UPLOAD key, Play re-signs the
+# per-device APKs with the app signing key it holds.
+#
+# This is the analog of build-testflight.yml on the Android side; the throwaway
+# test-APK path stays for quick sideload smoke tests.
+#
+# First run: download the .aab artifact and upload it by hand in Play Console to
+# create the app + establish Play App Signing. Automating the upload (a Play
+# service account) comes after the app exists.
+#
+# Required repository secrets (founder generates the keystore, holds the key):
+#   ANDROID_KEYSTORE_BASE64  — base64 of the upload keystore (.jks/.keystore)
+#   ANDROID_KEYSTORE_PASSWORD — store password
+#   ANDROID_KEY_ALIAS         — key alias inside the keystore
+#   ANDROID_KEY_PASSWORD      — key password
+#
+# Runs on Linux runners — 1/10 the per-minute cost of the macOS ones.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "android-play-*"
+
+jobs:
+  build:
+    name: Package Verdure for Play (.aab, signed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the signing secrets are present
+        # Fail fast with a clear message instead of an opaque jarsigner error.
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KS" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is empty. Add the upload keystore + password secrets (see the header of this workflow) before building for Play."
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install Rust (with the Android target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: Point the build at the runner's Android NDK
+        run: |
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          echo "NDK at: $ANDROID_NDK_LATEST_HOME"
+      - name: Install workspaces
+        run: npm ci
+      - name: Generate the Android project (tauri android init)
+        working-directory: app
+        run: npx tauri android init --ci
+      - name: Show the generated project (ground truth for iteration)
+        run: |
+          MAIN_ACTIVITY=$(find app/src-tauri/gen/android -name "MainActivity.kt" | head -1)
+          echo "===== $MAIN_ACTIVITY ====="; cat "$MAIN_ACTIVITY"
+      - name: Patch the Android project (mic permission + audio-context init)
+        # Shared with build-android.yml — one script, no drift.
+        run: python3 app/scripts/patch-android-project.py
+      - name: Build the App Bundle (release, aarch64)
+        # Single ABI (arm64-v8a) — covers modern phones; Play serves it to those
+        # devices. Add armeabi-v7a / x86_64 targets here later for wider reach.
+        # Gradle's bundleRelease emits an UNSIGNED .aab (no signingConfig); we
+        # sign it externally below, matching the test-APK path's approach.
+        working-directory: app
+        run: npx tauri android build --aab --target aarch64
+      - name: Sign the App Bundle with the upload key
+        # AABs use JAR signing (jarsigner), not apksigner. Play verifies this
+        # upload-key signature, then re-signs the delivered APKs with the app
+        # signing key it holds (Play App Signing).
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          AAB=$(find app/src-tauri/gen/android -name "*.aab" -path "*release*" | head -1)
+          echo "aab: $AAB"
+          test -n "$AAB"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > upload.keystore
+          jarsigner -sigalg SHA256withRSA -digestalg SHA-256 \
+            -keystore upload.keystore \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+            -keypass "$ANDROID_KEY_PASSWORD" \
+            "$AAB" "$ANDROID_KEY_ALIAS"
+          jarsigner -verify "$AAB"
+          cp "$AAB" verdure-release.aab
+          rm -f upload.keystore
+      - name: Upload the signed App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: verdure-android-play
+          path: verdure-release.aab
+          if-no-files-found: error

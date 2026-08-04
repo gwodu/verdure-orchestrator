@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-08-03 — Android Play distribution: signed-AAB workflow (open-testing path)
+
+**What:** the Android app now has a Play-ready build path. New `build-android-play.yml` (tag `android-play-N`) produces a **signed Android App Bundle (`.aab`)** using a **persistent upload keystore** held as GitHub secrets (`ANDROID_KEYSTORE_BASE64` + password/alias secrets — founder-owned, same trust model as the iOS App Store Connect keys). Gradle emits an unsigned `.aab`; we sign it with `jarsigner` (the JAR-signing scheme AABs use) so Google **Play App Signing** can take over (upload key → Play re-signs delivered APKs). This is the Android analog of `build-testflight.yml`; the throwaway test-APK workflow stays for quick sideload smoke tests.
+
+**Why now:** the APK is proven on-device (mic works), which was `[OQ-66]`'s gate for moving to a shareable link. Target is Play **open testing** — a public "click → install → auto-update" link, no tester-email collection. Verdure's local/no-telemetry design makes the Data Safety form the best case ("no data collected/shared") and `RECORD_AUDIO` trivially justified (on-device dictation).
+
+**Refactor (no drift):** the manifest + `MainActivity` patch (RECORD_AUDIO + the `initAudioContext`/`ndk_context` mic fix) moved out of the inline workflow heredoc into one shared script — `app/scripts/patch-android-project.py` — that **both** Android workflows run, so the test-APK and Play-AAB paths can never diverge on the mic wiring.
+
+**Founder-side (account, not code):** generate the upload keystore + add the four secrets; then in Play Console create the app under the permanent package name (`ai.verdure.porter` unless changed first — permanent once published), fill the store listing / Data Safety / content rating / privacy-policy URL, upload the first `.aab` by hand to establish Play App Signing, and open the **open-testing** track for the public link. Automated Play upload (a service-account step) folds in after the app exists.
+
+**Verification:** both workflow YAMLs parse; the shared patch script syntax-checks. The `--aab` cross-build + `jarsigner` step run once the keystore secrets are set and an `android-play-N` tag is pushed (CI is the compiler here). `[OQ-66]`.
+
 ### 2026-08-02 — Android mic fix: initialize the `ndk_context` oboe reads (root cause found on-device)
 
 **Problem (on-device Android, `[OQ-66]`):** the live mic never worked — tap the mic, it hangs on "preparing" and the 30s watchdog fires; no text, no error. Debugged on-device with `adb logcat`. Ruled out permission (force-granting `RECORD_AUDIO` via `adb` didn't help) and the model (Whisper `base.en` loads cleanly in the log). The smoking gun:
