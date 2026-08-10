@@ -63,9 +63,19 @@ Examples on an 8 GB MacBook (Tier L2-high):
 
 On Apple Intelligence–capable devices (M1+ Macs, recent iPhones, on iOS 27 / macOS 27+), the OS ships a resident ~3B system model accessible via Apple's Foundation Models framework. For many everyday intents (summarize, classify, rewrite, short Q&A), the honest recommendation is: **download nothing — you already have a model.** Footprint zero, storage zero, instant availability.
 
-This matters beyond Apple devices as a principle: a decider that knows when the answer is "install nothing" is more trustworthy than one that always recommends a download (see `06-privacy-principles.md`, honest expectations). The matrix must therefore support resident models — models with no download artifact. Architectural handling is in `14-architecture.md` (resident `ModelChoice`). Backend details are in `07-runtime-backends.md` (`AppleSystemBackend`).
+This matters beyond Apple devices as a principle: a decider that knows when the answer is "install nothing" is more trustworthy than one that always recommends a download (see `06-privacy-principles.md`, honest expectations). The matrix must therefore support resident models — models with no download artifact. Architectural handling is in `14-architecture.md` (resident `ModelChoice`). Backend details are in `07-runtime-backends.md` (`AppleSystemBackend`). *(Design intent, not yet implemented: neither `@verdure/decider` nor the app models a zero-download choice today — this becomes real with the Apple backend, and stays flagged here so it isn't silently dropped.)*
 
 The system model is closed-weight and fixed-size; for intents that exceed its quality ceiling (deep creative work, hard reasoning, specific domain needs), the recommendation shifts to a downloaded open-weight model per the matrix above.
+
+## The in-app chat registry — a deliberately separate stack (resolves [OQ-62])
+
+The shipping app picks its **chat** model through its own small registry (`app/src-tauri/src/model.rs`: ByteShape Qwen3 4B on top, Qwen2.5 0.5B/1.5B as floor/fallback, gated on **live available RAM** measured at the moment of use), not through this matrix. That is a decision, not drift — resolved 2026-08-10:
+
+- **Different input.** This matrix maps a *static hardware tier* to a recommendation before anything is installed. The chat gate reads *available* memory at runtime — a number that changes minute to minute and only exists inside the running app (keying on available-not-total RAM is what fixed the 8 GB OOM crash).
+- **Different moment.** The matrix answers "what should this device download?"; the registry answers "what can this device load *right now*?" — including honestly declining when nothing fits.
+- **One caller.** Only the app has a live RAM reading. Folding a runtime axis into `@verdure/decider` would add an abstraction with a single consumer — the over-engineering the coding principles forbid. If the website ever needs runtime-aware picks, revisit then.
+
+The boundary: **this file owns which models are worth recommending and why** (the registry's candidates should be justifiable from the sections above — the 4B-over-0.5B bet is the speed/quality axis applied to the memory floor); **`model.rs` owns the runtime gate**. A model added to the registry without a rationale expressible here is the smell that this decision needs revisiting. The registry's code comments cross-reference this section.
 
 ## Model details
 

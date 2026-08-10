@@ -61,7 +61,10 @@ pub const WHISPER_BASE_EN: ModelInfo = ModelInfo {
     prompt_style: None,
 };
 
-// Chat models behind the conversational front door (knowledge/18). We pick by
+// Chat models behind the conversational front door (knowledge/18). This registry
+// is a deliberately separate stack from the @verdure/decider matrix — the boundary
+// (why runtime RAM-gating lives here, not there) is knowledge/03, "The in-app chat
+// registry" ([OQ-62], resolved). We pick by
 // AVAILABLE RAM (see `chat_model_for_available`): a model needs more memory than an
 // 8 GB machine has alongside the WebView — it OOMs and ggml aborts the process — so
 // tight devices fall back to a smaller model. The base is now ByteShape's low-bit
