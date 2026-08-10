@@ -4,6 +4,12 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-08-10 — Friendly error fallback (`main.ts` `friendlyError`)
+
+**Change:** frontend-only — the three `String(err)` display sites route through a `friendlyError` helper (string/Error messages pass through; anything else falls back to a calm generic line). No new pure logic beyond a two-branch coercion, and `main.ts` has no unit harness — consistent with prior frontend-only entries, **no new unit tests**; the behavior contract is the type signature plus the backend's already-tested error phrasing (`llm.rs` `map_err` strings).
+
+**Verified:** `tsc` (strict) + `vite build` clean. Edge case considered: the chat resume-detection regex reads the same string it did before for string errors, so the "download paused → resume" path is unchanged.
+
 ### 2026-08-02 — Android mic capture: `ndk_context` initialization [OQ-66]
 
 **Diagnosis method (on-device, no local toolchain):** `adb logcat --pid=$(adb shell pidof ai.verdure.porter)` while tapping the mic. Isolated the fault in three steps — (1) `adb pm grant` + `appops set … allow` force-granting `RECORD_AUDIO` did **not** fix it → not permission; (2) the log shows Whisper `base.en` loading fully → not the model; (3) immediately after load, `thread 'verdure-live' panicked … ndk-context: android context was not initialized` → cpal/oboe's JNI device enumeration on an unpopulated `ndk_context`.

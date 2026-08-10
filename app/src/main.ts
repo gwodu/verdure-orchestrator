@@ -32,6 +32,15 @@ import {
 
 const WHISPER_MODEL_ID = "whisper-base-en";
 const fmtMb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1_048_576))} MB`;
+// Backend errors arrive as human-written sentences (llm.rs/model.rs phrase them
+// for the user: "couldn't load the chat model: …"). Anything else — a thrown
+// object, an empty string — would surface as "[object Object]" or a blank; show
+// a calm fallback instead of leaking it (the truck-driver test).
+const friendlyError = (err: unknown): string => {
+  const msg =
+    typeof err === "string" ? err : err instanceof Error ? err.message : "";
+  return msg.trim() ? msg : "Something went wrong. Please try again.";
+};
 import "./styles.css";
 
 // Modalities now wrapped *inside* Verdure (knowledge/18 — run the model here, no
@@ -529,7 +538,7 @@ function renderChat(): void {
     } catch (err) {
       window.clearTimeout(watchdog);
       note?.remove();
-      status.textContent = String(err);
+      status.textContent = friendlyError(err);
       setRecording(false);
     }
   };
@@ -669,7 +678,7 @@ function renderChat(): void {
       status.textContent = "";
       // A download that was interrupted (screen off / app left) keeps its progress
       // on disk — offer a friendly one-tap resume instead of a raw OS error.
-      const msg = String(err);
+      const msg = friendlyError(err);
       if (downloading && /interrupt|abort|connection|os error|timed? ?out|network/i.test(msg)) {
         addActionMsg(
           "Download paused — your progress is saved. Tap to pick up where it left off. (If it keeps pausing, check your connection or allow background data for Verdure in Settings.)",
@@ -786,7 +795,7 @@ function setupArea(tool: PortableTool): HTMLElement {
     } catch (err) {
       wrap.classList.remove("working");
       wrap.classList.add("failed");
-      status.textContent = String(err);
+      status.textContent = friendlyError(err);
       button.disabled = false;
       button.textContent = "Try again";
     }

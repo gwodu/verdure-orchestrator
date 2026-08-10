@@ -6,6 +6,14 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-08-10 — Friendly error fallback at the display boundary (`main.ts`)
+
+**What:** the three places that showed a caught error verbatim (`String(err)` — mic setup, chat send, legacy porter button) now route through one `friendlyError` helper: backend messages (already human-written sentences from `llm.rs`/`model.rs`) pass through, but a thrown object or empty string shows "Something went wrong. Please try again." instead of `[object Object]` or a blank.
+
+**Why:** the truck-driver test — a raw JS error representation is jargon by definition. This was an inspection finding (2026-06-29, deferred to the redesign; re-flagged 2026-08-10) — the backend half was already honest, the frontend just leaked whatever it caught.
+
+**Verification:** tsc + vite clean. The chat-send path's resume-detection regex is unaffected (string errors pass through unchanged). Frontend-only; no Rust touched.
+
 ### 2026-08-03 — Android Play distribution: signed-AAB workflow (open-testing path)
 
 **What:** the Android app now has a Play-ready build path. New `build-android-play.yml` (tag `android-play-N`) produces a **signed Android App Bundle (`.aab`)** using a **persistent upload keystore** held as GitHub secrets (`ANDROID_KEYSTORE_BASE64` + password/alias secrets — founder-owned, same trust model as the iOS App Store Connect keys). Gradle emits an unsigned `.aab`; we sign it with `jarsigner` (the JAR-signing scheme AABs use) so Google **Play App Signing** can take over (upload key → Play re-signs delivered APKs). This is the Android analog of `build-testflight.yml`; the throwaway test-APK workflow stays for quick sideload smoke tests.
