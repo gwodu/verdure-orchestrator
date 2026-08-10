@@ -2,67 +2,71 @@
 
 *Role: current **state + next steps** — "where are we now / what do I do next." Overwritten as the build moves; it does not narrate chronology. For the dated history of how we got here, see `KNOWLEDGE.md`'s changelog.*
 
-**Status:** 🟢 Current working state as of 2026-06-30. **Entering a redesign** — see "Next steps" below; the inspection that precedes it is `KNOWLEDGE.md`'s 2026-06-29 changelog entry + `skills/inspection.md`. **New session? Read this first** (then `18` pivot, `20` personal-AI, `19` predictor). This is the single source of truth for *where the build is*; older files (`01/14/15/16/17`) predate the pivot — see "Doctrine" below.
+**Status:** 🟢 Current working state as of 2026-08-10. The app now runs **on-device on three platforms** (Intel Mac, iPad via TestFlight, Pixel 8a via CI APK) with chat, live dictation, and resumable model downloads working. **The next gate is distribution:** the Play open-testing workflow is ready, but the first upload makes the Android package name permanent — the `porter` rename decision (`[OQ-60]`) must be made first. **New session? Read this first** (then `18` pivot, `20` personal-AI). This is the single source of truth for *where the build is*; older files (`01/14/15/16/17`) predate the pivot — see "Doctrine" below.
 
 ## What exists and works (branch `mvp-porter-buzz`, not merged to main)
-The MVP is a **Tauri desktop app** (`app/`) — Verdure, the local personal AI — that runs models **inside one interface**, on an Intel Mac, shipped via CI (no local toolchain; see "How to build/ship").
 
-Verified on the founder's 2019 Intel Mac (8 GB, macOS 15):
-- **Transcription (file)** ✅ — drop audio → text, on-device via whisper.cpp (`base.en`). Real run measured ~3.9× real-time.
-- **Transcription (live mic)** ✅ — record from the microphone, text streams in as you speak (`live.rs`: `cpal` capture + a pure energy-gated `Segmenter` that cuts at pauses + transcribe-once-per-segment with a resident Whisper context). Built 2026-06-23, segmenter unit-tested + cross-compiles in CI; **confirmed working on-device 2026-06-30** (mic permission grant cleared; unsigned-app TCC was not a blocker in practice).
-- **Performance predictor** ✅ — estimates speed from device specs (`packages/decider/performance.ts`), calibrated by the real measurement; anchored to the founder's Mac.
-- **Storage management** ✅ — per-model size + Remove (in-panel) and a global "Manage storage" screen; models download on first use, removable, re-download on demand.
-- **Chat tool-calling** 🔴 **not working on-device — folded into the redesign, not a standalone P0.** Local Qwen via llama.cpp; "I need to dictate" → confirm → opens transcription; `classifyIntent` cross-check is the real router. Prior crash/quality fixes (grammar-sampler removal, RAM-aware pick, real sampling) and the parked **Gemma 4 E2B** wiring have **not** made it usable. **Base chat model is now ByteShape's low-bit Qwen3 4B** (`Q3_K_S-2.77bpw`, ~1.4 GB, Apache 2.0; `USE_BYTESHAPE_QWEN3_4B = true`), top of the pick with the Qwen 0.5B/1.5B floor as fallback — the bet being a real 4B beats the 0.5B garbage within the RAM budget. **Pending on-device:** (a) does it load on our pinned llama.cpp; (b) does it fit the 8 GB Mac at all (with ~1.5 GB free the gate falls back to Qwen — `N_CTX` already lowered to 1024 + `runtime_mb` ~2300 to help, but the 1.4 GB weights are a hard floor so RAM must be freed to ~2.3 GB to exercise it). A **"best model only" chat toggle** (off by default) forces the 4B or shows an honest "won't fit" message instead of silently downgrading — so on-device testing can tell which model actually answered. `[OQ-64]`. *(How it got here: KNOWLEDGE.md changelog, 2026-06-23 / 06-29 / 07-01.)*
+The MVP is a **Tauri app** (`app/`) — Verdure, the local personal AI — that runs models **inside one interface**, shipped entirely via CI (no local toolchain; see "How to build/ship").
 
-Green: decider 74 tests; porter Rust 40 tests (incl. live-transcription segmenter + machine-context/model-fit + sampling/prompt-style tests); CI (Linux decider+website, macOS porter incl. x86_64 cross-compile + model-URL checks). Last green CI: `78aaa54` (2026-06-29).
+Verified on-device (founder's 2019 Intel Mac 8 GB, iPad via TestFlight, Pixel 8a via sideloaded APK):
+
+- **Chat** ✅ — a plain conversation with a local model via llama.cpp. **Confirmed loading and generating on the iPad** (2026-07-27, answering `[OQ-64]`'s core question). The JSON tool-calling wrapper was **removed** on-device evidence (the tiny model over-triggered tools and leaked malformed JSON); capabilities-as-tools returns later, constrained + process-isolated (`[OQ-55]`). Model lineup: **ByteShape Qwen3 4B** (`Q3_K_S-2.77bpw`, ~1.4 GB) as the top RAM-gated pick, Qwen2.5 0.5B/1.5B as floor/fallback. A first-launch **model picker** (Small/Balanced/Powerful, with download size + per-device memory fit, persisted, changeable from the header) replaced the earlier "best model only" toggle. The 8 GB Mac exercises only the fallback tier (~1.5 GB free vs the 4B's ~2.3 GB floor); the 4B's `runtime_mb` still needs on-device calibration (`[OQ-64]` residual).
+- **Transcription (file)** ✅ — drop audio → text via whisper.cpp `base.en`; ~3.9× real-time measured on the Intel Mac.
+- **Transcription (live mic)** ✅ **on all three platforms** — `live.rs`: `cpal` capture + a pure energy-gated `Segmenter` + transcribe-once-per-segment with a resident Whisper context. macOS confirmed 2026-06-30; iPad with the TestFlight builds; **Android confirmed 2026-08-03** (Pixel 8a) after root-causing the `ndk_context` initialization gap in Tauri v2 (changelog 2026-08-02).
+- **Dictation into chat** ✅ — the mic button dictates straight into the chat box; the standalone transcription page was removed (2026-07-25). First mic tap without Whisper installed shows a size-and-consent prompt before downloading.
+- **Downloads** ✅ — streamed to disk with a live progress bar, **resumable** (progress survives interruption; one-tap resume), keep-screen-awake on mobile during large downloads.
+- **Performance predictor** ✅ — estimates speed from device specs (`packages/decider/src/performance.ts`), calibrated by real measurements.
+- **Storage management** ✅ — per-model size, Remove (in-panel + global screen), disk fail-state warnings, free-space readout.
+- **UI** — chat-first "prairie" redesign shipped 2026-07-17 (app opens straight into chat; mic in the input row; gear → Storage).
+- **Distribution** — macOS Intel .dmg via `app-build-N` tags; **iOS via TestFlight** (signed, no expiry, `testflight-N` tags); **Android test APK** via `android-build-N` tags; **Play open-testing workflow ready** (`build-android-play.yml`, signed .aab) but ungated founder-side steps remain — see Next steps.
+
+Green: decider + website suites pass locally; porter Rust suite (44 unit tests incl. segmenter, model gating, prompt styles, Android meminfo parser) compiles and runs in CI. **Last green CI: `d4e861d` (2026-08-04), the branch tip.**
 
 ## Doctrine (current — supersedes the pre-pivot files)
+
 - **Build apps for AI, with the user at the core of context** (`20`). Verdure is the personal AI, not an assistant.
 - **One interface over headless OSS engines** (`18`). We compile engines in (whisper.cpp, llama.cpp) and wrap them; we never build a model/engine, but we DO build the one surface. This **reverses** the old "port whole apps, never build a surface" line in `14/15/17`.
 - Local, private, no telemetry, owned by the user (`06`). Honest performance, sized to the device. Cheapest/safest/easiest (`18`).
 
 ## Alignment with core principles
+
 **Aligned ✅**
-- Local / private / no telemetry / on-device — fully.
-- One interface over headless engines — whisper + llama compiled in, wrapped in Verdure's own UI.
-- Capabilities-as-tools — grammar-constrained tool-calling is "apps for AI" step one.
-- Honest performance — predictor + measured + RAM-gating by detected specs.
-- Tests ship with features; CI green; living logs kept.
+- Local / private / on-device / no telemetry — fully, on all three platforms.
+- One interface over headless engines — whisper + llama compiled in everywhere; no separate apps.
+- Honest performance — predictor + real measurement + RAM-gating on *available* memory; the picker shows per-device fit before download; nothing silently downgrades without the UI saying which model answered.
+- Honest consent — every model download asks first, with its size.
+- Tests ship with features; CI green; living logs current.
 
 **Gaps / debt ⚠️ (fix to stay in line)**
-1. **Naming drift.** The crate/binary/identifier are still `verdure-porter` / `ai.verdure.porter`. The product is no longer a "porter" (app installer) — it's the personal AI. Rename (mind the data-dir/identifier migration so downloaded models aren't orphaned).
-2. **Legacy porter is transitional scaffolding.** `catalog.rs`, `porter.rs`, the `port_tool` command, and the Buzz DMG path are now only a *fallback* for un-wrapped modalities (image/video still route to the old recommendation/porter screen). This contradicts the "build, don't port" doctrine. Decide: keep as explicit transitional fallback, or remove as modalities get wrapped. Document either way.
-3. **Stale knowledge.** `01/14/15/16/17` still describe the pre-pivot "port apps" doctrine (tracked by `[OQ-52]`). They'd mislead a fresh reader. Reconcile to `18/20`.
-4. **Robustness — ggml aborts the whole app.** A model OOM/error calls `abort()` (SIGABRT) and kills the GUI instead of surfacing an error (this caused the 8 GB chat crash). Violates "guardian of the UX." The durable fix is **running the model runtime in a separate process** so a model failure can never take down Verdure. High priority before real users.
-5. **Chat reloads the model from disk every message.** `llm::decide` does `load_from_file` + new context per call (~0.4–1 GB load each time) → slow, wasteful. Needs a **resident model/session** (Tauri managed state holding the loaded model + context), which also unlocks conversational memory.
+1. **Naming — now deadline-bound.** The crate/binary/identifier are still `verdure-porter` / `ai.verdure.porter`, and **the first Play upload makes the Android package name permanent** (`[OQ-66]` 2026-08-03 note). Decide the rename (`[OQ-60]`) *before* that upload; the desktop crate/data-dir rename can follow with a migration plan.
+2. **Robustness — ggml aborts the whole app.** A model OOM/error calls `abort()` (SIGABRT) and kills the GUI instead of surfacing an error. The durable fix is **process isolation** for the model runtime (`[OQ-58]`). P0 before real users.
+3. **Chat reloads the model from disk every message.** `llm::decide` still does `load_from_file` + new context per call. Needs a **resident model/session** in Tauri state, which also unlocks conversational memory (`[OQ-59]`).
+4. **Legacy porter is transitional scaffolding.** `catalog.rs`, `porter.rs`, `port_tool` remain registered; the old recommendation flow (`renderHome`) is retained but unreachable. Decide keep-as-fallback vs remove (`[OQ-60]`); un-wrapped intents should show an honest "coming soon."
+5. **Capabilities-as-tools is currently OFF.** Tool-calling was removed on on-device evidence (2026-07-27); the "apps for AI" step one (`20`) is deferred until it can come back constrained + process-isolated (`[OQ-55]`, depends on `[OQ-58]`).
 
 ## Next steps (prioritized — pick up here)
-**▶ The next move is a redesign.** The pre-redesign inspection (2026-06-29) is done and its structural fixes are committed; what's left feeds *into* the redesign rather than racing ahead of it. The redesign's own scope is **not yet written** — define it before building. The items below are the standing inputs it must absorb (statuses current as of 2026-06-30); they are no longer an independent execution queue.
 
-**Done since this list was first written:**
-- ✅ **Live mic transcription confirmed on-device** (2026-06-30) — was P0 item 0. TCC/mic-permission cleared.
-- ✅ **Chat `SIGABRT` (GBNF grammar) removed** + available-RAM-aware model pick (2026-06-23); real sampling chain + Gemma 4 E2B wiring parked behind `GEMMA4_E2B_VERIFIED` (2026-06-29). **Chat still does not work on-device** — folded into the redesign (below), not a standalone task.
-- ✅ **Pivot-doctrine reconciliation** (old P1 item 4, `[OQ-52]`) — discharged by the inspection (superseded-doctrine banners on `01/14/15/16/17`).
-
-**Standing inputs the redesign must absorb:**
-- **Make chat actually work** — the open robustness/quality knot: **verify the ByteShape Qwen3 4B base model on-device** (loads on pinned llama.cpp + fits/feels usable; calibrate its `runtime_mb`) [OQ-64]; process-isolate the model runtime so a ggml `abort()` can NEVER crash the UI (surface failures as errors) [gap #4, OQ-58] — this also removes the 4B's load-abort risk; resident chat model + conversational memory in Tauri state (fast replies, cheap prompt-history memory — NOT RAG) [OQ-55, OQ-59]; resolve `[OQ-62]` (fold chat's RAM-aware pick into `@verdure/decider` vs document as a separate stack).
-- **UX findings the inspection deferred to the redesign:** app UX jargon, the Storage spec panel, raw error strings surfaced to the user.
-- **Rename `porter` → Verdure** across the crate/binary (decide identifier/data-dir migration so downloaded models aren't orphaned). [gap #1]
-- **Decide the legacy-porter's fate** (keep transitional vs remove) and make un-wrapped intents show an honest "coming soon" rather than the app-install recommendation. [gap #2]
+1. **Decide the rename, then ship Play open testing.** The rename decision (`[OQ-60]`, see its 2026-08-10 gate note) blocks the first `.aab` upload. Then the founder-side Play steps: upload keystore + secrets, create the Play app, Data Safety / content rating / privacy-policy, first upload, open the test track (`FEATURE_LOG` 2026-08-03 has the checklist).
+2. **Process-isolate the model runtime** (`[OQ-58]`) — a ggml `abort()` must never take down the UI. Also removes the 4B load-abort risk and re-opens the door to grammar-constrained tool-calling.
+3. **Resident chat model + conversational memory** (`[OQ-59]`) — keep the loaded model + context in Tauri state; carry recent history in the prompt (cheap memory, not RAG).
+4. **Calibrate the 4B on a capable device** (`[OQ-64]` residual) — measure its real resident footprint, set `runtime_mb` from measurement, and judge reply quality.
+5. **Legacy-porter decision** (gap #4) and the deferred UX polish (raw-error copy is fixed as of 2026-08-10; remaining: Storage spec panel jargon).
 
 **P2 — the vision**
-7. **Personal context core (RAG)** — local, user-owned store every model reads/writes; the "you at the core of context" substrate. [OQ-56]
-8. **AI-first dictation** — a system-wide voice button → commands into Verdure + transcription into the context core (the Wispr Flow disruptor). [OQ-57] *Foundation now exists:* live mic capture + streaming Whisper (`live.rs`, 2026-06-23); what's left is the system-wide hotkey/surface and routing dictation into the context core.
+- **Personal context core** — local, user-owned store every model reads/writes (`[OQ-56]`).
+- **AI-first dictation** — system-wide voice button → commands into Verdure + transcription into the context core (`[OQ-57]`). Foundation exists in `live.rs`; what's left is the system-wide surface and routing.
 
 ## How to build / ship (no local toolchain needed)
+
 The founder's Mac has **no Xcode CLT and tight disk**, so everything builds in CI:
 - Push to `mvp-porter-buzz` → CI runs (`.github/workflows/ci.yml`): decider+website (Linux), porter (macOS, incl. `cargo test` + x86_64 cross-compile check + model-URL reachability).
-- To produce a runnable Intel app: `git tag app-build-N && git push origin app-build-N` → `build-app.yml` cross-compiles x86_64 and uploads `verdure-porter-macos-intel` (.dmg/.app).
-- To ship to **iPad via TestFlight** (`[OQ-65]`, signed — the current iOS channel): `git tag testflight-N && git push origin testflight-N` → `build-testflight.yml` signs with the founder's Apple Developer account (App Store Connect API key in GitHub secrets: `ASC_API_KEY_P8`/`ASC_API_KEY_ID`/`ASC_API_ISSUER_ID`/`APPLE_TEAM_ID`, Admin role) and uploads to TestFlight. Build number = CI run number. iOS bundle ID is overridden to `ai.verdure.porter.898PY37K5S` to match the "Verdure AI" App Store record (macOS untouched). Install via the TestFlight app — no expiry.
-- Legacy unsigned path (fallback): `git tag ipad-build-N` → `build-ipad.yml` → unsigned `.ipa` (free-Apple-ID sideload, 7-day cert). Superseded by TestFlight. Both are the *test vehicle* only — the shippable iOS strategy stays `11`'s thin-decider.
-- **Android test build** (`[OQ-66]`): `git tag android-build-N` → `build-android.yml` (Linux runners, cheap) → test-signed `.apk` artifact (sideload to verify; throwaway CI key, so uninstall before installing a differently-signed build). Play-Console internal/closed testing (the shareable link) comes once the APK is proven — needs a persistent upload keystore as a GitHub secret.
-- Install on the Mac: `gh run download <run-id> -n verdure-porter-macos-intel`, then mount the dmg, copy `Verdure.app` to /Applications, `xattr -cr` it, `open` it. (See the session's install one-liner.)
-- Key fix already in place: `app/src-tauri/.cargo/config.toml` forces `MACOSX_DEPLOYMENT_TARGET=10.15` so whisper/llama cross-compile (ggml `std::filesystem`).
+- **macOS Intel app:** `git tag app-build-N && git push origin app-build-N` → `build-app.yml` → `verdure-porter-macos-intel` (.dmg/.app). Install: `gh run download <run-id> -n verdure-porter-macos-intel`, mount, copy to /Applications, `xattr -cr`, open.
+- **iPad via TestFlight** (the current iOS channel, `[OQ-65]`): `git tag testflight-N` → `build-testflight.yml` signs with the founder's App Store Connect API key (GitHub secrets: `ASC_API_KEY_P8`/`ASC_API_KEY_ID`/`ASC_API_ISSUER_ID`/`APPLE_TEAM_ID`) and uploads. iOS bundle ID is `ai.verdure.porter.898PY37K5S` to match the App Store record. Test vehicle only — the shippable iOS strategy stays `11`'s thin-decider.
+- **Android test APK** (`[OQ-66]`): `git tag android-build-N` → `build-android.yml` (Linux runners) → test-signed `.apk` (throwaway CI key — uninstall before installing a differently-signed build).
+- **Android Play open testing:** `git tag android-play-N` → `build-android-play.yml` → signed `.aab` via the persistent upload keystore (secrets pending founder-side). Both Android workflows share `app/scripts/patch-android-project.py` (manifest + mic wiring), so they cannot diverge.
+- Legacy unsigned iOS path (`ipad-build-N` → unsigned .ipa, 7-day sideload) is superseded by TestFlight.
+- Key fix in place: `app/src-tauri/.cargo/config.toml` forces `MACOSX_DEPLOYMENT_TARGET=10.15` so whisper/llama cross-compile.
 
 ## Environment constraints (carry forward)
-2019 Intel Mac (x86_64), **8 GB RAM** (hard ceiling — a 0.5B-class machine for in-app chat), no Xcode CLT, ~3 GB free disk. Build/verify in CI; ship a downloadable Intel app. See the `build-env-constraints` memory.
+
+2019 Intel Mac (x86_64), **8 GB RAM** (hard ceiling — exercises only the fallback chat tier), no Xcode CLT, ~3 GB free disk. Build/verify in CI; test the 4B on the iPad or Pixel 8a. See the `build-env-constraints` memory.
