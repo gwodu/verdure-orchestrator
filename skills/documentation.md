@@ -78,6 +78,7 @@ When you finish a unit of work, do both: append one dated line to the changelog 
 ## Self-check before declaring documentation done
 
 - Are all `[OQ-XX]` codes I created mirrored in `open-questions.md`?
+- If I appended a changelog entry, did I refresh `21-handoff.md` in the same change (or verify it is still accurate)? History without a state refresh is exactly how the handoff went five weeks stale (found 2026-08-10) — the changelog and the handoff move together or not at all.
 - Are all gap markers I left referenced by an open question?
 - Does every cross-reference point to a file that exists with the exact filename?
 - Did I update the originating file's "Open Questions" section if I added one?
