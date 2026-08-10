@@ -24,5 +24,28 @@ This table is the canonical routing. `../CLAUDE.md`'s Skills section summarizes 
 - Writing any user-facing text (website, app, emails, error messages) → `copywriting` + `design`
 - Updating knowledge files → `documentation`
 - Investigating an open question → `research` + `documentation`
-- Code review / cleanup pass → `refactoring` + `testing`
-- Auditing architecture/principles, or pre-redesign alignment check → `inspection`
+- Code review / cleanup pass → `refactoring` + `testing` (shortcut: `/cleanup`)
+- Auditing architecture/principles, or pre-redesign alignment check → `inspection` (shortcut: `/inspect`)
+
+## Slash-command shortcuts
+
+Two of the rows above have a Claude Code command in `../.claude/commands/`, so the
+routing runs on demand instead of relying on a session remembering to load the
+skill. The command **inlines the skill's full text** (`@skills/…`) rather than
+copying it — the skill file stays the single source of truth, and editing it
+updates the command automatically.
+
+- `/inspect [scope]` → `inspection.md`. Produces findings, changes nothing. Its
+  allowed-tools lean read-only (Bash stays, for git evidence), so "Report, do not
+  edit" is the command's hard rule, discouraged — not made impossible — by the
+  tool list. Closes with Healthy / Queue / Defer sections.
+- `/cleanup [target]` → `refactoring.md` + `testing.md`. Works the queue one named
+  move at a time, tests green between each. Bare or `next` takes the top item from
+  `../knowledge/21-handoff.md`'s debt list.
+
+The pairing matters: `inspection.md` diagnoses and refuses to edit, `refactoring.md`
+treats. Run `/inspect` first, then `/cleanup` against its Queue.
+
+Adding a command for another row? Point it at the skill with `@`, never restate the
+skill's content — a second copy is a single-source-of-truth violation the next
+inspection will find.
