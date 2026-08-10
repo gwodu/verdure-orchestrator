@@ -26,3 +26,5 @@ node_modules/
 
 # Downloaded build artifacts (gh run download) — never committed
 *.ipa
+*.apk
+*.aab
