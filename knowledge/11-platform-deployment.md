@@ -61,3 +61,4 @@ TestFlight remains viable for early distribution. All of the above reflects iOS 
 - [OQ-25] Android 14+ background service policies and Play Store requirements for system-level apps in 2026.
 - [OQ-26] Resolved (WWDC 2026) — daemon infeasible on iOS, confirmed; strategy pivoted to a thin decider over Apple's Foundation Models stack (resident system model does the shared-service job).
 - [OQ-43] `VerdureLanguageModel` Swift package — do we ship it, and in which phase? Strategic distribution decision, not just engineering.
+- [OQ-67] Helping users free disk space for models — per-platform capabilities (iOS sandbox: impossible; Android: OS-mediated `StorageManager.allocateBytes`; macOS: deep-link only, no scan-and-delete) and the own-sandbox-first build order. Full survey + decisions in `open-questions.md`.
