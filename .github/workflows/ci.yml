@@ -86,10 +86,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install Rust (native + Intel cross target)
+      - name: Install Rust (native + Intel + iOS cross targets)
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-apple-darwin
+          targets: x86_64-apple-darwin,aarch64-apple-ios
       - name: Cache cargo build
         uses: actions/cache@v4
         with:
@@ -112,6 +112,15 @@ jobs:
         # here (fast) before the full bundle build. This is the pivot's main risk.
         working-directory: app/src-tauri
         run: cargo check --target x86_64-apple-darwin
+      - name: Cross-compile check for iOS
+        # The cfg(target_os = "ios") code paths otherwise compile only when a
+        # testflight-N tag is cut — a breakage would surface days late, at ship
+        # time. check-only (no signing, no bundle); the runner's Xcode provides
+        # the iOS SDK for whisper/llama's C++.
+        working-directory: app/src-tauri
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+        run: cargo check --target aarch64-apple-ios
       - name: Verify the model download URLs resolve
         # The models are downloaded on first use from these URLs (model.rs). If a
         # release URL rots, this fails here instead of on a user's machine.
@@ -125,3 +134,48 @@ jobs:
             echo "checking $url"
             curl -fsSL -I "$url" >/dev/null
           done
+
+  porter-android:
+    name: Porter Android compile check (Linux)
+    # The cfg(target_os = "android") paths — JNI mic/storage bridges, procfs
+    # probes — otherwise compile only when an android-build-N tag is cut, so a
+    # breakage would surface days late. check-only: build scripts compile the
+    # whisper/llama C++ with the NDK clang, but nothing is linked or packaged.
+    # Linux runner: 1/10 the macOS per-minute cost.
+    needs: changes
+    if: ${{ needs.changes.outputs.porter == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Rust (with the Android target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: Point cc at the runner's NDK clang
+        # Bare cargo (no tauri CLI) needs the C/C++ cross-compilers named
+        # explicitly. android24 matches the min SDK the tag builds target.
+        run: |
+          TOOLCHAIN="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "CXX_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android24-clang++" >> "$GITHUB_ENV"
+          echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/src-tauri/target
+          key: android-check-cargo-${{ hashFiles('app/src-tauri/Cargo.toml') }}
+          restore-keys: android-check-cargo-
+      - name: Install workspaces
+        run: npm ci
+      - name: Frontend build (generate_context! requires app/dist)
+        run: npm run build --workspace @verdure/porter-app
+      - name: Android compile check
+        working-directory: app/src-tauri
+        run: cargo check --target aarch64-linux-android
