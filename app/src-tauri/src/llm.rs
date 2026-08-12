@@ -14,6 +14,7 @@
 
 use std::num::NonZeroU32;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -22,7 +23,7 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, LlamaModel, Special};
 use llama_cpp_2::sampling::LlamaSampler;
 
-use crate::model::PromptStyle;
+use crate::model::{ModelInfo, PromptStyle};
 
 // Kept modest on purpose: ggml aborts the whole process on a failed allocation,
 // and the floor target is an 8 GB machine where the WebView already uses ~1.5 GB.
@@ -31,8 +32,26 @@ use crate::model::PromptStyle;
 // the RAM gate can actually pick it on the 8 GB Mac; the model's `runtime_mb` gate
 // estimate is set to match. Chat prompts + replies are short, so 1024 is ample. If
 // conversational memory (`[OQ-59]`) needs a longer window later, raise both together.
-const N_CTX: u32 = 1024;
 const N_BATCH: u32 = 512;
+/// Never run below this: a window too small to hold the instruction plus one
+/// exchange isn't a degraded chat, it's a broken one — the RAM gate declines
+/// honestly instead (knowledge/22).
+const MIN_CONTEXT: u32 = 512;
+/// Cap the window by TIME, not just memory. Prefill is linear in tokens and runs
+/// on the CPU, so a roomy device that could afford 32k tokens of KV cache would
+/// still make the user wait minutes for the first reply. 4096 keeps a long
+/// conversation responsive on the floor machine (knowledge/22).
+const MAX_CONTEXT: u32 = 4096;
+/// Headroom left for the OS + WebView when sizing the window, MB. The 8 GB Mac
+/// runs the WebView alongside us; overshooting here is what ggml-aborts the app.
+const CONTEXT_HEADROOM_MB: u64 = 700;
+/// Tokens reserved for the reply plus the system instruction and turn markers,
+/// so history selection can never crowd out the answer itself.
+const RESERVED_TOKENS: usize = MAX_NEW_TOKENS as usize + 128;
+/// Per-turn template overhead (`<|im_start|>user … <|im_end|>` ×2 and friends).
+/// Deliberately generous — undercounting overflows the window, overcounting only
+/// costs one turn of history.
+const TURN_MARKUP_TOKENS: usize = 12;
 // A concise chat reply is short; capping the budget keeps a worst-case generation
 // snappy on the CPU floor machine. EOG normally stops us well before this.
 const MAX_NEW_TOKENS: i32 = 256;
@@ -58,21 +77,113 @@ pub struct ToolDecision {
 /// only the turn framing differs (knowledge/03).
 const SYSTEM: &str = "You are Verdure, a warm and helpful personal AI that runs entirely on the user's own device. Answer the user's message directly, clearly, and concisely.";
 
-/// Frame the prompt for the model's family. Getting this wrong yields garbage, so
-/// the family travels with the model (`PromptStyle`) rather than being assumed.
-fn format_chat_prompt(user: &str, style: PromptStyle) -> String {
+/// One completed exchange. The conversation the user can see IS the memory —
+/// the frontend owns the transcript and passes back the part that still fits
+/// (knowledge/22).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct Turn {
+    pub user: String,
+    pub assistant: String,
+}
+
+/// How large a context this device can afford for this model — pure arithmetic
+/// over the KV-cache cost (knowledge/22, "Sizing the budget").
+///
+/// `spare_mb` is what's left after the weights and OS headroom; `kv_kb_per_token`
+/// is the model's own per-token KV cost. Clamped to `[MIN_CONTEXT, MAX_CONTEXT]`
+/// and never above what the model was trained for — a longer window than training
+/// produces confident nonsense, not more memory.
+pub fn context_for_budget(spare_mb: u64, kv_kb_per_token: u32, trained_ctx: u32) -> u32 {
+    let per_token = kv_kb_per_token.max(1) as u64;
+    let affordable = spare_mb.saturating_mul(1024) / per_token;
+    let ceiling = trained_ctx.min(MAX_CONTEXT);
+    (affordable.min(ceiling as u64) as u32).max(MIN_CONTEXT).min(ceiling.max(MIN_CONTEXT))
+}
+
+/// Memory left for the KV cache once the weights and OS headroom are accounted
+/// for. Saturating: a machine tighter than the headroom yields 0, and the caller
+/// then runs at `MIN_CONTEXT` or the RAM gate declines outright.
+pub fn spare_for_context_mb(available_mb: u64, weights_mb: u32) -> u64 {
+    available_mb
+        .saturating_sub(weights_mb as u64)
+        .saturating_sub(CONTEXT_HEADROOM_MB)
+}
+
+/// Which of the most recent turns fit — returns the index into `history` of the
+/// first turn to KEEP (`history.len()` = keep none). Pure: the token cost
+/// function is injected, so eviction is unit-tested without loading a model.
+///
+/// Walks newest→oldest and stops at the first turn that doesn't fit, rather than
+/// skipping it and trying older ones: a conversation with a hole in the middle
+/// reads as confusion to the model, and recency is what the user means by
+/// "remember" (knowledge/22).
+pub(crate) fn first_kept_turn(
+    history: &[Turn],
+    new_message: &str,
+    n_ctx: u32,
+    cost: &dyn Fn(&str) -> usize,
+) -> usize {
+    let budget = n_ctx as usize;
+    let mut used = RESERVED_TOKENS + cost(new_message);
+    let mut first = history.len();
+    for (i, turn) in history.iter().enumerate().rev() {
+        let turn_cost = cost(&turn.user) + cost(&turn.assistant) + TURN_MARKUP_TOKENS;
+        if used + turn_cost > budget {
+            break;
+        }
+        used += turn_cost;
+        first = i;
+    }
+    first
+}
+
+/// Frame the prompt for the model's family, with the retained history ahead of
+/// the new message. Getting this wrong yields garbage, so the family travels with
+/// the model (`PromptStyle`) rather than being assumed. Turns are always whole —
+/// a dangling half-turn corrupts the structure the model relies on.
+fn format_chat_prompt(history: &[Turn], user: &str, style: PromptStyle) -> String {
+    let mut p = String::new();
     match style {
         // ChatML — Qwen et al. No BOS (the tokenizer adds none for this family).
-        PromptStyle::ChatMl => format!(
-            "<|im_start|>system\n{SYSTEM}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n"
-        ),
+        PromptStyle::ChatMl => {
+            p.push_str(&format!("<|im_start|>system\n{SYSTEM}<|im_end|>\n"));
+            for t in history {
+                p.push_str(&format!(
+                    "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n{}<|im_end|>\n",
+                    t.user, t.assistant
+                ));
+            }
+            p.push_str(&format!(
+                "<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n"
+            ));
+        }
         // Gemma has no system role, so the instruction rides the first user turn.
         // The leading BOS is added by the tokenizer (AddBos::Always), not written
         // here — writing a literal `<bos>` too would double it.
-        PromptStyle::Gemma => format!(
-            "<start_of_turn>user\n{SYSTEM}\n\n{user}<end_of_turn>\n<start_of_turn>model\n"
-        ),
+        // The instruction rides whichever turn comes first — the oldest retained
+        // one when there's history, otherwise the new message itself.
+        PromptStyle::Gemma => match history.split_first() {
+            None => {
+                p.push_str(&format!("<start_of_turn>user\n{SYSTEM}\n\n{user}<end_of_turn>\n"));
+                p.push_str("<start_of_turn>model\n");
+            }
+            Some((first, rest)) => {
+                p.push_str(&format!(
+                    "<start_of_turn>user\n{SYSTEM}\n\n{}<end_of_turn>\n<start_of_turn>model\n{}<end_of_turn>\n",
+                    first.user, first.assistant
+                ));
+                for t in rest {
+                    p.push_str(&format!(
+                        "<start_of_turn>user\n{}<end_of_turn>\n<start_of_turn>model\n{}<end_of_turn>\n",
+                        t.user, t.assistant
+                    ));
+                }
+                p.push_str(&format!("<start_of_turn>user\n{user}<end_of_turn>\n"));
+                p.push_str("<start_of_turn>model\n");
+            }
+        },
     }
+    p
 }
 
 /// BOS convention for the family — see `format_chat_prompt`.
@@ -83,25 +194,85 @@ fn add_bos_for(style: PromptStyle) -> AddBos {
     }
 }
 
-/// Answer `user_message`. Plain sampling (no grammar, no JSON/tool-calling) — the
-/// generated text IS the reply, shown as-is.
+/// The llama backend, initialised once per process. Previously re-initialised on
+/// every message; it is a process-global by nature, and the resident model below
+/// has to outlive any single call anyway.
+static BACKEND: OnceLock<LlamaBackend> = OnceLock::new();
+
+fn backend() -> Result<&'static LlamaBackend, String> {
+    if let Some(b) = BACKEND.get() {
+        return Ok(b);
+    }
+    let b = LlamaBackend::init().map_err(|e| format!("couldn't start the chat engine: {e}"))?;
+    Ok(BACKEND.get_or_init(|| b))
+}
+
+/// A chat model kept loaded across messages (knowledge/22, part 2). Re-reading
+/// 0.4–1.4 GB of weights from disk per message was the dominant cost and made
+/// sending history unaffordable; holding the weights removes it.
+///
+/// Only the WEIGHTS are resident, not the llama context/KV cache — keeping the
+/// cache alive would let each turn prefill only its new tokens, but `LlamaContext`
+/// borrows both backend and model, so storing it needs a self-referential struct.
+/// Not justified before the simple version is measured (knowledge/22).
+pub struct ResidentModel {
+    id: String,
+    model: LlamaModel,
+}
+
+/// Load `info`'s weights if they aren't already the resident ones. Returns the
+/// resident model, reloading only when the user switches models.
+pub fn ensure_resident<'a>(
+    slot: &'a mut Option<ResidentModel>,
+    info: &ModelInfo,
+    path: &Path,
+) -> Result<&'a ResidentModel, String> {
+    let stale = slot.as_ref().map(|r| r.id != info.id).unwrap_or(true);
+    if stale {
+        // Drop the old weights BEFORE loading the new ones: holding both at once
+        // is what OOM-aborts a tight machine (knowledge/21 gap #2).
+        *slot = None;
+        let model = LlamaModel::load_from_file(backend()?, path, &LlamaModelParams::default())
+            .map_err(|e| format!("couldn't load the chat model: {e}"))?;
+        *slot = Some(ResidentModel {
+            id: info.id.to_string(),
+            model,
+        });
+    }
+    Ok(slot.as_ref().expect("just populated"))
+}
+
+/// Answer `user_message` in the context of `history`. Plain sampling (no grammar,
+/// no JSON/tool-calling) — the generated text IS the reply, shown as-is.
+///
+/// `n_ctx` is sized per device+model by `context_for_budget`; history is trimmed
+/// to whole turns that fit it (knowledge/22).
 pub fn decide(
-    model_path: &Path,
+    resident: &ResidentModel,
+    history: &[Turn],
     user_message: &str,
     style: PromptStyle,
+    n_ctx: u32,
 ) -> Result<ToolDecision, String> {
-    let backend =
-        LlamaBackend::init().map_err(|e| format!("couldn't start the chat engine: {e}"))?;
-    let model = LlamaModel::load_from_file(&backend, model_path, &LlamaModelParams::default())
-        .map_err(|e| format!("couldn't load the chat model: {e}"))?;
+    let model = &resident.model;
     let ctx_params = LlamaContextParams::default()
-        .with_n_ctx(NonZeroU32::new(N_CTX))
+        .with_n_ctx(NonZeroU32::new(n_ctx.max(MIN_CONTEXT)))
         .with_n_batch(N_BATCH);
     let mut ctx = model
-        .new_context(&backend, ctx_params)
+        .new_context(backend()?, ctx_params)
         .map_err(|e| format!("couldn't start a chat session: {e}"))?;
 
-    let prompt = format_chat_prompt(user_message, style);
+    // Cost history in REAL tokens (the model's own tokenizer), not an estimate —
+    // an undercount here would overflow the window mid-generation. Falls back to
+    // a conservative chars/3 if tokenising a fragment ever fails.
+    let cost = |s: &str| -> usize {
+        model
+            .str_to_token(s, AddBos::Never)
+            .map(|t| t.len())
+            .unwrap_or_else(|_| s.len() / 3 + 1)
+    };
+    let keep_from = first_kept_turn(history, user_message, n_ctx, &cost);
+    let prompt = format_chat_prompt(&history[keep_from..], user_message, style);
     let tokens = model
         .str_to_token(&prompt, add_bos_for(style))
         .map_err(|e| format!("couldn't read the message: {e}"))?;
@@ -151,7 +322,7 @@ pub fn decide(
         n_cur += 1;
         ctx.decode(&mut batch)
             .map_err(|e| format!("chat failed: {e}"))?;
-        if n_cur >= N_CTX as i32 {
+        if n_cur >= n_ctx as i32 {
             break;
         }
     }
@@ -167,9 +338,91 @@ pub fn decide(
 mod tests {
     use super::*;
 
+    fn turn(u: &str, a: &str) -> Turn {
+        Turn {
+            user: u.to_string(),
+            assistant: a.to_string(),
+        }
+    }
+    /// One "token" per word — enough to exercise selection deterministically.
+    fn words(s: &str) -> usize {
+        s.split_whitespace().count().max(1)
+    }
+
+    #[test]
+    fn context_scales_with_what_the_device_can_spare() {
+        // Roomy + a cheap KV cache (0.5B, ~12 KB/token) → capped by MAX_CONTEXT,
+        // not by memory: prefill time is the binding constraint on a CPU.
+        assert_eq!(context_for_budget(4000, 12, 32768), MAX_CONTEXT);
+        // Tight machine with an expensive KV cache (4B, ~144 KB/token): 200 MB
+        // buys ~1422 tokens, so we get a real but smaller window.
+        let tight = context_for_budget(200, 144, 32768);
+        assert!(tight > MIN_CONTEXT && tight < MAX_CONTEXT, "got {tight}");
+        // Nothing spare → never below the floor (the RAM gate declines instead).
+        assert_eq!(context_for_budget(0, 144, 32768), MIN_CONTEXT);
+        // Never exceed what the model was trained for, however much RAM there is.
+        assert_eq!(context_for_budget(100_000, 12, 2048), 2048);
+    }
+
+    #[test]
+    fn spare_memory_subtracts_weights_and_headroom() {
+        assert_eq!(spare_for_context_mb(4000, 1400), 4000 - 1400 - CONTEXT_HEADROOM_MB);
+        // Tighter than the headroom itself → 0, not an underflow panic.
+        assert_eq!(spare_for_context_mb(500, 1400), 0);
+    }
+
+    #[test]
+    fn history_is_kept_newest_first_and_whole() {
+        let history = vec![
+            turn("oldest question here", "oldest answer here"),
+            turn("middle question here", "middle answer here"),
+            turn("newest question here", "newest answer here"),
+        ];
+        // Budget for everything → keep all three.
+        assert_eq!(first_kept_turn(&history, "hi", 4096, &words), 0);
+        // A window that fits only the reserve + the newest turn or two: whatever
+        // is kept must be a SUFFIX (the most recent), never a hole in the middle.
+        let keep = first_kept_turn(&history, "hi", RESERVED_TOKENS as u32 + 30, &words);
+        assert!(keep > 0 && keep <= history.len(), "got {keep}");
+        // No room for any history at all → keep none, still answer the question.
+        assert_eq!(
+            first_kept_turn(&history, "hi", MIN_CONTEXT.min(RESERVED_TOKENS as u32), &words),
+            history.len()
+        );
+    }
+
+    #[test]
+    fn prompt_carries_prior_turns_in_order() {
+        let history = vec![turn("my name is Ada", "Nice to meet you, Ada.")];
+        let p = format_chat_prompt(&history, "what is my name?", PromptStyle::ChatMl);
+        assert!(p.contains("my name is Ada"), "history missing: {p}");
+        assert!(p.contains("Nice to meet you, Ada."));
+        // The new question comes last, and the model is cued to answer it.
+        let hist_at = p.find("my name is Ada").unwrap();
+        let new_at = p.find("what is my name?").unwrap();
+        assert!(hist_at < new_at, "history must precede the new message");
+        assert!(p.trim_end().ends_with("<|im_start|>assistant"));
+        // Every turn marker is balanced — a dangling half-turn corrupts the
+        // structure the model relies on (knowledge/22).
+        assert_eq!(p.matches("<|im_start|>").count(), p.matches("<|im_end|>").count() + 1);
+    }
+
+    #[test]
+    fn gemma_prompt_carries_history_without_a_system_role() {
+        let history = vec![turn("my name is Ada", "Nice to meet you, Ada.")];
+        let p = format_chat_prompt(&history, "what is my name?", PromptStyle::Gemma);
+        assert!(p.contains("my name is Ada"));
+        assert!(p.contains("Nice to meet you, Ada."));
+        // The instruction rides the FIRST user turn (Gemma has no system role),
+        // and it must appear exactly once however long the history gets.
+        assert_eq!(p.matches(SYSTEM).count(), 1);
+        assert!(!p.contains("<|im_start|>"));
+        assert!(p.trim_end().ends_with("<start_of_turn>model"));
+    }
+
     #[test]
     fn chatml_prompt_frames_the_turn() {
-        let p = format_chat_prompt("hi", PromptStyle::ChatMl);
+        let p = format_chat_prompt(&[], "hi", PromptStyle::ChatMl);
         assert!(p.contains("<|im_start|>system"));
         assert!(p.contains("<|im_start|>user\nhi<|im_end|>"));
         assert!(p.trim_end().ends_with("<|im_start|>assistant"));
@@ -179,7 +432,7 @@ mod tests {
 
     #[test]
     fn gemma_prompt_uses_turn_markers_not_chatml() {
-        let p = format_chat_prompt("hi", PromptStyle::Gemma);
+        let p = format_chat_prompt(&[], "hi", PromptStyle::Gemma);
         assert!(p.contains("<start_of_turn>user"));
         assert!(p.contains("hi<end_of_turn>"));
         assert!(p.trim_end().ends_with("<start_of_turn>model"));

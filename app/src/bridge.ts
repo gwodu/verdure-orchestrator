@@ -80,15 +80,23 @@ export async function chatModelOptions(): Promise<ChatModelOption[]> {
   return await invoke<ChatModelOption[]>("chat_model_options");
 }
 
+/** One completed exchange, as the backend wants it for conversation memory. */
+export type ChatTurn = { user: string; assistant: string };
+
 /**
  * Send a chat message to the local model, streaming a status line. `modelId` is
  * the model the user picked (Small/Balanced/Powerful); the backend loads it if it
  * fits, or explains why it can't — never a silent downgrade. Empty id → auto-pick.
+ *
+ * `history` is the conversation so far — this is what gives the chat memory
+ * (knowledge/22). The backend keeps whichever recent turns fit the window it
+ * sized for this device, so the frontend can pass everything it has.
  */
 export async function chatSend(
   message: string,
   onProgress: ProgressFn,
   modelId = "",
+  history: ChatTurn[] = [],
 ): Promise<ChatDecision> {
   if (!inTauri) {
     onProgress("Thinking…");
@@ -100,9 +108,12 @@ export async function chatSend(
         reply: "I can set you up to turn recordings into text.",
       };
     }
+    // Echo the memory back so the preview shows history is actually flowing.
     return {
       action: "answer",
-      reply: "(Browser preview — chat runs only in the desktop app.)",
+      reply: history.length
+        ? `(Browser preview — chat runs only in the desktop app. Remembering ${history.length} earlier message${history.length === 1 ? "" : "s"}.)`
+        : "(Browser preview — chat runs only in the desktop app.)",
     };
   }
   const { invoke } = await import("@tauri-apps/api/core");
@@ -111,7 +122,7 @@ export async function chatSend(
     onProgress(e.payload),
   );
   try {
-    return await invoke<ChatDecision>("chat", { message, modelId });
+    return await invoke<ChatDecision>("chat", { message, modelId, history });
   } finally {
     unlisten();
   }

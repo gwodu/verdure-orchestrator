@@ -44,6 +44,16 @@ pub struct ModelInfo {
     /// Provisional estimates, to be calibrated on-device like the transcription
     /// predictor (knowledge/19). 0 = not gated this way.
     pub runtime_mb: u32,
+    /// KV-cache cost per token of context, in KB — what one more token of
+    /// conversation memory costs this model in RAM. Computed as
+    /// `2 × layers × kv_heads × head_dim × 2 bytes` (f16 K+V) from the published
+    /// architecture; PROVISIONAL until measured on-device ([OQ-70]). Models differ
+    /// by >10×, which is why the chat window is sized per model rather than fixed
+    /// (knowledge/22). 0 for non-chat models.
+    pub kv_kb_per_token: u32,
+    /// The context length the model was TRAINED for. We never size above it — a
+    /// longer window doesn't buy more memory, it buys confident nonsense.
+    pub trained_ctx: u32,
     /// Prompt framing for chat models; `None` for non-chat models (e.g. Whisper).
     pub prompt_style: Option<PromptStyle>,
 }
@@ -58,6 +68,8 @@ pub const WHISPER_BASE_EN: ModelInfo = ModelInfo {
     url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
     approx_mb: 142,
     runtime_mb: 600,
+    kv_kb_per_token: 0,
+    trained_ctx: 0,
     prompt_style: None,
 };
 
@@ -84,6 +96,8 @@ pub const QWEN_CHAT_SMALL: ModelInfo = ModelInfo {
     // Mac this still aborted with only ~2 GB free — so the gate is on AVAILABLE,
     // not total, RAM (knowledge/21).
     runtime_mb: 1100,
+    kv_kb_per_token: 12,
+    trained_ctx: 32768,
     prompt_style: Some(PromptStyle::ChatMl),
 };
 
@@ -96,6 +110,8 @@ pub const QWEN_CHAT: ModelInfo = ModelInfo {
     url: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
     approx_mb: 1100,
     runtime_mb: 2400,
+    kv_kb_per_token: 28,
+    trained_ctx: 32768,
     prompt_style: Some(PromptStyle::ChatMl),
 };
 
@@ -118,6 +134,8 @@ pub const GEMMA4_E2B: ModelInfo = ModelInfo {
     // Full resident estimate: ~3.1 GB weights + KV/compute at 2048 ctx + overhead.
     // Revisit DOWN once PLE offload is confirmed (then it can drop toward ~1.5 GB).
     runtime_mb: 4000,
+    kv_kb_per_token: 60,
+    trained_ctx: 32768,
     prompt_style: Some(PromptStyle::Gemma),
 };
 
@@ -151,6 +169,8 @@ pub const BYTESHAPE_QWEN3_4B: ModelInfo = ModelInfo {
     // free) the gate still falls back to Qwen until RAM is freed. Deliberately keeps
     // a safety margin above the raw estimate: undershooting risks an OOM abort.
     runtime_mb: 2300,
+    kv_kb_per_token: 144,
+    trained_ctx: 32768,
     prompt_style: Some(PromptStyle::ChatMl),
 };
 

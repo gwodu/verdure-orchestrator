@@ -30,6 +30,19 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 #[derive(Default)]
 struct LiveState(Mutex<Option<LiveHandle>>);
 
+/// The chat model kept LOADED across messages (knowledge/22). Re-reading
+/// 0.4–1.4 GB of weights per message was the dominant cost and made sending
+/// conversation history unaffordable. Held behind a Mutex so two messages can
+/// never drive the same model concurrently — replies are serialised, which is
+/// what a single-user chat wants anyway.
+///
+/// Mobile note: holding weights resident makes a backgrounded app a likelier
+/// target for iOS jetsam / Android's LMK. The failure mode is benign — the OS
+/// kills it, the user reopens, the model reloads — and the transcript lives in
+/// the frontend, so nothing is lost. Releasing on background is [OQ-69].
+#[derive(Default)]
+struct ChatState(Mutex<Option<llm::ResidentModel>>);
+
 struct LiveHandle {
     stop: Arc<AtomicBool>,
     thread: JoinHandle<()>,
@@ -154,12 +167,14 @@ async fn chat<R: Runtime>(
     app: AppHandle<R>,
     message: String,
     model_id: String,
+    history: Vec<llm::Turn>,
 ) -> Result<llm::ToolDecision, String> {
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
     let app_for_progress = app.clone();
+    let app_for_state = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let progress = |msg: &str| {
             let _ = app_for_progress.emit("chat:progress", msg);
@@ -189,12 +204,27 @@ async fn chat<R: Runtime>(
                 )
             }
         })?;
-        let model = model::ensure(&data_dir, info, &progress)?;
+        let path = model::ensure(&data_dir, info, &progress)?;
         progress("Thinking…");
+        // Size the conversation window to THIS device and THIS model: the KV cache
+        // costs >10× more per token on the 4B than on the 0.5B, so one fixed
+        // context length would be both too stingy and too risky (knowledge/22).
+        // available_ram_mb is already platform-honest — vm_stat on macOS,
+        // os_proc_available_memory (jetsam headroom) on iOS, MemAvailable on
+        // Android — so the same arithmetic sizes correctly on all three.
+        let spare = llm::spare_for_context_mb(res.available_ram_mb, info.approx_mb);
+        let n_ctx = llm::context_for_budget(spare, info.kv_kb_per_token, info.trained_ctx);
         // Frame the prompt for this model's family (ChatML vs Gemma). Chat models
         // always carry a style; fall back to ChatML if one ever doesn't.
         let style = info.prompt_style.unwrap_or(crate::model::PromptStyle::ChatMl);
-        llm::decide(&model, &message, style)
+        // Hold the resident model for the whole reply: one conversation at a time.
+        let state = app_for_state.state::<ChatState>();
+        let mut slot = state
+            .0
+            .lock()
+            .map_err(|_| "the chat session is in a bad state — please restart Verdure.".to_string())?;
+        let resident = llm::ensure_resident(&mut slot, info, &path)?;
+        llm::decide(resident, &history, &message, style, n_ctx)
     })
     .await
     .map_err(|e| format!("the chat task could not run: {e}"))?
@@ -470,6 +500,7 @@ fn try_allocate(
 pub fn run() {
     tauri::Builder::default()
         .manage(LiveState::default())
+        .manage(ChatState::default())
         .invoke_handler(tauri::generate_handler![
             detect_device,
             device_spec,
@@ -510,6 +541,7 @@ mod command_tests {
     fn create_app<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::App<R> {
         builder
             .manage(super::LiveState::default())
+            .manage(super::ChatState::default())
             .invoke_handler(tauri::generate_handler![
                 super::detect_device,
                 super::device_spec,

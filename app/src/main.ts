@@ -21,6 +21,7 @@ import {
   startLiveTranscription,
   stopLiveTranscription,
   chatSend,
+  type ChatTurn,
   chatModelOptions,
   listModels,
   removeModel,
@@ -730,6 +731,12 @@ function renderChat(): void {
     .then((opts) => (chosen = opts.find((o) => o.id === chosenModelId())))
     .catch(() => {});
 
+  // The conversation so far — this IS the chat's memory (knowledge/22). Only
+  // completed exchanges go in: a question whose answer failed would otherwise
+  // teach the model that questions go unanswered. The backend keeps whichever
+  // recent turns fit the window it sized for this device, so we pass all of it.
+  const history: ChatTurn[] = [];
+
   const addMsg = (who: "user" | "ai", text: string) => {
     const m = el("div", `msg ${who}`, text);
     thread.appendChild(m);
@@ -796,13 +803,16 @@ function renderChat(): void {
     try {
       // Hold a screen wake lock while a (possibly large) model downloads.
       const decision = downloading
-        ? await withScreenAwake(() => chatSend(text, onProgress, chosenModelId()))
-        : await chatSend(text, onProgress, chosenModelId());
+        ? await withScreenAwake(() => chatSend(text, onProgress, chosenModelId(), history))
+        : await chatSend(text, onProgress, chosenModelId(), history);
       status.textContent = "";
       card?.el.remove();
       if (chosen) chosen.installed = true; // downloaded now — don't renotify
       // Chat is a plain conversation now — just show the reply.
-      addMsg("ai", decision.reply || "(no reply)");
+      const reply = decision.reply || "(no reply)";
+      addMsg("ai", reply);
+      // Only a completed exchange becomes memory (see `history`'s note).
+      if (decision.reply) history.push({ user: text, assistant: decision.reply });
     } catch (err) {
       card?.el.remove();
       status.textContent = "";
