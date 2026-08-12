@@ -92,7 +92,11 @@ jobs:
         # we use only standard HTTPS/TLS (exempt), skipping the manual export-
         # compliance question on every TestFlight upload.
         run: |
-          MIC_TEXT="Verdure transcribes your microphone into text entirely on your computer. Your audio is never uploaded or stored anywhere else."
+          # Single source: the mic text lives in the macOS partial Info.plist
+          # (app/src-tauri/Info.plist) and is READ from there — editing the copy
+          # the user sees updates every platform's prompt from one place.
+          MIC_TEXT=$(/usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" app/src-tauri/Info.plist)
+          test -n "$MIC_TEXT" # fail loudly if the owner file ever loses the key
           for plist in $(find app/src-tauri/gen/apple -maxdepth 2 -name Info.plist); do
             echo "patching $plist"
             /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string $MIC_TEXT" "$plist" \
