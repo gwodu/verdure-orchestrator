@@ -21,10 +21,13 @@ name: TestFlight (signed, upload to App Store Connect)
 # Then tag `testflight-N` to ship a build. Internal testers install immediately;
 # external testers need a one-time Beta App Review.
 on:
+  # `release-N` ships all three platforms from one tag (see build-app.yml's note);
+  # `testflight-N` remains for iOS-only iteration.
   workflow_dispatch:
   push:
     tags:
       - "testflight-*"
+      - "release-*"
 
 env:
   IPHONEOS_DEPLOYMENT_TARGET: "14.0"

@@ -9,10 +9,15 @@ name: Build desktop app (Intel macOS)
 on:
   # workflow_dispatch works once this is on the default branch. Until then, push
   # a tag like `app-build-2` to trigger a one-shot build from any branch.
+  # `release-N` is the ship-everywhere tag: one tag triggers this + TestFlight +
+  # the Android APK together, so no platform silently goes stale (the 2026-08-12
+  # incident: iOS sat three weeks behind because only per-platform tags existed).
+  # The per-platform tags remain for single-platform iteration.
   workflow_dispatch:
   push:
     tags:
       - "app-build-*"
+      - "release-*"
 
 jobs:
   build:

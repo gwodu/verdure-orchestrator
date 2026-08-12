@@ -12,10 +12,14 @@ name: Build Android test app (APK)
 #
 # Runs on Linux runners — 1/10 the per-minute cost of the macOS ones.
 on:
+  # `release-N` ships all three platforms from one tag (see build-app.yml's note);
+  # `android-build-N` remains for Android-only iteration. The Play .aab workflow
+  # is NOT on release-* — it stays manual until the signing secrets exist.
   workflow_dispatch:
   push:
     tags:
       - "android-build-*"
+      - "release-*"
 
 jobs:
   build:
