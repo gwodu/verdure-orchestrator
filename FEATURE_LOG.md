@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-08-12 — "Midnight glass" visual identity (styles.css + design.md)
+
+**What:** full retheme from the prairie-daylight palette to the brand video's world — deep-space navy gradient background, frosted-glass panels (`backdrop-filter` blur + mint-tinged borders + glow shadows), mint CTAs as glowing pills with dark ink (never white-on-mint), the VERDURE wordmark as wide-tracked serif with a mint gradient and a one-shot glint sweep, drifting glass orbs in the background, and a staggered fade-up on entry. Palette measured from the video with ffmpeg palettegen (`#021329` navy family, `#34c69a`/`#4cd8ad`/`#b7f3e6` mint family, `#479e96` sea-teal), not eyeballed. Warn/danger moved to warm coral (`#ff9d8a`) — the brick-red vanished on navy. Fonts unchanged and now documented as a decision: `ui-rounded` body + `ui-serif` display is the exact pairing the video uses, and system faces keep the app free of font downloads.
+
+**Why:** founder direction with a brand video — "sleek and simple, Apple but warm." One stylesheet themes all three platforms (macOS/iOS/Android share the webview UI). The canonical identity now lives in `skills/design.md` ("Visual identity — midnight glass"): palette, glass rules, type, motion rules, contrast floor.
+
+**User impact:** after this change, the app feels like one deliberate product with the brand's own atmosphere — and every existing affordance (fit warnings, progress bars, recording states) stays exactly where it was, retinted.
+
+**Motion & floor-machine care:** all animation is entry-only, transform/opacity (GPU-cheap on the 2019 Intel Mac), and fully disabled under `prefers-reduced-motion`. Recording/preparing mic states keep their distinct look (coral pulse vs neutral breathing).
+
+**Verification:** tsc + vite clean. Visual self-review loop actually run this time (Chrome + vite preview): model picker, chat empty state, and a chat exchange reviewed on-screen — wordmark, glass, CTA glow, bubbles all render as intended. On-device confirmation on the next tag builds (blur performance on the Intel Mac is the one thing preview can't prove).
+
 ### 2026-08-12 — Help users make room for models ([OQ-67], steps 1–4)
 
 **What:** four space-recovery features, own-sandbox first — Verdure never deletes a byte it didn't create:

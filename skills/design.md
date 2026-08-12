@@ -78,6 +78,47 @@ To keep that promise honest *without* violating the no-telemetry principle:
 
 Never default to passive data collection. Refusing telemetry must never produce a worse recommendation.
 
+## Visual identity — "midnight glass" (2026-08-12)
+
+The app's look, decided from the founder's brand video (deep navy, aurora mint,
+frosted glass — "sleek and simple, Apple but warm"). One identity, one webview UI,
+all three platforms (macOS/iOS/Android); it lives as CSS tokens in
+`app/src/styles.css` and this section is the source of truth for what they mean.
+The palette was measured from the video (ffmpeg palettegen), not eyeballed.
+
+**Palette:**
+
+- Background: deep-space navy gradient — `#021329` (base) through `#061b35` /
+  `#0c253e`, with slate-teal depth tones `#14314a` / `#1d4058` / `#275168`.
+- Mint (the brand color): `#34c69a` primary (CTA, actions), `#4cd8ad` bright
+  (wordmark, highlights), `#b7f3e6` pale (glints, glows at low alpha).
+- Sea-teal mid-tones `#386a7e` / `#479e96` — borders, secondary accents, waves.
+- Ink on navy: warm white `#eef6f2`; soft ink `#8fa8b5` (captions, meta).
+- On-mint ink: deep navy `#04241c` (never white — the video's button is dark-on-mint).
+- Warn/danger on navy: warm coral `#ff9d8a` (the light theme's brick-red vanishes
+  on navy).
+
+**Surfaces are frosted glass:** translucent navy-white panels
+(`rgba` + `backdrop-filter: blur`), 1px mint-tinged borders, soft mint glow
+shadows, large radii (18–22px). Depth comes from glass layering and glow, never
+from hard borders.
+
+**Type:** system faces only — no webfont download (local-first; the app's CSP
+blocks remote assets, and bundling fonts is size the floor user pays). Body =
+`ui-rounded` (SF Rounded on Apple; falls to system sans on Android) — the "warm"
+half. Wordmark/display = `ui-serif` ("New York" on Apple, Georgia elsewhere),
+wide-tracked uppercase with a mint gradient — the "sleek" half. This pairing is
+what the brand video uses; resist replacing it with a downloaded font.
+
+**Motion:** entry only, subtle, and free — a staggered fade-up on app open, one
+glint sweep across the wordmark, and slow-drifting background orbs (transform/
+opacity only, GPU-cheap; the floor machine is a 2019 Intel Mac). Everything
+respects `prefers-reduced-motion`. No looping animation on interactive surfaces;
+motion decorates entry, never gates it.
+
+**Contrast floor:** body text on the darkest navy ≥ 7:1; captions ≥ 4.5:1; mint
+on navy is display/accent, not long-form text color.
+
 ## Self-check before declaring a UI change done
 
 - Have I written the user-impact statement?

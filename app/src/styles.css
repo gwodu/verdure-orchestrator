@@ -1,23 +1,31 @@
-/* Verdure — warm, calm, floor-user-first (skills/design.md).
-   Aesthetic: a prairie on a summer day — soft sky, sun-warmed light, meadow
-   green rising from a wheat-cream field. Natural gradients, nothing hard-edged. */
+/* Verdure — "midnight glass" (skills/design.md, Visual identity).
+   Aesthetic: deep-space navy, aurora mint, frosted glass — sleek and simple,
+   Apple but warm. Palette measured from the brand video (2026-08-12).
+   One stylesheet themes all three platforms (macOS/iOS/Android webview). */
 
 :root {
-  --bg: #f4efe1;            /* wheat-cream field (fallback under the gradient) */
-  --surface: #fffdf7;       /* warm sunlit paper */
-  --ink: #2c3327;           /* deep earth-olive, not cold near-black */
-  --ink-soft: #6d7460;      /* soft sage */
-  --green: #5f8f4c;         /* sunny meadow */
-  --green-deep: #4a7539;    /* deeper grass */
-  --green-tint: #eaf0d6;    /* pale sun-warmed meadow */
-  --wheat: #e6b25a;         /* golden wheat / warm sun */
-  --wheat-deep: #cf9636;
-  --sky: #dde9e8;           /* hazy summer sky */
-  --line: #e6dfcc;          /* soft wheat line */
-  --shadow: 0 1px 2px rgba(76, 62, 28, 0.05), 0 10px 30px rgba(96, 82, 40, 0.09);
-  --radius: 18px;
+  --bg: #050f1e;            /* deep-space navy (fallback under the gradient) */
+  --navy-2: #0a1a30;        /* card-depth navy */
+  --navy-3: #14314a;        /* slate navy — tracks, wells */
+  --navy-4: #1d4058;        /* steel blue — raised edges */
+  --mint: #34c69a;          /* the brand mint — CTAs, actions */
+  --mint-bright: #4cd8ad;   /* wordmark, highlights */
+  --mint-pale: #b7f3e6;     /* glints and glows (use at low alpha) */
+  --teal: #479e96;          /* sea-teal secondary accent */
+  --ink: #eef6f2;           /* warm white on navy */
+  --ink-soft: #8fa8b5;      /* captions, meta */
+  --ink-on-mint: #04241c;   /* deep navy-green on mint — never white */
+  --coral: #ff9d8a;         /* warn/danger on navy (brick-red vanishes here) */
+  --glass: rgba(23, 48, 71, 0.55);        /* frosted panel body */
+  --glass-thin: rgba(23, 48, 71, 0.38);   /* chips, rows */
+  --glass-line: rgba(76, 216, 173, 0.22); /* mint-tinged glass edge */
+  --line: rgba(143, 168, 181, 0.18);      /* quiet inner borders */
+  --shadow: 0 1px 2px rgba(2, 8, 18, 0.4), 0 14px 40px rgba(2, 10, 24, 0.45),
+    0 0 24px rgba(52, 198, 154, 0.06);
+  --radius: 20px;
   /* Warm system faces — no web-font fetch (the app's CSP blocks remote assets).
-     UI: SF Rounded (soft, friendly). Display: a warm serif for the greeting. */
+     UI: SF Rounded (soft, friendly). Display: an elegant serif, as in the brand
+     video's wordmark. */
   --font-ui: ui-rounded, "SF Pro Rounded", system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
   --font-display: ui-serif, "New York", "Iowan Old Style", Palatino, Georgia, serif;
@@ -31,16 +39,47 @@ html, body {
   color: var(--ink);
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
-  /* The prairie: warm sun glow upper-right, meadow rising bottom-left, sky-to-
-     wheat wash top-to-bottom. Fixed so it stays put as chat scrolls. */
+  /* The midnight scene: aurora-mint breath upper-left and low-right, a teal
+     depth wash, all over deep navy. Fixed so it stays put as chat scrolls. */
   background:
-    radial-gradient(1100px 480px at 82% -10%, rgba(230, 178, 90, 0.34), transparent 60%),
-    radial-gradient(900px 520px at 8% 110%, rgba(120, 160, 78, 0.20), transparent 58%),
-    linear-gradient(178deg, var(--sky) 0%, #ecefd9 40%, #f3efdf 72%, var(--bg) 100%);
+    radial-gradient(1000px 520px at 78% 112%, rgba(52, 198, 154, 0.13), transparent 60%),
+    radial-gradient(900px 460px at 12% -8%, rgba(71, 158, 150, 0.14), transparent 58%),
+    radial-gradient(1400px 900px at 50% 45%, rgba(20, 49, 74, 0.5), transparent 75%),
+    linear-gradient(172deg, #071527 0%, #061225 45%, var(--bg) 100%);
   background-attachment: fixed;
 }
 
+/* Floating glass orbs — the video's drifting bubbles. Fixed, non-interactive,
+   transform/opacity only (GPU-cheap on the 2019 Intel floor machine). */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(circle at 32% 28%,
+    rgba(183, 243, 230, 0.16), rgba(76, 216, 173, 0.07) 55%, transparent 70%);
+  border: 1px solid rgba(183, 243, 230, 0.10);
+}
+body::before {
+  width: 130px; height: 130px;
+  left: -40px; bottom: 12%;
+  animation: orb-drift 26s ease-in-out infinite alternate;
+}
+body::after {
+  width: 72px; height: 72px;
+  right: 6%; top: 16%;
+  animation: orb-drift 34s ease-in-out infinite alternate-reverse;
+}
+@keyframes orb-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(26px, -34px, 0); }
+}
+
 #app {
+  position: relative;      /* above the orbs */
+  z-index: 1;
   max-width: 680px;
   margin: 0 auto;
   /* Inset for the system bars (Android edge-to-edge / iOS notch) so the brand
@@ -56,25 +95,50 @@ html, body {
   flex-direction: column;
 }
 
+/* Entry: brand then panel rise gently into place (also softens screen changes). */
+.brand { animation: rise-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.panel, .grid { animation: rise-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) 0.08s both; }
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* Brand */
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   margin-bottom: 24px;
 }
 .brand-dot {
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  /* a little summer sun */
-  background: radial-gradient(circle at 32% 30%, #ffe6a3, var(--wheat-deep));
-  box-shadow: 0 0 10px rgba(230, 178, 90, 0.5);
+  /* a small glass-mint orb */
+  background: radial-gradient(circle at 32% 30%, var(--mint-pale), var(--mint) 70%);
+  box-shadow: 0 0 12px rgba(52, 198, 154, 0.55);
 }
 .brand-name {
-  font-weight: 650;
-  letter-spacing: 0.2px;
-  color: var(--green-deep);
+  /* The wordmark, as in the video: elegant serif, wide-tracked, mint gradient,
+     with a one-shot glint sweeping through on entry. */
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 17px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  background: linear-gradient(100deg,
+    var(--mint) 0%, var(--mint-bright) 38%, var(--mint-pale) 50%,
+    var(--mint-bright) 62%, var(--mint) 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--mint-bright); /* fallback if clip:text is unavailable */
+  animation: glint 2.4s ease-out 0.5s 1 both;
+}
+@keyframes glint {
+  from { background-position: 120% 0; }
+  to   { background-position: -60% 0; }
 }
 .brand-actions {
   margin-left: auto;
@@ -93,7 +157,7 @@ html, body {
   line-height: 0;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.icon-btn:hover { background: rgba(90, 110, 70, 0.10); color: var(--ink); }
+.icon-btn:hover { background: rgba(76, 216, 173, 0.10); color: var(--ink); }
 .icon-btn svg { width: 20px; height: 20px; }
 
 /* Microphone button — dictation (the Whisper flow), one tap from chat */
@@ -102,19 +166,19 @@ html, body {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: none;
+  border: 1px solid var(--glass-line);
   cursor: pointer;
-  color: #4a370f;
+  color: var(--mint-bright);
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #f3cd77, var(--wheat-deep));
-  box-shadow: 0 3px 10px rgba(190, 145, 55, 0.35);
+  background: linear-gradient(135deg, rgba(52, 198, 154, 0.22), rgba(23, 48, 71, 0.6));
+  box-shadow: 0 3px 12px rgba(2, 10, 24, 0.4), 0 0 14px rgba(52, 198, 154, 0.12);
   transition: transform 0.1s ease, filter 0.12s ease;
 }
-.mic-btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
+.mic-btn:hover { filter: brightness(1.12); transform: translateY(-1px); }
 .mic-btn:active { transform: translateY(0); }
 .mic-btn svg { width: 22px; height: 22px; }
-/* Preparing: neutral (keeps the wheat/gold look) with a gentle breathing dim, so
+/* Preparing: neutral (keeps the glass-mint look) with a gentle breathing dim, so
    installing/opening never looks like active recording. */
 .mic-btn.preparing {
   opacity: 0.85;
@@ -124,16 +188,17 @@ html, body {
   0%, 100% { opacity: 0.55; }
   50% { opacity: 0.9; }
 }
-/* Recording: switch to a warm red and pulse so it's obvious we're listening. */
+/* Recording: switch to a warm coral and pulse so it's obvious we're listening. */
 .mic-btn.recording {
-  background: linear-gradient(135deg, #e2705a, #b83b25);
+  background: linear-gradient(135deg, #ff8a72, #d84a30);
+  border-color: rgba(255, 157, 138, 0.4);
   color: #fff;
-  box-shadow: 0 0 0 0 rgba(184, 59, 37, 0.5);
+  box-shadow: 0 0 0 0 rgba(255, 138, 114, 0.5);
   animation: mic-pulse 1.4s ease-out infinite;
 }
 @keyframes mic-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(184, 59, 37, 0.45); }
-  100% { box-shadow: 0 0 0 14px rgba(184, 59, 37, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(255, 138, 114, 0.45); }
+  100% { box-shadow: 0 0 0 14px rgba(255, 138, 114, 0); }
 }
 @media (prefers-reduced-motion: reduce) {
   .mic-btn.recording { animation: none; }
@@ -149,6 +214,7 @@ html, body {
   font-weight: 600;
   margin: 0 0 10px;
   letter-spacing: -0.2px;
+  color: var(--ink);
 }
 .subtitle {
   font-size: 16px;
@@ -173,21 +239,24 @@ html, body {
   align-items: flex-start;
   gap: 6px;
   text-align: left;
-  background: var(--surface);
+  background: var(--glass-thin);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 18px 18px 20px;
   cursor: pointer;
+  color: var(--ink);
   box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 .card:hover {
   transform: translateY(-2px);
-  border-color: #bcd8c7;
+  border-color: var(--glass-line);
 }
 .card:focus-visible {
-  outline: 3px solid var(--green-tint);
-  border-color: var(--green);
+  outline: 3px solid rgba(52, 198, 154, 0.35);
+  border-color: var(--mint);
 }
 .card-emoji { font-size: 26px; line-height: 1; }
 .card-title { font-size: 16.5px; font-weight: 650; }
@@ -197,7 +266,7 @@ html, body {
 .back {
   background: none;
   border: none;
-  color: var(--green-deep);
+  color: var(--mint-bright);
   font-size: 15px;
   cursor: pointer;
   padding: 4px 0;
@@ -205,15 +274,15 @@ html, body {
 }
 .back:hover { text-decoration: underline; }
 
-/* Panel — the frosted card the content sits in */
+/* Panel — the frosted glass card the content sits in (the video's hero card) */
 .panel {
-  background: rgba(255, 253, 247, 0.82);
-  border: 1px solid var(--line);
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
   border-radius: var(--radius);
   padding: 26px 26px 26px;
   box-shadow: var(--shadow);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   flex: 1;                 /* let the chat panel fill; harmless elsewhere */
   display: flex;
   flex-direction: column;
@@ -225,8 +294,8 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  background: var(--green-tint);
-  border: 1px solid #c9e6d5;
+  background: rgba(52, 198, 154, 0.12);
+  border: 1px solid rgba(76, 216, 173, 0.3);
   border-radius: 14px;
   padding: 18px 20px;
   margin: 22px 0 6px;
@@ -235,7 +304,7 @@ html, body {
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: var(--green-deep);
+  color: var(--mint-bright);
   font-weight: 650;
 }
 .answer-name {
@@ -250,20 +319,29 @@ html, body {
 .setup { margin-top: 22px; }
 .primary {
   width: 100%;
-  background: linear-gradient(135deg, #66964f, var(--green-deep));
-  color: #fff;
+  background: linear-gradient(135deg, var(--mint-bright), var(--mint));
+  color: var(--ink-on-mint);
   border: none;
-  border-radius: 13px;
+  border-radius: 999px;   /* the video's pill CTA */
   padding: 16px 20px;
   font-size: 17px;
   font-weight: 650;
   cursor: pointer;
-  box-shadow: 0 3px 10px rgba(74, 117, 57, 0.25);
-  transition: filter 0.12s ease, transform 0.1s ease;
+  box-shadow: 0 3px 14px rgba(52, 198, 154, 0.35), 0 0 24px rgba(52, 198, 154, 0.18);
+  transition: filter 0.12s ease, transform 0.1s ease, box-shadow 0.12s ease;
 }
-.primary:hover { filter: brightness(1.06); }
+.primary:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 4px 18px rgba(52, 198, 154, 0.45), 0 0 30px rgba(52, 198, 154, 0.24);
+}
 .primary:active { transform: translateY(1px); }
-.primary:disabled { background: #a9c39a; box-shadow: none; cursor: default; filter: none; }
+.primary:disabled {
+  background: var(--navy-3);
+  color: var(--ink-soft);
+  box-shadow: none;
+  cursor: default;
+  filter: none;
+}
 .status {
   font-size: 14.5px;
   color: var(--ink-soft);
@@ -271,14 +349,15 @@ html, body {
   min-height: 20px;
   line-height: 1.5;
 }
-.setup.failed .status { color: #a3341f; }
+.setup.failed .status { color: var(--coral); }
 
 .soon {
   margin-top: 20px;
   font-size: 14.5px;
   color: var(--ink-soft);
   line-height: 1.55;
-  background: #f1f4f1;
+  background: var(--glass-thin);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px 16px;
 }
@@ -297,11 +376,12 @@ html, body {
   width: 46px;
   height: 46px;
   border-radius: 50%;
-  background: var(--green);
-  color: #fff;
+  background: linear-gradient(135deg, var(--mint-bright), var(--mint));
+  color: var(--ink-on-mint);
   font-size: 26px;
   display: grid;
   place-items: center;
+  box-shadow: 0 0 18px rgba(52, 198, 154, 0.35);
 }
 .done-msg { font-size: 16.5px; font-weight: 600; margin: 4px 0 0; }
 .done-sub { font-size: 14px; color: var(--ink-soft); margin: 0; }
@@ -315,8 +395,8 @@ html, body {
   padding: 7px 12px;
   border-radius: 999px;
 }
-.badge.muted { background: #f0eee9; color: #6b6256; }
-.badge.ok { background: var(--green-tint); color: var(--green-deep); }
+.badge.muted { background: var(--glass-thin); color: var(--ink-soft); border: 1px solid var(--line); }
+.badge.ok { background: rgba(52, 198, 154, 0.14); color: var(--mint-bright); border: 1px solid rgba(76, 216, 173, 0.3); }
 
 /* Transcription panel */
 
@@ -326,7 +406,8 @@ html, body {
   display: inline-flex;
   gap: 4px;
   padding: 4px;
-  background: #eef2ee;
+  background: rgba(10, 26, 48, 0.6);
+  border: 1px solid var(--line);
   border-radius: 12px;
 }
 .tab {
@@ -342,9 +423,9 @@ html, body {
 }
 .tab:hover { color: var(--ink); }
 .tab.active {
-  background: var(--surface);
-  color: var(--green-deep);
-  box-shadow: 0 1px 2px rgba(21, 36, 28, 0.08);
+  background: rgba(52, 198, 154, 0.16);
+  color: var(--mint-bright);
+  box-shadow: 0 1px 2px rgba(2, 8, 18, 0.3);
 }
 
 /* Live (microphone) recording */
@@ -357,22 +438,23 @@ html, body {
 }
 .record { max-width: 320px; }
 .record.recording {
-  background: #a3341f;
+  background: linear-gradient(135deg, #ff8a72, #d84a30);
+  color: #fff;
 }
-.record.recording:hover { background: #8a2c1a; }
+.record.recording:hover { filter: brightness(1.05); }
 .rec-indicator {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   font-size: 14px;
   font-weight: 600;
-  color: #a3341f;
+  color: var(--coral);
 }
 .rec-dot {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: #d8341f;
+  background: #ff7a5f;
   animation: rec-pulse 1.2s ease-in-out infinite;
 }
 @keyframes rec-pulse {
@@ -388,22 +470,22 @@ html, body {
   gap: 6px;
   text-align: center;
   padding: 40px 20px;
-  border: 2px dashed #c2d6c9;
+  border: 2px dashed rgba(76, 216, 173, 0.28);
   border-radius: 16px;
-  background: #fafcfa;
+  background: rgba(10, 26, 48, 0.4);
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 .dropzone.hover {
-  border-color: var(--green);
-  background: var(--green-tint);
+  border-color: var(--mint);
+  background: rgba(52, 198, 154, 0.10);
 }
 .dropzone.working {
   border-style: solid;
-  border-color: #c2d6c9;
+  border-color: rgba(76, 216, 173, 0.28);
   opacity: 0.7;
 }
 .dropzone.failed {
-  border-color: #d8a59a;
+  border-color: rgba(255, 157, 138, 0.5);
 }
 .dropzone-emoji {
   font-size: 34px;
@@ -430,7 +512,7 @@ html, body {
   line-height: 1.6;
   font-family: inherit;
   color: var(--ink);
-  background: #fff;
+  background: rgba(5, 15, 30, 0.55);
 }
 
 .transcript-actions {
@@ -439,9 +521,9 @@ html, body {
   gap: 10px;
 }
 .secondary {
-  background: var(--green-tint);
-  color: var(--green-deep);
-  border: 1px solid #c9e6d5;
+  background: rgba(52, 198, 154, 0.12);
+  color: var(--mint-bright);
+  border: 1px solid rgba(76, 216, 173, 0.3);
   border-radius: 10px;
   padding: 10px 16px;
   font-size: 14.5px;
@@ -449,7 +531,7 @@ html, body {
   cursor: pointer;
 }
 .secondary:hover {
-  background: #d9efe1;
+  background: rgba(52, 198, 154, 0.2);
 }
 
 /* Model picker (first launch + change anytime) */
@@ -467,17 +549,19 @@ html, body {
 .pick {
   display: flex;
   align-items: stretch;
-  background: #fffdf8;
+  background: var(--glass-thin);
   border: 1.5px solid var(--line);
   border-radius: 15px;
   overflow: hidden;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
-.pick:hover { border-color: #c9d6b4; }
+.pick:hover { border-color: var(--glass-line); }
 .pick.selected {
-  border-color: var(--green);
-  background: var(--green-tint);
-  box-shadow: 0 2px 10px rgba(95, 143, 76, 0.15);
+  border-color: var(--mint);
+  background: rgba(52, 198, 154, 0.10);
+  box-shadow: 0 2px 14px rgba(52, 198, 154, 0.18);
 }
 .pick-main {
   flex: 1;
@@ -498,8 +582,8 @@ html, body {
   align-self: center;
   margin-right: 12px;
   background: none;
-  border: 1px solid #e2c8c1;
-  color: #a3341f;
+  border: 1px solid rgba(255, 157, 138, 0.35);
+  color: var(--coral);
   border-radius: 9px;
   padding: 7px 13px;
   font-size: 13px;
@@ -507,7 +591,7 @@ html, body {
   cursor: pointer;
   transition: background 0.12s ease;
 }
-.pick-remove:hover { background: #f7ece9; }
+.pick-remove:hover { background: rgba(255, 157, 138, 0.10); }
 .pick-remove:disabled { opacity: 0.6; cursor: default; }
 .pick-radio {
   flex-shrink: 0;
@@ -515,27 +599,27 @@ html, body {
   height: 20px;
   margin-top: 2px;
   border-radius: 50%;
-  border: 2px solid #c3ccb4;
+  border: 2px solid var(--navy-4);
   transition: border-color 0.12s ease;
 }
 .pick.selected .pick-radio {
-  border-color: var(--green);
+  border-color: var(--mint);
   background:
-    radial-gradient(circle at center, var(--green) 0 5px, transparent 6px);
+    radial-gradient(circle at center, var(--mint) 0 5px, transparent 6px);
 }
 .pick-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .pick-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .pick-tier { font-family: var(--font-display); font-size: 19px; font-weight: 600; }
 .pick-size { font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
 .pick-blurb { font-size: 14px; color: var(--ink-soft); line-height: 1.45; }
-.pick-warn { font-size: 13px; color: #a3341f; margin-top: 3px; }
+.pick-warn { font-size: 13px; color: var(--coral); margin-top: 3px; }
 .model-picker .primary { margin-top: 8px; }
 
 /* Current-model chip in the chat header */
 .model-chip {
-  border: 1px solid var(--line);
-  background: rgba(255, 253, 247, 0.7);
-  color: var(--green-deep);
+  border: 1px solid var(--glass-line);
+  background: var(--glass-thin);
+  color: var(--mint-bright);
   border-radius: 999px;
   padding: 5px 13px;
   font-family: inherit;
@@ -544,16 +628,16 @@ html, body {
   cursor: pointer;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
-.model-chip:hover { border-color: var(--green); background: var(--green-tint); }
+.model-chip:hover { border-color: var(--mint); background: rgba(52, 198, 154, 0.12); }
 
 /* One-time "installing the model" notice, in the chat thread */
 .install-note {
   align-self: center;
   max-width: 90%;
   text-align: center;
-  background: #fbf3df;
-  border: 1px solid #ecd9a6;
-  color: #7a5a1c;
+  background: rgba(52, 198, 154, 0.10);
+  border: 1px solid rgba(76, 216, 173, 0.26);
+  color: var(--mint-pale);
   border-radius: 14px;
   padding: 12px 16px;
   font-size: 14px;
@@ -566,20 +650,21 @@ html, body {
 .dlbar {
   height: 8px;
   border-radius: 999px;
-  background: #ece3cc;
+  background: var(--navy-3);
   overflow: hidden;
 }
 .dlbar-fill {
   height: 100%;
   width: 0%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #e6b25a, #66964f);
+  background: linear-gradient(90deg, var(--teal), var(--mint-bright));
+  box-shadow: 0 0 10px rgba(52, 198, 154, 0.4);
   transition: width 0.3s ease;
 }
 .dlbar-label {
   margin-top: 7px;
   font-size: 12.5px;
-  color: #7a5a1c;
+  color: var(--ink-soft);
   text-align: center;
 }
 
@@ -598,7 +683,7 @@ html, body {
   max-width: 100%;
   text-align: left;
   border: 1px solid var(--line);
-  background: rgba(255, 253, 247, 0.75);
+  background: var(--glass-thin);
   color: var(--ink);
   border-radius: 999px;
   padding: 10px 16px;
@@ -608,8 +693,8 @@ html, body {
   transition: border-color 0.12s ease, background 0.12s ease, transform 0.1s ease;
 }
 .suggest-chip:hover {
-  border-color: var(--green);
-  background: var(--green-tint);
+  border-color: var(--mint);
+  background: rgba(52, 198, 154, 0.10);
   transform: translateY(-1px);
 }
 .suggest-emoji { font-size: 16px; line-height: 1; }
@@ -649,14 +734,14 @@ html, body {
 }
 .msg.user {
   align-self: flex-end;
-  background: linear-gradient(135deg, #6d9c54, #4e7b3e);
-  color: #fff;
+  background: linear-gradient(135deg, var(--mint-bright), var(--mint));
+  color: var(--ink-on-mint);
   border-bottom-right-radius: 5px;
-  box-shadow: 0 2px 8px rgba(74, 117, 57, 0.18);
+  box-shadow: 0 2px 10px rgba(52, 198, 154, 0.25);
 }
 .msg.ai {
   align-self: flex-start;
-  background: #fbf6e9;     /* warm paper */
+  background: var(--glass-thin);
   border: 1px solid var(--line);
   color: var(--ink);
   border-bottom-left-radius: 5px;
@@ -670,19 +755,20 @@ html, body {
   flex: 1;
   resize: none;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 13px 15px;
+  border-radius: 999px;
+  padding: 13px 18px;
   font-size: 15px;
   font-family: inherit;
   line-height: 1.5;
-  background: #fffdf8;
+  background: rgba(5, 15, 30, 0.55);
   color: var(--ink);
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
+.chat-input::placeholder { color: var(--ink-soft); }
 .chat-input:focus {
   outline: none;
-  border-color: var(--green);
-  box-shadow: 0 0 0 3px rgba(95, 143, 76, 0.15);
+  border-color: var(--mint);
+  box-shadow: 0 0 0 3px rgba(52, 198, 154, 0.18);
 }
 .chat-send {
   width: auto;
@@ -701,8 +787,9 @@ html, body {
 .perf {
   margin: 16px 0 0;
   font-size: 13.5px;
-  color: var(--green-deep);
-  background: var(--green-tint);
+  color: var(--mint-bright);
+  background: rgba(52, 198, 154, 0.10);
+  border: 1px solid rgba(76, 216, 173, 0.22);
   border-radius: 10px;
   padding: 10px 14px;
   line-height: 1.5;
@@ -725,14 +812,14 @@ html, body {
 .link-danger {
   background: none;
   border: none;
-  color: #a3341f;
+  color: var(--coral);
   font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
   padding: 4px 6px;
 }
 .link-danger:hover { text-decoration: underline; }
-.link-danger:disabled { color: #b89; cursor: default; text-decoration: none; }
+.link-danger:disabled { color: var(--ink-soft); cursor: default; text-decoration: none; }
 
 /* Home footer link */
 .footer {
@@ -743,7 +830,7 @@ html, body {
 .link {
   background: none;
   border: none;
-  color: var(--green-deep);
+  color: var(--mint-bright);
   font-size: 14px;
   cursor: pointer;
   padding: 6px 8px;
@@ -756,7 +843,7 @@ html, body {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 16px 18px;
-  background: #fafcfa;
+  background: rgba(10, 26, 48, 0.5);
 }
 .sysbox-title {
   display: block;
@@ -764,7 +851,7 @@ html, body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: var(--green-deep);
+  color: var(--mint-bright);
   margin-bottom: 10px;
 }
 .sysbox-grid {
@@ -796,6 +883,7 @@ html, body {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px 16px;
+  background: var(--glass-thin);
 }
 .model-info {
   display: flex;
@@ -807,7 +895,8 @@ html, body {
 .model-empty {
   font-size: 14.5px;
   color: var(--ink-soft);
-  background: #f1f4f1;
+  background: var(--glass-thin);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 16px;
   margin: 0;
@@ -842,6 +931,9 @@ html, body {
   .card { transition: none; }
   .dropzone { transition: none; }
   .rec-dot { animation: none; }
+  .brand, .panel, .grid { animation: none; }
+  .brand-name { animation: none; }
+  body::before, body::after { animation: none; }
 }
 
 /* Out-of-space help ([OQ-67]): the platform's honest way to make room, shown
