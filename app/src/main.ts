@@ -26,6 +26,8 @@ import {
   removeModel,
   systemResources,
   inTauri,
+  freeUpSpace,
+  openStorageSettings,
   type PortOutcome,
   type ChatModelOption,
 } from "./bridge";
@@ -226,27 +228,32 @@ function renderStorage(): void {
   const refresh = async () => {
     const models = await listModels();
     const downloaded = models.filter((m) => m.installed);
+    // Interrupted downloads take real space too — show them so the user can
+    // reclaim it, instead of a hidden .part silently eating the disk ([OQ-67]).
+    const partials = models.filter((m) => !m.installed && m.partialBytes > 0);
     listEl.innerHTML = "";
 
     if (!inTauri) {
       listEl.appendChild(el("p", "subtitle", "Storage is managed in the desktop app."));
       return;
     }
-    if (downloaded.length === 0) {
+    if (downloaded.length === 0 && partials.length === 0) {
       listEl.appendChild(
         el("p", "model-empty", "Nothing downloaded yet — nothing taking up space."),
       );
       return;
     }
 
-    const total = downloaded.reduce((sum, m) => sum + m.sizeBytes, 0);
+    const total =
+      downloaded.reduce((sum, m) => sum + m.sizeBytes, 0) +
+      partials.reduce((sum, m) => sum + m.partialBytes, 0);
     panel.querySelector(".model-total")?.remove();
 
-    for (const m of downloaded) {
+    const modelRow = (m: { id: string; name: string }, meta: string) => {
       const row = el("div", "model-row");
       const info = el("div", "model-info");
       info.appendChild(el("span", "model-name", m.name));
-      info.appendChild(el("span", "model-meta", `${m.modality} · ${fmtMb(m.sizeBytes)}`));
+      info.appendChild(el("span", "model-meta", meta));
       row.appendChild(info);
 
       const remove = document.createElement("button");
@@ -263,8 +270,17 @@ function renderStorage(): void {
         }
       });
       row.appendChild(remove);
-      listEl.appendChild(row);
-    }
+      return row;
+    };
+
+    for (const m of downloaded)
+      listEl.appendChild(modelRow(m, `${m.modality} · ${fmtMb(m.sizeBytes)}`));
+    // A paused download resumes where it left off if kept — say so, so removing
+    // it is an informed choice, not a surprise restart later.
+    for (const m of partials)
+      listEl.appendChild(
+        modelRow(m, `Unfinished download · ${fmtMb(m.partialBytes)} so far — resumes if kept`),
+      );
 
     const totalEl = el("p", "model-total", `Total on this computer: ${fmtMb(total)}`);
     panel.appendChild(totalEl);
@@ -325,15 +341,22 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
   let options = await chatModelOptions().catch(() => [] as ChatModelOption[]);
 
   const gb = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);
+  // Which OS this is decides the honest way to help when a model doesn't fit the
+  // disk ([OQ-67]): Android can clear cached junk on request, the Mac has its own
+  // storage screen, the iPhone only has instructions. Learned async; re-render
+  // once known so the right help appears.
+  let os = "";
+  // Feedback from the last "make room" attempt — survives re-renders.
+  let spaceNote = "";
   const fillFree = async () => {
     try {
       const r = await systemResources();
+      os = r.os;
       freeEl.textContent = `${gb(r.freeDiskMb)} free space · ${gb(r.availableRamMb)} memory free`;
     } catch {
       freeEl.textContent = "";
     }
   };
-  void fillFree();
 
   const render = () => {
     list.innerHTML = "";
@@ -350,8 +373,13 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
       const sizeText = opt ? (opt.installed ? "Downloaded" : `${gb(opt.downloadMb)} download`) : "";
       let warn = "";
       if (!fitsMem) warn = "Not enough free memory to run this one right now.";
-      else if (!fitsDisk)
+      else if (!fitsDisk) {
         warn = `Not enough free space to download (needs ${gb(opt!.downloadMb)}). Remove a model to make room.`;
+        // iPhone/iPad: no API and no deep link — honest instructions are the help.
+        if (os === "ios")
+          warn +=
+            " Or free space in Settings → General → iPhone Storage — offloading apps you don't use is the quickest win.";
+      }
       main.innerHTML = `
         <span class="pick-radio" aria-hidden="true"></span>
         <span class="pick-body">
@@ -367,6 +395,46 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
         render();
       });
       card.appendChild(main);
+
+      // Platform-specific "make room" help, only where honest help exists
+      // ([OQ-67]). Android: the OS clears other apps' cached junk on request —
+      // one tap, nothing important touched. macOS: open the system's own
+      // storage screen. (iOS help is in the warn text above.)
+      if (opt && !opt.installed && !fitsDisk && (os === "android" || os === "macos")) {
+        const help = el("div", "pick-help");
+        const btn = document.createElement("button");
+        btn.className = "link";
+        btn.type = "button";
+        if (os === "android") {
+          btn.textContent = "Clear cached junk to make room";
+          btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            btn.textContent = "Making room…";
+            spaceNote = "";
+            try {
+              // Ask for the download plus a little headroom, so a successful
+              // clear doesn't leave the disk a byte short mid-download.
+              await freeUpSpace((opt.downloadMb + 64) * 1_048_576);
+              options = await chatModelOptions().catch(() => options);
+            } catch (err) {
+              spaceNote = friendlyError(err);
+            }
+            await fillFree();
+            render(); // fresh fit flags — if it fits now, the warning simply goes away
+          });
+        } else {
+          btn.textContent = "See what's filling your disk (opens Mac settings)";
+          btn.addEventListener("click", () => {
+            void openStorageSettings().catch((err) => {
+              spaceNote = friendlyError(err);
+              render();
+            });
+          });
+        }
+        help.appendChild(btn);
+        if (spaceNote) help.appendChild(el("span", "pick-warn", spaceNote));
+        card.appendChild(help);
+      }
 
       // Remove — only for downloaded models, so you can free space to fit another
       // right here, no separate trip to Storage.
@@ -396,12 +464,74 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
     go.type = "button";
     go.textContent = onboarding ? "Start chatting" : "Use this model";
     go.addEventListener("click", () => {
+      const prev = chosenModelId();
       localStorage.setItem(MODEL_CHOICE_KEY, selected);
-      renderChat();
+      // Switching away from a downloaded model leaves it as redundant weight on
+      // a tight disk — offer its removal at the exact moment it stops being
+      // needed ([OQ-67]). Optional; never automatic (coming back = re-download).
+      const old =
+        prev && prev !== selected
+          ? options.find((o) => o.id === prev && o.installed)
+          : undefined;
+      if (old) renderFreeOldModel(old);
+      else renderChat();
     });
     list.appendChild(go);
   };
   render();
+  // The free-space readout — and which OS this is — arrive async; re-render so
+  // the platform's "make room" help shows up where relevant.
+  void fillFree().then(render);
+}
+
+// After a model switch: one optional tap to reclaim the old model's space.
+// Honest about the trade — it re-downloads if the user ever switches back.
+function renderFreeOldModel(old: ChatModelOption): void {
+  clearDrop();
+  root.innerHTML = "";
+  root.appendChild(brandBar());
+
+  const gb = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);
+  const panel = el("section", "panel");
+  panel.appendChild(el("h1", "title", "Free up space?"));
+  panel.appendChild(
+    el(
+      "p",
+      "subtitle",
+      `The ${tierName(old.id)} model you were using is still on your device, taking ${gb(old.downloadMb)}. ` +
+        "Remove it? If you ever switch back, it simply downloads again.",
+    ),
+  );
+
+  const status = el("p", "status");
+  const removeLabel = `Remove it — free ${gb(old.downloadMb)}`;
+  const remove = document.createElement("button");
+  remove.className = "primary";
+  remove.type = "button";
+  remove.textContent = removeLabel;
+  remove.addEventListener("click", async () => {
+    remove.disabled = true;
+    remove.textContent = "Removing…";
+    try {
+      await removeModel(old.id);
+      renderChat();
+    } catch (err) {
+      remove.disabled = false;
+      remove.textContent = removeLabel;
+      status.textContent = friendlyError(err);
+    }
+  });
+
+  const keep = document.createElement("button");
+  keep.className = "link";
+  keep.type = "button";
+  keep.textContent = "Keep both";
+  keep.addEventListener("click", renderChat);
+
+  panel.appendChild(remove);
+  panel.appendChild(keep);
+  panel.appendChild(status);
+  root.appendChild(panel);
 }
 
 // --- Chat: the conversational front door (knowledge/18) ---------------------

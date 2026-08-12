@@ -52,6 +52,10 @@ pub struct SystemResources {
     pub free_disk_mb: u64,
     /// macOS Low Power Mode — throttles CPU, worth knowing before a long run.
     pub low_power: bool,
+    /// Which OS this is ("macos" | "ios" | "android"), so the UI can offer the
+    /// right way to free disk space — each platform has a different honest answer
+    /// ([OQ-67]). From `std::env::consts::OS`, so it can't drift from the build.
+    pub os: &'static str,
 }
 
 /// Detect this machine's specs for the performance predictor.
@@ -114,6 +118,7 @@ pub fn system_resources(data_dir: &Path) -> SystemResources {
         available_ram_mb,
         free_disk_mb,
         low_power: read_low_power(),
+        os: std::env::consts::OS,
     }
 }
 
@@ -141,6 +146,7 @@ pub fn system_resources(data_dir: &Path) -> SystemResources {
         // Reading Low Power Mode needs an ObjC bridge (NSProcessInfo) — not worth
         // the dependency for the test build; "off" only skips a speed warning.
         low_power: false,
+        os: std::env::consts::OS,
     }
 }
 
@@ -238,6 +244,7 @@ pub fn system_resources(data_dir: &Path) -> SystemResources {
         // Reading battery-saver state needs a Java bridge; not worth it for the
         // test build — "off" only skips a speed warning.
         low_power: false,
+        os: std::env::consts::OS,
     }
 }
 

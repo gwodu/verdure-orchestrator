@@ -132,6 +132,8 @@ export type SystemResources = {
   availableRamMb: number;
   freeDiskMb: number;
   lowPower: boolean;
+  /** "macos" | "ios" | "android" — picks the right way to help free space. */
+  os: string;
 };
 
 /** Read the machine's live free resources (available RAM, free disk, low power). */
@@ -144,6 +146,7 @@ export async function systemResources(): Promise<SystemResources> {
       availableRamMb: 2048,
       freeDiskMb: 2560,
       lowPower: true,
+      os: "macos",
     };
   }
   const { invoke } = await import("@tauri-apps/api/core");
@@ -250,6 +253,8 @@ export type ModelEntry = {
   modality: string;
   installed: boolean;
   sizeBytes: number;
+  /** Bytes in an interrupted download (.part) — reclaimable space. */
+  partialBytes: number;
 };
 
 /** Every known model, with whether it's downloaded and its size. */
@@ -264,6 +269,24 @@ export async function removeModel(id: string): Promise<void> {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("remove_model", { id });
+}
+
+/**
+ * Ask the OS to make room for a download (Android only: the system clears other
+ * apps' clearable cache — we never touch anyone's files). Rejects with an honest
+ * message when it can't free enough.
+ */
+export async function freeUpSpace(bytes: number): Promise<void> {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("free_up_space", { bytes });
+}
+
+/** Open the system's storage-management screen (macOS only). */
+export async function openStorageSettings(): Promise<void> {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("open_storage_settings");
 }
 
 /**

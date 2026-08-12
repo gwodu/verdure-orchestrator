@@ -6,6 +6,20 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-08-12 — Help users make room for models ([OQ-67], steps 1–4)
+
+**What:** four space-recovery features, own-sandbox first — Verdure never deletes a byte it didn't create:
+1. **Unfinished downloads surfaced** (`model.rs` `partial_bytes`, Storage screen): an abandoned `.part` (up to ~1.4 GB) now shows as "Unfinished download · N MB so far — resumes if kept" with Remove, instead of invisibly eating the disk. Totals include it.
+2. **Old-model offer on switch** (`renderFreeOldModel`): switching chat models offers one optional tap to remove the now-redundant old model ("free 1.1 GB"), honest that switching back means re-downloading. Never automatic.
+3. **Android "make room"** (`free_up_space` command, JNI): when a model doesn't fit the disk, one tap asks Android's `StorageManager.allocateBytes` to clear *other apps' clearable cached files* — the OS decides what's junk; we never see or touch anyone's data. `getAllocatableBytes` is checked first so the failure message is honest ("can clear about X MB — needs Y MB").
+4. **macOS/iOS honest pointers**: macOS gets "See what's filling your disk" (opens the System Settings Storage pane, falls back to System Settings if the community-documented pane id is refused); iOS gets instructions in the warning copy (Settings → General → iPhone Storage), since no public API or deep link exists.
+
+**Why:** real user reports — not enough space to install any model. The app detected and declined honestly but left the user alone with the problem. Platform survey and the no-cleaner decision (duplicate-finders rejected) are in `[OQ-67]`.
+
+**Problem it solves:** the ~550 MB (minimum) to ~1.5 GB (Powerful) a user needs free, recovered from space Verdure itself created first, then from OS-sanctioned mechanisms only.
+
+**Verification:** new Rust unit test (partial-download surfacing + reclaim); tsc + vite clean; macOS Rust compiles in CI on push. The Android JNI path compiles only in the Android workflow (tag build) and needs on-device confirmation on the Pixel 8a — tracked in `[OQ-67]`. macOS deep-link pane id is provisional with a safe fallback.
+
 ### 2026-08-10 — Friendly error fallback at the display boundary (`main.ts`)
 
 **What:** the three places that showed a caught error verbatim (`String(err)` — mic setup, chat send, legacy porter button) now route through one `friendlyError` helper: backend messages (already human-written sentences from `llm.rs`/`model.rs`) pass through, but a thrown object or empty string shows "Something went wrong. Please try again." instead of `[object Object]` or a blank.

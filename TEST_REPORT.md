@@ -4,6 +4,16 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-08-12 — Space recovery ([OQ-67]: partials, old-model offer, Android make-room)
+
+**Unit tests written (1):** `list_surfaces_an_interrupted_partial_download` — writes a fake `.part`, asserts `list()` reports its exact bytes with `installed: false`, then asserts `remove()` reclaims it even though the model was never fully installed (the reclaim path users actually need). Existing `list_reports_not_installed_for_empty_dir` extended to assert `partial_bytes == 0`.
+
+**Deliberately not unit-tested:** the Android `allocateBytes` JNI path — it's an FFI boundary into the OS (testing.md rule: tests run against wrappers, not raw FFI; the OS behavior can't be mocked meaningfully). Verified by compilation in the Android workflow + pending on-device run (Pixel 8a). The macOS `open` deep-link is a process spawn with a built-in fallback; verified manually on the next Mac build.
+
+**Edge cases caught in design:** `getAllocatableBytes` checked before `allocateBytes` (asking beyond the ceiling always throws — the pre-check turns a generic Java exception into an honest "can clear X of Y MB" message); a pending Java exception is always cleared so it can't poison the JVM bridge; the partial-download row says "resumes if kept" so removal is an informed choice, not a surprise restart.
+
+**Verified:** `tsc` (strict) + `vite build` clean. macOS `cargo test` runs in CI on push; Android compile-check via the `android-build-N` tag workflow.
+
 ### 2026-08-10 — Friendly error fallback (`main.ts` `friendlyError`)
 
 **Change:** frontend-only — the three `String(err)` display sites route through a `friendlyError` helper (string/Error messages pass through; anything else falls back to a calm generic line). No new pure logic beyond a two-branch coercion, and `main.ts` has no unit harness — consistent with prior frontend-only entries, **no new unit tests**; the behavior contract is the type signature plus the backend's already-tested error phrasing (`llm.rs` `map_err` strings).

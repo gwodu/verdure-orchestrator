@@ -347,23 +347,33 @@ pub struct ModelEntry {
     pub modality: String,
     pub installed: bool,
     pub size_bytes: u64,
+    /// Bytes sitting in an interrupted `.part` download. Surfaced so an abandoned
+    /// download (up to ~1.4 GB the user can't otherwise see) shows up in Storage
+    /// as reclaimable space instead of silently eating the disk ([OQ-67]).
+    pub partial_bytes: u64,
 }
 
-/// List every known model with whether it's downloaded and its size.
+/// List every known model with whether it's downloaded and its size — including
+/// any interrupted `.part` download, which takes real space and must be visible.
 pub fn list(data_dir: &Path) -> Vec<ModelEntry> {
     MODELS
         .iter()
         .map(|m| {
-            let (installed, size_bytes) = match std::fs::metadata(model_path(data_dir, m)) {
+            let path = model_path(data_dir, m);
+            let (installed, size_bytes) = match std::fs::metadata(&path) {
                 Ok(meta) => (true, meta.len()),
                 Err(_) => (false, 0),
             };
+            let partial_bytes = std::fs::metadata(path.with_extension("part"))
+                .map(|meta| meta.len())
+                .unwrap_or(0);
             ModelEntry {
                 id: m.id.to_string(),
                 name: m.name.to_string(),
                 modality: m.modality.to_string(),
                 installed,
                 size_bytes,
+                partial_bytes,
             }
         })
         .collect()
@@ -567,7 +577,31 @@ mod tests {
     fn list_reports_not_installed_for_empty_dir() {
         let entries = list(Path::new("/tmp/verdure-does-not-exist-xyz"));
         assert_eq!(entries.len(), MODELS.len());
-        assert!(entries.iter().all(|e| !e.installed && e.size_bytes == 0));
+        assert!(entries
+            .iter()
+            .all(|e| !e.installed && e.size_bytes == 0 && e.partial_bytes == 0));
+    }
+
+    #[test]
+    fn list_surfaces_an_interrupted_partial_download() {
+        // An abandoned .part must show up as reclaimable space, not stay invisible
+        // while eating the disk ([OQ-67]).
+        let dir = std::env::temp_dir().join("verdure-partial-test");
+        let _ = std::fs::create_dir_all(&dir);
+        let part = model_path(&dir, &WHISPER_BASE_EN).with_extension("part");
+        std::fs::write(&part, vec![0u8; 1234]).unwrap();
+
+        let entry = list(&dir)
+            .into_iter()
+            .find(|e| e.id == WHISPER_BASE_EN.id)
+            .unwrap();
+        assert!(!entry.installed);
+        assert_eq!(entry.partial_bytes, 1234);
+
+        // remove() reclaims it even though the model was never fully installed.
+        remove(&dir, WHISPER_BASE_EN.id).unwrap();
+        assert!(!part.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -843,3 +843,8 @@ html, body {
   .dropzone { transition: none; }
   .rec-dot { animation: none; }
 }
+
+/* Out-of-space help ([OQ-67]): the platform's honest way to make room, shown
+   under a model that doesn't fit the disk. */
+.pick-help { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: 0 14px 12px 46px; }
+.pick-help .link { font-size: 13px; }

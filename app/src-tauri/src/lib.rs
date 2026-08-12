@@ -283,6 +283,59 @@ fn remove_model<R: Runtime>(app: AppHandle<R>, id: String) -> Result<(), String>
     model::remove(&dir, &id)
 }
 
+/// Ask the OS to make `bytes` of room on the models volume, so a model download
+/// can fit ([OQ-67]). Android-only: `StorageManager.allocateBytes` has the system
+/// itself clear other apps' *clearable cached files* — we never touch, see, or
+/// delete anyone's data; the OS decides what is junk. On every other platform
+/// this returns an error (the UI never offers it there — macOS gets a settings
+/// link, iOS gets instructions; see `open_storage_settings` and the picker copy).
+#[tauri::command]
+async fn free_up_space<R: Runtime>(app: AppHandle<R>, bytes: u64) -> Result<(), String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    #[cfg(target_os = "android")]
+    {
+        return tauri::async_runtime::spawn_blocking(move || {
+            android_free_up_space(&data_dir, bytes)
+        })
+        .await
+        .map_err(|e| format!("the clean-up task could not run: {e}"))?;
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (data_dir, bytes);
+        Err("Not available on this platform.".to_string())
+    }
+}
+
+/// Open the system's own storage-management screen, where the OS can safely
+/// clear its junk and show what's taking space ([OQ-67]). macOS-only: the System
+/// Settings Storage pane. The pane id is community-documented (macOS 13+), so if
+/// the deep link is refused we still open System Settings itself — never a
+/// silent no-op.
+#[tauri::command]
+fn open_storage_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let deep = std::process::Command::new("/usr/bin/open")
+            .arg("x-apple.systempreferences:com.apple.settings.Storage")
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !deep {
+            std::process::Command::new("/usr/bin/open")
+                .args(["-b", "com.apple.systempreferences"])
+                .status()
+                .map_err(|e| format!("couldn't open System Settings: {e}"))?;
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    Err("Not available on this platform.".to_string())
+}
+
 // The single place generate_context! is expanded. It emits platform statics
 // (e.g. _EMBED_INFO_PLIST on macOS) that may be defined only ONCE per crate, so
 // run() and the IPC tests both go through this one function rather than calling
@@ -324,6 +377,95 @@ pub extern "system" fn Java_ai_verdure_porter_MainActivity_initAudioContext(
     });
 }
 
+/// Android: ask the OS for `bytes` of room via `StorageManager.allocateBytes`.
+/// The system satisfies the request by deleting clearable cached files across
+/// apps — the sanctioned, zero-risk way to free space (Android API 26+; [OQ-67]).
+/// Reaches Java over JNI through the same process-global `ndk_context` that
+/// `initAudioContext` populates on launch. Ownership at this boundary: every
+/// JObject here is a local reference owned by the JVM for the duration of the
+/// attached call — nothing is retained, so there is nothing to release manually.
+#[cfg(target_os = "android")]
+fn android_free_up_space(data_dir: &std::path::Path, bytes: u64) -> Result<(), String> {
+    let friendly = "Android couldn't clear enough space automatically. \
+                    Freeing space in Settings → Storage will do it.";
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
+        .map_err(|_| friendly.to_string())?;
+    let mut env = vm.attach_current_thread().map_err(|_| friendly.to_string())?;
+    // The Application context stored by initAudioContext — alive for the whole
+    // process, so borrowing it as a local JObject here is sound.
+    let context = unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
+
+    match try_allocate(&mut env, &context, data_dir, bytes) {
+        Ok(outcome) => outcome,
+        Err(_) => {
+            // A Java exception (e.g. IOException: space couldn't be freed) is
+            // pending — clear it so it can't take down the JVM bridge later.
+            let _ = env.exception_clear();
+            Err(friendly.to_string())
+        }
+    }
+}
+
+/// The JNI calls for `android_free_up_space`, separated so a thrown Java
+/// exception unwinds to one place that clears it. Inner `Result` = an honest
+/// "can't free that much" answer; outer = a JNI/Java failure.
+#[cfg(target_os = "android")]
+fn try_allocate(
+    env: &mut jni::JNIEnv,
+    context: &jni::objects::JObject,
+    data_dir: &std::path::Path,
+    bytes: u64,
+) -> jni::errors::Result<Result<(), String>> {
+    use jni::objects::{JObject, JValue};
+
+    let service_name: JObject = env.new_string("storage")?.into();
+    let storage_manager = env
+        .call_method(
+            context,
+            "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;",
+            &[JValue::Object(&service_name)],
+        )?
+        .l()?;
+    let dir: JObject = env.new_string(data_dir.to_string_lossy())?.into();
+    let file = env.new_object("java/io/File", "(Ljava/lang/String;)V", &[JValue::Object(&dir)])?;
+    let uuid = env
+        .call_method(
+            &storage_manager,
+            "getUuidForPath",
+            "(Ljava/io/File;)Ljava/util/UUID;",
+            &[JValue::Object(&file)],
+        )?
+        .l()?;
+    // Honest ceiling first: asking beyond getAllocatableBytes always fails, so
+    // check and answer plainly instead of a generic error.
+    let can_free = env
+        .call_method(
+            &storage_manager,
+            "getAllocatableBytes",
+            "(Ljava/util/UUID;)J",
+            &[JValue::Object(&uuid)],
+        )?
+        .j()?
+        .max(0) as u64;
+    if can_free < bytes {
+        return Ok(Err(format!(
+            "Android can clear about {} MB of cached junk — the download needs {} MB. \
+             Removing unused apps or old photos in Settings → Storage will make up the rest.",
+            can_free / 1_048_576,
+            bytes / 1_048_576
+        )));
+    }
+    env.call_method(
+        &storage_manager,
+        "allocateBytes",
+        "(Ljava/util/UUID;J)V",
+        &[JValue::Object(&uuid), JValue::Long(bytes as i64)],
+    )?;
+    Ok(Ok(()))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -339,6 +481,8 @@ pub fn run() {
             chat,
             list_models,
             remove_model,
+            free_up_space,
+            open_storage_settings,
             port_tool
         ])
         .run(build_context())
@@ -376,6 +520,8 @@ mod command_tests {
                 super::chat,
                 super::list_models,
                 super::remove_model,
+                super::free_up_space,
+                super::open_storage_settings,
                 super::port_tool
             ])
             .build(super::build_context())
