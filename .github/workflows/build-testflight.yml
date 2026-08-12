@@ -1,8 +1,9 @@
 name: TestFlight (signed, upload to App Store Connect)
 
-# Signed iOS build → uploaded to TestFlight. Same app as the unsigned iPad test
-# vehicle (build-ipad.yml), but code-SIGNED with the founder's paid Apple
-# Developer account and delivered through TestFlight (no 7-day sideload expiry).
+# Signed iOS build → uploaded to TestFlight. THE iOS build path: code-signed with
+# the founder's paid Apple Developer account, delivered through TestFlight (no
+# 7-day sideload expiry). It replaced the unsigned sideload workflow
+# (build-ipad.yml, retired 2026-08-12 — in git history if ever needed).
 #
 # BOUNDARY: this workflow never contains any credentials. It reads four GitHub
 # repository SECRETS the founder creates once (Settings → Secrets and variables →
@@ -61,9 +62,13 @@ jobs:
         working-directory: app
         run: npx tauri ios init --ci
       - name: Pre-build the Rust library for iOS
-        # Same reasoning as build-ipad.yml: build the staticlib (whisper.cpp +
-        # llama.cpp for aarch64-apple-ios) with cargo directly, in production mode
-        # (custom-protocol → embed the UI, not the dev server).
+        # Build the staticlib (whisper.cpp + llama.cpp for aarch64-apple-ios) with
+        # cargo DIRECTLY, in production mode (custom-protocol → embed the UI, not
+        # the dev server). Why not Xcode's generated "Build Rust Code" phase: that
+        # phase phones home to a parent `tauri ios build` process that doesn't
+        # exist under bare xcodebuild — and `tauri ios build` hard-requires
+        # signing. Without custom-protocol the shipped app looks for a dev server
+        # (observed on-device, ipad-build-3).
         working-directory: app/src-tauri
         run: cargo build --lib --release --target aarch64-apple-ios --features tauri/custom-protocol
       - name: Point the Xcode project at the prebuilt library

@@ -54,6 +54,8 @@ TestFlight remains viable for early distribution. All of the above reflects iOS 
 
 **Deliberate deviation (2026-07-04, flagged per CLAUDE.md): the iPad test build.** The founder's Mac (8 GB) can no longer exercise the 4B chat model, and his iPad is the only available device that can — so we are building a **temporary iPad port of the existing Tauri app** (bundled whisper.cpp/llama.cpp + downloaded GGUF) purely as a **test vehicle** for the chat/transcription stack. This contradicts the thin-decider strategy above and is *not* a change of strategy: it exists to answer `[OQ-64]` (does the ByteShape 4B load and feel usable) while the Mac can't, and it inherits iOS's real constraints — the per-app memory ceiling (jetsam) may cap the 4B regardless of device RAM, and the in-process ggml-abort risk (`[OQ-58]`) applies unchanged. Tracked as `[OQ-65]`; the strategy of record for a *shippable* iOS product remains thin-decider-over-Apple's-stack.
 
+**Resolution (2026-08-12) — graduated, then retired.** The test vehicle did its job: the 4B loads and generates on the iPad (`[OQ-64]`, 2026-07-27), whisper/llama cross-compile for `aarch64-apple-ios`, and the mic works. iOS graduated to the **signed TestFlight channel** (`build-testflight.yml`); the unsigned-sideload workflow was deleted (git history is the archive). `[OQ-65]` is closed. **Unchanged:** TestFlight is still a *test* channel — the shippable-iOS decision remains this file's thin-decider strategy, not "the Tauri port is the product."
+
 ## Open questions
 
 - [OQ-23] Current Apple Developer Program pricing, notarization policy changes in 2026.
