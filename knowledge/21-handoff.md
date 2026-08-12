@@ -60,12 +60,13 @@ Green: decider + website suites pass locally; porter Rust suite (44 unit tests i
 ## How to build / ship (no local toolchain needed)
 
 The founder's Mac has **no Xcode CLT and tight disk**, so everything builds in CI:
-- Push to `mvp-porter-buzz` → CI runs (`.github/workflows/ci.yml`): decider+website (Linux), porter (macOS, incl. `cargo test` + x86_64 cross-compile check + model-URL reachability).
+- **Ship everywhere at once: `git tag release-N && git push origin release-N`** — one tag triggers the macOS `.dmg`, the TestFlight upload, and the Android test APK from the same commit. **Use this by default**; reach for a per-platform tag only when iterating on one platform. (Added 2026-08-12 after iOS silently sat three weeks behind: per-platform tags meant "shipped" was really "shipped to whichever platform I remembered".) The Play `.aab` is deliberately *not* on `release-*` — it stays a manual `android-play-N` until its signing secrets exist.
+- Push to `mvp-porter-buzz` → CI runs (`.github/workflows/ci.yml`): decider+website (Linux), porter (macOS: `cargo test` + x86_64 **and iOS** cross-compile checks + model-URL reachability), porter-android (Linux: `aarch64-linux-android` compile check). **All three platforms now compile-check on every push**, so a platform-specific break surfaces immediately rather than at tag time.
 - **macOS Intel app:** `git tag app-build-N && git push origin app-build-N` → `build-app.yml` → `verdure-porter-macos-intel` (.dmg/.app). Install: `gh run download <run-id> -n verdure-porter-macos-intel`, mount, copy to /Applications, `xattr -cr`, open.
 - **iPad via TestFlight** (the current iOS channel, `[OQ-65]`): `git tag testflight-N` → `build-testflight.yml` signs with the founder's App Store Connect API key (GitHub secrets: `ASC_API_KEY_P8`/`ASC_API_KEY_ID`/`ASC_API_ISSUER_ID`/`APPLE_TEAM_ID`) and uploads. iOS bundle ID is `ai.verdure.porter.898PY37K5S` to match the App Store record. Test vehicle only — the shippable iOS strategy stays `11`'s thin-decider.
 - **Android test APK** (`[OQ-66]`): `git tag android-build-N` → `build-android.yml` (Linux runners) → test-signed `.apk` (throwaway CI key — uninstall before installing a differently-signed build).
 - **Android Play open testing:** `git tag android-play-N` → `build-android-play.yml` → signed `.aab` via the persistent upload keystore (secrets pending founder-side). Both Android workflows share `app/scripts/patch-android-project.py` (manifest + mic wiring), so they cannot diverge.
-- Legacy unsigned iOS path (`ipad-build-N` → unsigned .ipa, 7-day sideload) is superseded by TestFlight.
+- Legacy unsigned iOS path (`ipad-build-N` → unsigned .ipa, 7-day sideload) is superseded by TestFlight. **Retirement pending a founder call** — `[OQ-65]`'s own exit condition ("retired or graduated deliberately") is met, and deleting `build-ipad.yml` would remove ~158 lines and the last duplicated iOS project-patching. Kept until confirmed there's no remaining need for unsigned sideloads.
 - Key fix in place: `app/src-tauri/.cargo/config.toml` forces `MACOSX_DEPLOYMENT_TARGET=10.15` so whisper/llama cross-compile.
 
 ## Environment constraints (carry forward)

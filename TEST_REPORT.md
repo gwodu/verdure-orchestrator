@@ -4,6 +4,16 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-08-12 — CI coverage: all three platforms compile-checked on every push
+
+**Change (harness, not product):** the porter job gained `cargo check --target aarch64-apple-ios`; a new `porter-android` job (Linux, NDK clang wired explicitly for bare cargo) runs `cargo check --target aarch64-linux-android`. Both are path-filtered on `app/**`/`packages/decider/**` like the existing job.
+
+**Gap this closes:** `cfg(target_os = "ios"/"android")` code — the JNI mic + storage bridges, the iOS jetsam probes, the non-macOS `ureq` download path — previously compiled *only* when a tag build ran. A type error there merged green and failed days later at ship time (the pattern that cost Android build round 1). Now it fails on the push that introduces it.
+
+**Deliberately check-only:** no bundling, signing, or packaging in CI — those stay tag-triggered. `cargo check` still runs the C++ build scripts (whisper.cpp/llama.cpp compile), which is where the real cross-platform risk lives.
+
+**Verified:** YAML structure asserted locally (4 jobs, each with `runs-on`); the checks themselves verified by the push — CI is the compiler here, per `testing.md`.
+
 ### 2026-08-12 — Space recovery ([OQ-67]: partials, old-model offer, Android make-room)
 
 **Unit tests written (1):** `list_surfaces_an_interrupted_partial_download` — writes a fake `.part`, asserts `list()` reports its exact bytes with `installed: false`, then asserts `remove()` reclaims it even though the model was never fully installed (the reclaim path users actually need). Existing `list_reports_not_installed_for_empty_dir` extended to assert `partial_bytes == 0`.
