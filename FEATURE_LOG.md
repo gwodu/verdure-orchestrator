@@ -6,6 +6,24 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-08-12 — Chat memory: the conversation is finally remembered ([OQ-59])
+
+**What:** the chat now remembers the conversation. Three parts of one mechanism (`knowledge/22`): prior turns are sent in the model's own chat template; the model's weights stay **resident** across messages instead of being re-read from disk every turn; and when the window fills, the **oldest whole turns** are dropped — never a partial turn, which would leave a dangling marker and corrupt the structure the model relies on.
+
+**The diagnosis that shaped it:** the chat had no memory *and it was never a context-length problem*. `decide()` built a prompt of exactly `SYSTEM + one user message`, so the 1024-token window sat nearly empty every single turn. The first fix cost nothing from the memory budget — send the turns we already had.
+
+**Sized per device AND per model.** KV-cache cost is exact arithmetic (`2 × layers × kv_heads × head_dim × 2 bytes`), and our models differ by more than 10× — ~12 KB/token on the 0.5B, ~144 KB on the 4B. One hardcoded `n_ctx` was therefore simultaneously too stingy for the small model and too risky for the large one. The window is capped at 4096 by *prefill time* (CPU-bound), not only by memory.
+
+**All three platforms, one formula.** Sizing reads `available_ram_mb`, which each platform already computes its own honest way (macOS `vm_stat`, iOS `os_proc_available_memory()` = real jetsam headroom, Android `MemAvailable`). A tighter device simply gets a smaller window. No per-platform memory code was added.
+
+**User impact:** after this change the user can refer back to what they just said ("what did I ask you?", "make that shorter") and the model actually knows — because the conversation it can see is the conversation it receives. Replies are also faster after the first, since the weights are no longer re-read per message.
+
+**No new setting.** There is deliberately no context-length control: it is the jargon knob Verdure exists to delete (`skills/design.md`). The window is computed silently. If a control is ever added it should be "Remember our conversations: on/off" — a privacy choice the user genuinely owns — and that belongs with cross-session persistence, which is a separate change.
+
+**Deliberately not done:** summarizing evicted turns (`[OQ-68]` — costs an extra model call per fold), releasing the resident model when backgrounded (`[OQ-69]` — benign failure mode for now), KV-cache reuse across turns (needs a self-referential struct; measure before adding that complexity).
+
+**Verification:** 8 new Rust unit tests over the pure logic (budget arithmetic, eviction, both prompt templates); tsc + vite clean; compiled and tested in CI on macOS, plus the new iOS and Android cross-compile checks.
+
 ### 2026-08-12 — "Midnight glass" visual identity (styles.css + design.md)
 
 **What:** full retheme from the prairie-daylight palette to the brand video's world — deep-space navy gradient background, frosted-glass panels (`backdrop-filter` blur + mint-tinged borders + glow shadows), mint CTAs as glowing pills with dark ink (never white-on-mint), the VERDURE wordmark as wide-tracked serif with a mint gradient and a one-shot glint sweep, drifting glass orbs in the background, and a staggered fade-up on entry. Palette measured from the video with ffmpeg palettegen (`#021329` navy family, `#34c69a`/`#4cd8ad`/`#b7f3e6` mint family, `#479e96` sea-teal), not eyeballed. Warn/danger moved to warm coral (`#ff9d8a`) — the brick-red vanished on navy. Fonts unchanged and now documented as a decision: `ui-rounded` body + `ui-serif` display is the exact pairing the video uses, and system faces keep the app free of font downloads.

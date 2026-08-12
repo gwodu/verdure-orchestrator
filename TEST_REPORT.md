@@ -4,6 +4,21 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-08-12 — Chat memory (`llm.rs`: budget, eviction, prompt assembly)
+
+**Unit tests written (5 new, 8 total in `llm.rs`).** All over pure logic, no model loaded:
+- `context_scales_with_what_the_device_can_spare` — a roomy device with a cheap KV cache is capped by `MAX_CONTEXT` (prefill time, not memory); a tight device with the 4B's expensive cache gets a real but smaller window; zero spare never drops below `MIN_CONTEXT`; and the window never exceeds what the model was trained for.
+- `spare_memory_subtracts_weights_and_headroom` — including the underflow case: a machine tighter than the headroom yields 0, not a panic.
+- `history_is_kept_newest_first_and_whole` — what's retained is always a **suffix** of the conversation (recency, no holes in the middle), and a window with no room for history still answers the question.
+- `prompt_carries_prior_turns_in_order` — history precedes the new message, and turn markers are balanced (the assertion that would catch a dangling half-turn).
+- `gemma_prompt_carries_history_without_a_system_role` — the instruction rides the first user turn and appears **exactly once** however long the history grows (the bug a naive per-turn loop would introduce).
+
+**Design choice that made this testable:** `first_kept_turn` takes the token-cost function as a parameter. Production passes the model's real tokenizer (an undercount would overflow the window mid-generation); tests pass a word counter, so eviction is verified deterministically without a 400 MB download.
+
+**Edge cases caught while writing:** the Gemma branch originally used an empty-slice trick to handle "no history," which was correct but easy to break — restructured to a single `split_first` match with one exit. The reserve (`MAX_NEW_TOKENS + 128`) is subtracted *before* history selection so memory can never crowd out the reply itself.
+
+**Verified:** `cargo test` in CI (macOS), plus `cargo check` for `aarch64-apple-ios` and `aarch64-linux-android` — the cross-target checks added earlier the same day, doing exactly the job they were added for.
+
 ### 2026-08-12 — CI coverage: all three platforms compile-checked on every push
 
 **Change (harness, not product):** the porter job gained `cargo check --target aarch64-apple-ios`; a new `porter-android` job (Linux, NDK clang wired explicitly for bare cargo) runs `cargo check --target aarch64-linux-android`. Both are path-filtered on `app/**`/`packages/decider/**` like the existing job.
