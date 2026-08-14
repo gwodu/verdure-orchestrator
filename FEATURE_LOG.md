@@ -6,6 +6,30 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-08-14 — Beta feedback: three fixes (batch overflow, doubled dictation, confabulation)
+
+First round of real beta-tester reports, all three real:
+
+**1. "It ran out of context — then said so instead of offloading."** A regression from the chat-memory work. `LlamaBatch::new(512, 1)` is a fixed-capacity buffer; before memory, prompts were one message and never approached it, but once history was included they routinely exceeded 512 tokens, `batch.add` failed, and the raw engine error reached the user. **Eviction was working correctly** — the window was sized fine; the batch couldn't hold what the window allowed. Prefill now decodes in `n_batch`-sized chunks (position tracked across them, logits only on the true final token), plus a last-resort clamp for a single message too long to evict (keeps the tail rather than failing).
+
+**2. "The mic keeps transcribing the same output twice."** Leaked event listeners. `startLiveTranscription` registers four listeners and returns a cleanup, but the `onError` path and the 30-second watchdog both ended sessions without calling it — so the next session added a second set and every `live:segment` was handled twice. Sticky: one mic error poisoned every later session until navigation. Every exit path now releases, plus a release at session *start* (the cleanup handle is only assigned once the start promise resolves, so an error mid-start could slip past the per-path fix).
+
+**3. "It keeps giving fake facts."** The characteristic failure of a 0.5B–4B model, not a patchable bug — but the prompt was making it worse: asking only for answers that are "direct, clear and concise" reads to a small model as *always produce a confident answer*, and it complies by inventing one. The instruction now states plainly that "I'm not sure" is a good answer and asks for hedging on dates, numbers, names and quotes — the specifics this tier gets wrong most confidently. **Lowers confabulation; does not eliminate it.**
+
+**Fallout worth keeping:** the instruction tripled in length, which would have silently eaten the history budget. The token reserve is no longer a hardcoded constant — it is the reply budget plus the instruction *tokenized on the actual model* plus slack, so changing the prompt can never quietly cost conversation memory again.
+
+**Verification:** CI green (macOS `cargo test` + iOS/Android cross-compile checks); tsc + vite clean. On-device confirmation of all three pending the next build.
+
+### 2026-08-14 — Mobile builds shipped Tauri's logo, not ours (icon pipeline fix)
+
+**What:** every iOS and Android build since June shipped **Tauri's** yellow/cyan logo on the home screen, despite correct icons in the repo. `gen/` is regenerated from Tauri's template on every CI build (nothing under it is committed), and `tauri <platform> init` scaffolds with the *template's* icons — `src-tauri/icons/` was never consulted. (`tauri icon` updates an existing `gen/` project; in CI the project is created afterwards.) New `app/scripts/install-icons.py` copies our icons in after init, wired into all three mobile workflows.
+
+**Found by:** extracting the shipped `.ipa` and `.apk` and looking inside — not by reading repo files. An earlier check of the repo icons concluded "Android is fine", which was wrong precisely because source and artifact had diverged. **The lesson kept in `skills/design.md`: when the question is "what does the user see", verify the artifact.**
+
+**Fails loudly now:** the script exits non-zero if no generated project is found, or if iOS's asset catalog references a filename we didn't supply. A red job costs one push; the silent version cost six builds.
+
+**Verification:** icons extracted from the `release-11` IPA and APK and visually confirmed — mint V on both.
+
 ### 2026-08-14 — App icon: a mint V on navy (replaces the stock Tauri mark)
 
 **What:** Verdure has its own icon — a single mint **V** on the app's own navy background, lit by a soft mint glow, using the "midnight glass" palette exactly (`#34c69a`→`#4cd8ad` gradient on `#050f1e`/`#0c253e`). Regenerated for every platform: macOS `.icns`, Windows `.ico`, the iOS AppIcon set, and all Android mipmaps including the adaptive-icon foregrounds.

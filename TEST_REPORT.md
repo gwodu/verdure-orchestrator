@@ -4,6 +4,18 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-08-14 — Beta-fix round (`llm.rs` batch/reserve, `main.ts` listener lifecycle)
+
+**Unit tests written (2 new):**
+- `prompt_cap_always_leaves_room_to_answer` — across `MIN_CONTEXT`/1024/2048/`MAX_CONTEXT`, the prompt cap always reserves the reply budget and never clamps the prompt to nothing. This is the guard for the beta-reported hard failure.
+- Extended `history_is_kept_newest_first_and_whole` with a large-reserve case: a bigger system instruction must cost **history**, never the reply — the regression guard for growing the prompt again.
+
+**Why the original tests missed the batch bug (worth recording):** they cover the pure *selection* logic and never allocate a `LlamaBatch`. The failure lived in the gap between "which turns fit the window" (tested, correct) and "can the batch hold them" (untested). The lesson is that a budget test is not a capacity test — they are different limits and both need asserting.
+
+**Not unit-testable here:** the chunked prefill itself (needs a loaded model + real batch — FFI territory per `testing.md` rule 1) and the frontend listener lifecycle (`main.ts` has no unit harness). Both are verified by CI compilation plus on-device use; the listener fix is deliberately belt-and-braces (release on every exit path *and* at session start) precisely because it cannot be asserted in a test.
+
+**Verified:** CI green — macOS `cargo test`, `aarch64-apple-ios` and `aarch64-linux-android` cross-compile checks; `tsc` + `vite build` clean.
+
 ### 2026-08-12 — Chat memory (`llm.rs`: budget, eviction, prompt assembly)
 
 **Unit tests written (5 new, 8 total in `llm.rs`).** All over pure logic, no model loaded:
