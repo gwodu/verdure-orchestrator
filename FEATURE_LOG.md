@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-08-14 — App icon: a mint V on navy (replaces the stock Tauri mark)
+
+**What:** Verdure has its own icon — a single mint **V** on the app's own navy background, lit by a soft mint glow, using the "midnight glass" palette exactly (`#34c69a`→`#4cd8ad` gradient on `#050f1e`/`#0c253e`). Regenerated for every platform: macOS `.icns`, Windows `.ico`, the iOS AppIcon set, and all Android mipmaps including the adaptive-icon foregrounds.
+
+**Why:** the icon was still the default Tauri logo from the June scaffold — a white infinity mark that belongs to the framework, not to Verdure. It was the last surface still wearing someone else's identity after the midnight-glass retheme.
+
+**Design decisions worth keeping:** the mark is legible at **32px** (verified against the real generated file, magnified nearest-neighbour, not judged from the 1024 master) — one heavy shape, no detail to lose. Padding clears both the iOS squircle and the Android circle mask. **Two masters:** a full-bleed square for the platforms that apply their own mask, and a rounded-rect variant for the macOS `.icns`, which macOS displays unmasked.
+
+**Reproducible, not a mystery binary:** `app/scripts/make-icon.py` carries the palette and geometry and regenerates both masters; the spec is in `skills/design.md` ("Visual identity"). Changing the brand color means editing three constants, not opening a graphics editor.
+
+**Verification:** rendered and reviewed at 32/64/128px. Ships on the next tag build — icons are bundled at package time, so `release-9` (already out) still carries the old mark.
+
 ### 2026-08-12 — Chat memory: the conversation is finally remembered ([OQ-59])
 
 **What:** the chat now remembers the conversation. Three parts of one mechanism (`knowledge/22`): prior turns are sent in the model's own chat template; the model's weights stay **resident** across messages instead of being re-read from disk every turn; and when the window fills, the **oldest whole turns** are dropped — never a partial turn, which would leave a dangling marker and corrupt the structure the model relies on.

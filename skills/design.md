@@ -119,6 +119,25 @@ motion decorates entry, never gates it.
 **Contrast floor:** body text on the darkest navy ≥ 7:1; captions ≥ 4.5:1; mint
 on navy is display/accent, not long-form text color.
 
+**The app icon (2026-08-14):** a single mint **V** on the app's own navy, lit by
+a soft mint glow — the wordmark's first letter, not a symbol to decode. It
+replaced the stock Tauri mark. Rules that make it work:
+
+- *Legible at 32px first.* The stroke is heavy (≈13% of the canvas) and the mark
+  is one shape. A logo is designed at the smallest size it will ever appear; if it
+  survives the Finder sidebar it survives everywhere. Verify by rendering the
+  actual generated `32x32.png` magnified with nearest-neighbour — never judge it
+  from the 1024px master.
+- *Generous padding.* iOS applies a squircle mask and Android a circular one; the
+  V clears both by a wide margin, so no platform crops a stroke.
+- *Two masters, one mark.* `source-square.png` feeds iOS/Android/Windows (their
+  OS applies the mask); `source-rounded.png` feeds the macOS `.icns`, which is
+  displayed unmasked and would otherwise look like a sharp-cornered tile.
+- Regenerate with `python3 app/scripts/make-icon.py` (writes both masters), then
+  `npx tauri icon <square>` for every platform size, then rebuild `icon.icns`
+  from the rounded master via `sips` + `iconutil`. The script carries the palette
+  and geometry, so the icon is reproducible rather than a binary nobody can edit.
+
 ## Self-check before declaring a UI change done
 
 - Have I written the user-impact statement?
