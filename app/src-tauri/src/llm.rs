@@ -45,9 +45,11 @@ const MAX_CONTEXT: u32 = 4096;
 /// Headroom left for the OS + WebView when sizing the window, MB. The 8 GB Mac
 /// runs the WebView alongside us; overshooting here is what ggml-aborts the app.
 const CONTEXT_HEADROOM_MB: u64 = 700;
-/// Tokens reserved for the reply plus the system instruction and turn markers,
-/// so history selection can never crowd out the answer itself.
-const RESERVED_TOKENS: usize = MAX_NEW_TOKENS as usize + 128;
+/// Slack on top of the reply budget and the (measured) system instruction, to
+/// cover turn markers and tokenizer variance. The instruction itself is no longer
+/// guessed at — it is tokenized at call time, so growing it can't silently start
+/// crowding out history (it grew from ~30 to ~90 tokens on 2026-08-14).
+const RESERVE_SLACK_TOKENS: usize = 48;
 /// Per-turn template overhead (`<|im_start|>user … <|im_end|>` ×2 and friends).
 /// Deliberately generous — undercounting overflows the window, overcounting only
 /// costs one turn of history.
@@ -75,7 +77,25 @@ pub struct ToolDecision {
 
 /// Plain conversational instruction — no JSON, no tools. Same across families;
 /// only the turn framing differs (knowledge/03).
-const SYSTEM: &str = "You are Verdure, a warm and helpful personal AI that runs entirely on the user's own device. Answer the user's message directly, clearly, and concisely.";
+/// The instruction, and the one lever we have against confabulation.
+///
+/// A beta tester reported "it keeps giving fake facts" (2026-08-14). That is the
+/// characteristic failure of this model tier, not a bug we can patch out — but the
+/// prompt was making it worse by asking only for answers that are "direct, clear
+/// and concise", which reads as *always produce a confident answer*. Small models
+/// comply, and invent one when they don't know.
+///
+/// So the instruction now licenses uncertainty explicitly, and asks for hedging on
+/// specifics (dates, numbers, names) — the details these models get wrong most and
+/// state most confidently. This does not eliminate confabulation; it lowers it,
+/// and it makes the honest answer an allowed one. Verdure would rather say "I'm
+/// not sure" than sell a confident wrong answer (knowledge/06, honest
+/// expectations; skills/copywriting.md, conversion through trust).
+const SYSTEM: &str = "You are Verdure, a warm and helpful personal AI that runs entirely on the user's own device. \
+Answer directly, clearly, and concisely. \
+If you do not know something, or you are not sure, say so plainly instead of guessing — \"I'm not sure\" is a good answer. \
+Never invent facts, dates, numbers, names, quotes, or sources. \
+When you are uncertain about a specific detail, say that you are uncertain rather than stating it as fact.";
 
 /// One completed exchange. The conversation the user can see IS the memory —
 /// the frontend owns the transcript and passes back the part that still fits
@@ -129,10 +149,11 @@ pub(crate) fn first_kept_turn(
     history: &[Turn],
     new_message: &str,
     n_ctx: u32,
+    reserved: usize,
     cost: &dyn Fn(&str) -> usize,
 ) -> usize {
     let budget = n_ctx as usize;
-    let mut used = RESERVED_TOKENS + cost(new_message);
+    let mut used = reserved + cost(new_message);
     let mut first = history.len();
     for (i, turn) in history.iter().enumerate().rev() {
         let turn_cost = cost(&turn.user) + cost(&turn.assistant) + TURN_MARKUP_TOKENS;
@@ -279,7 +300,10 @@ pub fn decide(
             .map(|t| t.len())
             .unwrap_or_else(|_| s.len() / 3 + 1)
     };
-    let keep_from = first_kept_turn(history, user_message, n_ctx, &cost);
+    // Reserve = the reply budget + what the instruction actually costs on THIS
+    // model's tokenizer + slack. Measured, not assumed.
+    let reserved = MAX_NEW_TOKENS as usize + cost(SYSTEM) + RESERVE_SLACK_TOKENS;
+    let keep_from = first_kept_turn(history, user_message, n_ctx, reserved, &cost);
     let prompt = format_chat_prompt(&history[keep_from..], user_message, style);
     let mut tokens = model
         .str_to_token(&prompt, add_bos_for(style))
@@ -426,17 +450,24 @@ mod tests {
             turn("middle question here", "middle answer here"),
             turn("newest question here", "newest answer here"),
         ];
+        // A representative reserve (reply budget + instruction + slack); the real
+        // one is measured against the model's tokenizer at call time.
+        const RESERVE: usize = 300;
         // Budget for everything → keep all three.
-        assert_eq!(first_kept_turn(&history, "hi", 4096, &words), 0);
+        assert_eq!(first_kept_turn(&history, "hi", 4096, RESERVE, &words), 0);
         // A window that fits only the reserve + the newest turn or two: whatever
         // is kept must be a SUFFIX (the most recent), never a hole in the middle.
-        let keep = first_kept_turn(&history, "hi", RESERVED_TOKENS as u32 + 30, &words);
+        let keep = first_kept_turn(&history, "hi", RESERVE as u32 + 30, RESERVE, &words);
         assert!(keep > 0 && keep <= history.len(), "got {keep}");
         // No room for any history at all → keep none, still answer the question.
         assert_eq!(
-            first_kept_turn(&history, "hi", MIN_CONTEXT.min(RESERVED_TOKENS as u32), &words),
+            first_kept_turn(&history, "hi", RESERVE as u32, RESERVE, &words),
             history.len()
         );
+        // A bigger instruction (larger reserve) must cost HISTORY, never the reply
+        // — the regression guard for growing the system prompt again.
+        let tight = first_kept_turn(&history, "hi", 4096, 4000, &words);
+        assert_eq!(tight, history.len(), "a large reserve must evict history");
     }
 
     #[test]
