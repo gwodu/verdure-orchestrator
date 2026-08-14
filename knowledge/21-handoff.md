@@ -22,7 +22,7 @@ Verified on-device (founder's 2019 Intel Mac 8 GB, iPad via TestFlight, Pixel 8a
 - **UI** — chat-first layout (2026-07-17); **"midnight glass" visual identity shipped 2026-08-12** (deep navy + aurora mint + frosted glass, from the founder's brand video; canonical spec in `skills/design.md` "Visual identity"). Entry animations are CSS-only and reduced-motion-safe. Blur performance on the 2019 Intel Mac unverified until the next `app-build-N`.
 - **Distribution** — macOS Intel .dmg via `app-build-N` tags; **iOS via TestFlight** (signed, no expiry, `testflight-N` tags); **Android test APK** via `android-build-N` tags; **Play open-testing workflow ready** (`build-android-play.yml`, signed .aab) but ungated founder-side steps remain — see Next steps.
 
-Green: decider + website suites pass locally; porter Rust suite (44 unit tests incl. segmenter, model gating, prompt styles, Android meminfo parser) compiles and runs in CI. **Last green CI: `d4e861d` (2026-08-04), the branch tip.**
+Green: decider + website suites pass locally; the porter Rust suite (segmenter, model gating, prompt styles, chat-memory budget/eviction, Android meminfo parser) compiles and runs in CI — which now also compile-checks **iOS and Android on every push**, not only at tag time. **Last green CI: the branch tip (2026-08-14, the beta-fix round).**
 
 ## Doctrine (current — supersedes the pre-pivot files)
 
@@ -42,7 +42,7 @@ Green: decider + website suites pass locally; porter Rust suite (44 unit tests i
 **Gaps / debt ⚠️ (fix to stay in line)**
 1. **Naming — now deadline-bound.** The crate/binary/identifier are still `verdure-porter` / `ai.verdure.porter`, and **the first Play upload makes the Android package name permanent** (`[OQ-66]` 2026-08-03 note). Decide the rename (`[OQ-60]`) *before* that upload; the desktop crate/data-dir rename can follow with a migration plan.
 2. **Robustness — ggml aborts the whole app.** A model OOM/error calls `abort()` (SIGABRT) and kills the GUI instead of surfacing an error. The durable fix is **process isolation** for the model runtime (`[OQ-58]`). P0 before real users.
-3. **Chat reloads the model from disk every message.** `llm::decide` still does `load_from_file` + new context per call. Needs a **resident model/session** in Tauri state, which also unlocks conversational memory (`[OQ-59]`).
+3. ~~Chat reloads the model every message~~ — **resolved 2026-08-12** (`[OQ-59]`, `knowledge/22`): weights are resident in Tauri state across messages. Remaining refinement: the llama *context/KV cache* is still rebuilt per turn, so history is re-prefilled; holding it needs a self-referential struct and is gated on a measurement, not a guess.
 4. **Legacy porter is transitional scaffolding.** `catalog.rs`, `porter.rs`, `port_tool` remain registered; the old recommendation flow (`renderHome`) is retained but unreachable. Decide keep-as-fallback vs remove (`[OQ-60]`); un-wrapped intents should show an honest "coming soon."
 5. **Capabilities-as-tools is currently OFF.** Tool-calling was removed on on-device evidence (2026-07-27); the "apps for AI" step one (`20`) is deferred until it can come back constrained + process-isolated (`[OQ-55]`, depends on `[OQ-58]`).
 
