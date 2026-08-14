@@ -109,6 +109,14 @@ pub fn spare_for_context_mb(available_mb: u64, weights_mb: u32) -> u64 {
         .saturating_sub(CONTEXT_HEADROOM_MB)
 }
 
+/// How many prompt tokens can be decoded while still leaving room to answer.
+/// Pure, so the clamp that prevents "ran out of context" is unit-tested.
+pub(crate) fn max_prompt_tokens(n_ctx: u32) -> usize {
+    // Leave the reply budget plus a couple of tokens of slack; never return 0,
+    // or a prompt would be clamped out of existence.
+    (n_ctx as usize).saturating_sub(MAX_NEW_TOKENS as usize + 8).max(16)
+}
+
 /// Which of the most recent turns fit — returns the index into `history` of the
 /// first turn to KEEP (`history.len()` = keep none). Pure: the token cost
 /// function is injected, so eviction is unit-tested without loading a model.
@@ -273,19 +281,39 @@ pub fn decide(
     };
     let keep_from = first_kept_turn(history, user_message, n_ctx, &cost);
     let prompt = format_chat_prompt(&history[keep_from..], user_message, style);
-    let tokens = model
+    let mut tokens = model
         .str_to_token(&prompt, add_bos_for(style))
         .map_err(|e| format!("couldn't read the message: {e}"))?;
 
-    let mut batch = LlamaBatch::new(512, 1);
-    let last_idx = tokens.len() as i32 - 1;
-    for (i, token) in (0_i32..).zip(tokens.iter()) {
-        batch
-            .add(*token, i, &[0], i == last_idx)
-            .map_err(|e| e.to_string())?;
+    // Last-resort clamp. Eviction drops whole TURNS, so it cannot shrink a single
+    // enormous message — and a prompt that doesn't fit used to surface a raw
+    // engine error to the user ("ran out of context", reported by a beta tester on
+    // build 11). Keep the TAIL: the newest words plus the assistant cue, which is
+    // what the model needs to answer. A clipped instruction beats a hard failure.
+    let cap = max_prompt_tokens(n_ctx);
+    if tokens.len() > cap {
+        tokens = tokens.split_off(tokens.len() - cap);
     }
-    ctx.decode(&mut batch)
-        .map_err(|e| format!("chat failed: {e}"))?;
+
+    // Prefill in n_batch-sized chunks. The batch is a fixed-capacity buffer, NOT
+    // the context: a 512-token batch cannot swallow a 2000-token conversation, and
+    // trying was the actual bug behind that report. Chunking decouples how much
+    // history we can carry from how much we can decode at once.
+    let mut batch = LlamaBatch::new(N_BATCH as usize, 1);
+    let last_idx = tokens.len().saturating_sub(1);
+    let mut pos: i32 = 0;
+    for chunk in tokens.chunks(N_BATCH as usize) {
+        batch.clear();
+        for token in chunk {
+            let is_last = pos as usize == last_idx;
+            batch
+                .add(*token, pos, &[0], is_last)
+                .map_err(|e| e.to_string())?;
+            pos += 1;
+        }
+        ctx.decode(&mut batch)
+            .map_err(|e| format!("chat failed: {e}"))?;
+    }
 
     // Real sampling — NOT pure greedy, and crucially NO grammar sampler (see the
     // module note: the grammar path can `ggml_abort()` the whole app). Greedy
@@ -305,7 +333,10 @@ pub fn decide(
     ]);
 
     let mut reply = String::new();
-    let mut n_cur = batch.n_tokens();
+    // Position of the next token in the CONTEXT, not in the batch — `batch` now
+    // holds only the final prefill chunk, so its length is no longer the count of
+    // everything decoded. `pos` tracked that across the chunks.
+    let mut n_cur = pos;
     for _ in 0..MAX_NEW_TOKENS {
         let token = sampler.sample(&ctx, batch.n_tokens() - 1);
         sampler.accept(token);
@@ -362,6 +393,23 @@ mod tests {
         assert_eq!(context_for_budget(0, 144, 32768), MIN_CONTEXT);
         // Never exceed what the model was trained for, however much RAM there is.
         assert_eq!(context_for_budget(100_000, 12, 2048), 2048);
+    }
+
+    #[test]
+    fn prompt_cap_always_leaves_room_to_answer() {
+        // The regression this guards (beta report, build 11): a prompt that fills
+        // the window left nothing to generate into and surfaced a raw engine
+        // error. The cap must always reserve the reply budget…
+        for n_ctx in [MIN_CONTEXT, 1024, 2048, MAX_CONTEXT] {
+            let cap = max_prompt_tokens(n_ctx);
+            assert!(
+                cap + MAX_NEW_TOKENS as usize <= n_ctx as usize,
+                "n_ctx={n_ctx} cap={cap} leaves no room to reply"
+            );
+            assert!(cap > 0, "n_ctx={n_ctx} clamped the prompt out of existence");
+        }
+        // …and stay sane even if a device somehow reports a tiny window.
+        assert!(max_prompt_tokens(64) >= 16);
     }
 
     #[test]
