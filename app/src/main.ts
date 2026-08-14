@@ -603,6 +603,14 @@ function renderChat(): void {
   // Begin dictation. `needsInstall` shows the one-time speech-model download
   // notice; it clears as soon as the first words come back.
   const startDictation = async (needsInstall: boolean) => {
+    // Belt and braces: never stack sessions. `liveCleanup` is only assigned once
+    // the start promise resolves, so an error arriving mid-start could otherwise
+    // slip past the per-path cleanup below. Releasing here means a second set of
+    // listeners can never accumulate, whatever went wrong last time.
+    if (liveCleanup) {
+      liveCleanup();
+      liveCleanup = null;
+    }
     setPreparing(); // neutral — NOT red — until capture is actually live
     status.textContent = needsInstall ? "Setting up speech-to-text…" : "Getting the microphone ready…";
     let note: HTMLElement | null = needsInstall
@@ -619,10 +627,21 @@ function renderChat(): void {
     // Watchdog: if capture never reaches "listening" (e.g. microphone permission
     // wasn't granted), don't hang silently — surface a clear, actionable message.
     let live = false;
+    // Every path out of a session MUST release the listeners. Leaving them
+    // attached meant the next session added a second set, and each `live:segment`
+    // was then handled twice — the "transcribes the same thing twice" beta report.
+    // It was sticky: one mic error poisoned every later session until navigation.
+    const releaseListeners = () => {
+      if (liveCleanup) {
+        liveCleanup();
+        liveCleanup = null;
+      }
+    };
     const watchdog = window.setTimeout(() => {
       if (live || !preparing) return;
       note?.remove();
       void stopLiveTranscription();
+      releaseListeners();
       setRecording(false);
       status.textContent =
         "Couldn't reach the microphone. Please allow microphone access — Settings › Apps › Verdure › Permissions › Microphone — then tap the mic again.";
@@ -651,6 +670,7 @@ function renderChat(): void {
             window.clearTimeout(watchdog);
             note?.remove();
             status.textContent = m;
+            releaseListeners(); // an error ends the session too — don't leak
             setRecording(false);
           },
           onStopped: () => {
@@ -658,10 +678,7 @@ function renderChat(): void {
             note?.remove();
             setRecording(false);
             status.textContent = "";
-            if (liveCleanup) {
-              liveCleanup();
-              liveCleanup = null;
-            }
+            releaseListeners();
             input.focus();
           },
         }),
