@@ -464,8 +464,10 @@ mod tests {
             history.len()
         );
         // A bigger instruction (larger reserve) must cost HISTORY, never the reply
-        // — the regression guard for growing the system prompt again.
-        let tight = first_kept_turn(&history, "hi", 4096, 4000, &words);
+        // — the regression guard for growing the system prompt again. The reserve
+        // has to leave less than one turn (18 "tokens" here) for this to bite; an
+        // earlier version left 96 and the turns legitimately fit.
+        let tight = first_kept_turn(&history, "hi", 4096, 4090, &words);
         assert_eq!(tight, history.len(), "a large reserve must evict history");
     }
 
