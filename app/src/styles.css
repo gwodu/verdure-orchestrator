@@ -940,3 +940,14 @@ body::after {
    under a model that doesn't fit the disk. */
 .pick-help { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: 0 14px 12px 46px; }
 .pick-help .link { font-size: 13px; }
+
+/* Where models live (Storage). Quiet by design — reference information, not an
+   action. On macOS it's the only way a user can find files the app leaves behind. */
+.where { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.where-label { font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--ink-soft); }
+.where-path { font-size: 12.5px; color: var(--mint-bright); word-break: break-all;
+  background: rgba(5, 15, 30, 0.5); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 10px; max-width: 100%; }
+.where-note { font-size: 13px; color: var(--ink-soft); line-height: 1.45; }
+.where .link { padding: 2px 0; font-size: 13px; }

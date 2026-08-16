@@ -300,6 +300,20 @@ export async function openStorageSettings(): Promise<void> {
   await invoke("open_storage_settings");
 }
 
+/** Where downloaded models live on this device, for display (macOS: survives uninstall). */
+export async function modelsDir(): Promise<string> {
+  if (!inTauri) return "~/Library/Application Support/ai.verdure.porter";
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<string>("models_dir");
+}
+
+/** Open the models folder in Finder (macOS only). */
+export async function revealModelsDir(): Promise<void> {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("reveal_models_dir");
+}
+
 /**
  * Listen for files dropped onto the window. Returns an unlisten function.
  * In the browser preview there's no native drag-drop with real paths, so this

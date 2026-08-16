@@ -29,6 +29,8 @@ import {
   inTauri,
   freeUpSpace,
   openStorageSettings,
+  modelsDir,
+  revealModelsDir,
   type PortOutcome,
   type ChatModelOption,
 } from "./bridge";
@@ -286,6 +288,45 @@ function renderStorage(): void {
     const totalEl = el("p", "model-total", `Total on this computer: ${fmtMb(total)}`);
     panel.appendChild(totalEl);
   };
+
+  // Where the files actually are. The user owns them, so they get to know.
+  // It matters most on macOS: deleting Verdure leaves this folder behind (macOS
+  // gives apps no uninstall hook), so without this the models become invisible
+  // orphaned gigabytes. iOS/Android delete the whole container on uninstall.
+  const whereEl = el("div", "where");
+  panel.appendChild(whereEl);
+  void (async () => {
+    if (!inTauri) return;
+    let dir = "";
+    let os = "";
+    try {
+      dir = await modelsDir();
+      os = (await systemResources()).os;
+    } catch {
+      return; // can't locate it — say nothing rather than something wrong
+    }
+    whereEl.appendChild(el("span", "where-label", "Stored on this device at"));
+    whereEl.appendChild(el("code", "where-path", dir));
+    if (os === "macos") {
+      whereEl.appendChild(
+        el(
+          "span",
+          "where-note",
+          "If you delete Verdure, this folder stays — remove it yourself to reclaim the space.",
+        ),
+      );
+      const open = document.createElement("button");
+      open.className = "link";
+      open.type = "button";
+      open.textContent = "Open folder";
+      open.addEventListener("click", () => void revealModelsDir().catch(() => {}));
+      whereEl.appendChild(open);
+    } else {
+      whereEl.appendChild(
+        el("span", "where-note", "Uninstalling Verdure removes these files too."),
+      );
+    }
+  })();
 
   void refresh();
 }

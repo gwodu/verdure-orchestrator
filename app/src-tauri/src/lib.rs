@@ -303,6 +303,53 @@ fn list_models<R: Runtime>(app: AppHandle<R>) -> Result<Vec<model::ModelEntry>, 
     Ok(model::list(&dir))
 }
 
+/// Where downloaded models live on this device, as a displayable path.
+///
+/// The user owns these files, so they get to know where they are. It matters
+/// most on macOS: deleting the app leaves this folder behind (macOS gives apps no
+/// uninstall hook), so without this the models become invisible orphaned GBs.
+/// iOS and Android delete the whole container on uninstall, so nothing is
+/// stranded there — but showing the path is honest everywhere.
+#[tauri::command]
+fn models_dir<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    // Shorten $HOME to `~` for display — a full /Users/name path is noise.
+    let shown = match app.path().home_dir() {
+        Ok(home) => match dir.strip_prefix(&home) {
+            Ok(rest) => format!("~/{}", rest.display()),
+            Err(_) => dir.display().to_string(),
+        },
+        Err(_) => dir.display().to_string(),
+    };
+    Ok(shown)
+}
+
+/// Open the models folder in the system file browser (macOS only — the platform
+/// where the folder outlives the app and the user may want to clear it).
+#[tauri::command]
+fn reveal_models_dir<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("/usr/bin/open")
+            .arg(&dir)
+            .status()
+            .map_err(|e| format!("couldn't open the folder: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = dir;
+        Err("Not available on this platform.".to_string())
+    }
+}
+
 /// Completely remove a downloaded model by id, reclaiming the disk space.
 #[tauri::command]
 fn remove_model<R: Runtime>(app: AppHandle<R>, id: String) -> Result<(), String> {
@@ -512,6 +559,8 @@ pub fn run() {
             chat,
             list_models,
             remove_model,
+            models_dir,
+            reveal_models_dir,
             free_up_space,
             open_storage_settings,
             port_tool
@@ -552,6 +601,8 @@ mod command_tests {
                 super::chat,
                 super::list_models,
                 super::remove_model,
+                super::models_dir,
+                super::reveal_models_dir,
                 super::free_up_space,
                 super::open_storage_settings,
                 super::port_tool
