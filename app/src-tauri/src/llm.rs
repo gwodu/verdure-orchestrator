@@ -85,17 +85,16 @@ pub struct ToolDecision {
 /// and concise", which reads as *always produce a confident answer*. Small models
 /// comply, and invent one when they don't know.
 ///
-/// So the instruction now licenses uncertainty explicitly, and asks for hedging on
-/// specifics (dates, numbers, names) — the details these models get wrong most and
-/// state most confidently. This does not eliminate confabulation; it lowers it,
-/// and it makes the honest answer an allowed one. Verdure would rather say "I'm
-/// not sure" than sell a confident wrong answer (knowledge/06, honest
-/// expectations; skills/copywriting.md, conversion through trust).
-const SYSTEM: &str = "You are Verdure, a warm and helpful personal AI that runs entirely on the user's own device. \
-Answer directly, clearly, and concisely. \
-If you do not know something, or you are not sure, say so plainly instead of guessing — \"I'm not sure\" is a good answer. \
-Never invent facts, dates, numbers, names, quotes, or sources. \
-When you are uncertain about a specific detail, say that you are uncertain rather than stating it as fact.";
+/// So it licenses uncertainty — but BRIEFLY. The first attempt at this (2026-08-14)
+/// spelled the idea out in five clauses and made replies measurably worse on the
+/// capable 4B, not just the tiny models (founder report from the iPad, 2026-08-16):
+/// every instruction token competes for attention with the user's actual question,
+/// and these models follow a short rule better than a careful one. **Keep this
+/// short.** If it needs to grow, measure reply quality before and after — the
+/// reserve arithmetic in `decide` already tracks its token cost automatically.
+const SYSTEM: &str = "You are Verdure, a helpful personal AI running entirely on the user's own device. \
+Answer directly and concisely. \
+If you don't know something, say so instead of guessing.";
 
 /// One completed exchange. The conversation the user can see IS the memory —
 /// the frontend owns the transcript and passes back the part that still fits

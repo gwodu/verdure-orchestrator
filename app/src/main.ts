@@ -796,7 +796,16 @@ function renderChat(): void {
   const history: ChatTurn[] = [];
 
   const addMsg = (who: "user" | "ai", text: string) => {
-    const m = el("div", `msg ${who}`, text);
+    // Only the model's replies get Markdown rendering. What the USER typed is
+    // shown exactly as typed — if they write **bold**, they meant asterisks.
+    const m =
+      who === "ai"
+        ? (() => {
+            const node = el("div", "msg ai");
+            node.innerHTML = renderMarkdown(text); // escaped inside renderMarkdown
+            return node;
+          })()
+        : el("div", "msg user", text);
     thread.appendChild(m);
     thread.scrollTop = thread.scrollHeight;
     return m;
@@ -1073,6 +1082,61 @@ function el(tag: string, className: string, text?: string): HTMLElement {
   node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+/**
+ * Render the small slice of Markdown local models actually emit.
+ *
+ * Chat models are trained on Markdown and produce it unprompted — asking them
+ * not to costs quality. So we render it instead. Before this, a list came out as
+ * literal `**1 item **` on screen (reported from the iPad, 2026-08-16).
+ *
+ * SAFETY: the model's text is HTML-escaped FIRST, then only the tags we choose
+ * are reintroduced. Nothing the model emits can inject markup — which matters
+ * because a local model's output is still untrusted input.
+ *
+ * Deliberately not a Markdown library: this is ~40 lines against a dependency
+ * the floor user would pay for in download size, for syntax we don't need
+ * (tables, footnotes, HTML passthrough).
+ */
+function renderMarkdown(src: string): string {
+  const inline = (s: string): string =>
+    escapeHtml(s)
+      // Code first, so ** inside a code span isn't treated as bold.
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[\s(])[*_]([^*_\s][^*_]*)[*_](?=[\s.,!?)]|$)/g, "$1<em>$2</em>");
+
+  const out: string[] = [];
+  let list: "ul" | "ol" | null = null;
+  const closeList = () => {
+    if (list) {
+      out.push(`</${list}>`);
+      list = null;
+    }
+  };
+
+  for (const raw of src.split("\n")) {
+    const line = raw.trimEnd();
+    const bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
+    const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    if (bullet || numbered) {
+      const want = bullet ? "ul" : "ol";
+      if (list !== want) {
+        closeList();
+        out.push(`<${want}>`);
+        list = want;
+      }
+      out.push(`<li>${inline((bullet ?? numbered)![1])}</li>`);
+      continue;
+    }
+    closeList();
+    if (!line.trim()) continue; // blank line — the gap comes from CSS spacing
+    const heading = /^\s*#{1,6}\s+(.*)$/.exec(line);
+    out.push(heading ? `<strong>${inline(heading[1])}</strong>` : `<p>${inline(line)}</p>`);
+  }
+  closeList();
+  return out.join("");
 }
 
 function escapeHtml(s: string): string {
