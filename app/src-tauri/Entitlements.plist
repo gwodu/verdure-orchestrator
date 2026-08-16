@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS entitlements for the NOTARIZED build.
+
+  Notarization requires the hardened runtime, and the hardened runtime denies
+  capabilities unless they are entitled here — even ones the app already asks the
+  user for. Without `device.audio-input`, live dictation fails on a notarized
+  build while working perfectly on an unsigned one, which is a nasty class of bug
+  to discover after shipping.
+
+  Deliberately minimal. Verdure runs models locally and talks to Hugging Face to
+  download them; it needs nothing else, and every entitlement we don't request is
+  one the user doesn't have to trust us with (knowledge/06).
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Live dictation: whisper.cpp reads the microphone via cpal/CoreAudio. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <!-- Model downloads from huggingface.co. Outgoing only; Verdure never listens. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- whisper.cpp and llama.cpp are compiled in and JIT nothing, so the
+         allow-jit / disable-library-validation escapes are NOT requested. -->
+  </dict>
+</plist>

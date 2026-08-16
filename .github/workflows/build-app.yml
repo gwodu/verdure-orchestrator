@@ -37,13 +37,64 @@ jobs:
           targets: x86_64-apple-darwin
       - name: Install workspaces
         run: npm ci
+      - name: Check for signing credentials
+        # Signing is OPTIONAL: without the Developer ID secrets the build still
+        # produces a working (unsigned) app, exactly as before. This job must not
+        # start failing the day before those secrets exist.
+        id: signing
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+        run: |
+          if [ -n "$CERT" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Signing + notarization ENABLED"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::APPLE_CERTIFICATE not set — building UNSIGNED. Users will need 'xattr -cr' to open it."
+          fi
+      - name: Stage the notarization key
+        # Reuses the SAME App Store Connect key the TestFlight workflow uses —
+        # notarytool accepts it, so notarization needs no new secrets. Only the
+        # Developer ID *signing* certificate is new.
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s' "$ASC_API_KEY_P8" > ~/private_keys/AuthKey_${ASC_API_KEY_ID}.p8
+          echo "APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" >> "$GITHUB_ENV"
       - name: Build the Intel app bundle
         # tauri build runs beforeBuildCommand (npm run build) for the frontend,
         # then cross-compiles the Rust backend to x86_64 and packages .app + .dmg.
-        # Unsigned (no Apple Developer cert) — first launch needs the quarantine
-        # flag cleared (xattr -cr); see app/README.md.
+        #
+        # With the signing env set, the Tauri bundler ALSO code-signs with the
+        # Developer ID cert (hardened runtime + Entitlements.plist — the mic
+        # entitlement is required or dictation breaks on a notarized build), then
+        # submits to Apple's notary service and staples the ticket. The result
+        # opens with a double-click: no Gatekeeper warning, no `xattr -cr`.
+        #
+        # Without those secrets it builds unsigned exactly as before.
         working-directory: app
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.ASC_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.ASC_API_ISSUER_ID }}
         run: npx tauri build --target x86_64-apple-darwin
+      - name: Verify the signature and notarization
+        # Proof, not hope: `spctl` is what Gatekeeper itself runs on first launch,
+        # and `stapler validate` proves the ticket travels with the app offline.
+        # The icon bug taught us to check the artifact, not the intent.
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          APP=$(find app/src-tauri/target/x86_64-apple-darwin/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
+          echo "verifying: $APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          spctl --assess --type execute --verbose=4 "$APP"
+          xcrun stapler validate "$APP"
+          echo "signed, notarized, and stapled ✓"
       - name: Upload the runnable app
         uses: actions/upload-artifact@v4
         with:
