@@ -92,9 +92,7 @@ jobs:
     # the founder's Mac has Xcode CLT, so `cd app/src-tauri && cargo test` runs
     # the same suite locally in seconds. CI keeps it as the gate before merge
     # (PRs) and on demand; the release tag builds compile everything anyway.
-    if: >-
-      ${{ needs.changes.outputs.porter == 'true' &&
-          (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ needs.changes.outputs.porter == 'true' && github.event_name != 'push' }}
     runs-on: macos-latest
     timeout-minutes: 30
     # Deployment target (10.15, for whisper.cpp's std::filesystem) is forced in
