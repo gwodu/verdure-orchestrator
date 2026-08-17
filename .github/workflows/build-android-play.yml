@@ -31,6 +31,7 @@ jobs:
   build:
     name: Package Verdure for Play (.aab, signed)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Check the signing secrets are present

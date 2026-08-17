@@ -23,6 +23,7 @@ jobs:
   build:
     name: Package Verdure (.app + .dmg)
     runs-on: macos-latest # Apple Silicon — available immediately; we cross-build
+    timeout-minutes: 60 # a hung macOS job would otherwise bill 6h at 10x
     # Deployment target (10.15, for whisper.cpp's std::filesystem) is forced in
     # app/src-tauri/.cargo/config.toml so it can't be overridden by cargo's
     # per-target default.
@@ -37,6 +38,18 @@ jobs:
           targets: x86_64-apple-darwin
       - name: Install workspaces
         run: npm ci
+      - name: Cache cargo + compiled C++ (whisper.cpp / llama.cpp)
+        # Without this, every tag build recompiles whisper.cpp and llama.cpp from
+        # source — that is the bulk of a 12-45 minute macOS build, billed at 10x.
+        # Keyed on the manifest + target, so it only rebuilds when deps change.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/src-tauri/target
+          key: ${{ runner.os }}-x86_64-${{ hashFiles('app/src-tauri/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-x86_64-
       - name: Check for signing credentials
         # Signing is OPTIONAL: without the Developer ID secrets the build still
         # produces a working (unsigned) app, exactly as before. This job must not
