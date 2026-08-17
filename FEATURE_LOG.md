@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-08-17 — macOS signing + notarization; Storage shows where models live; CI cost cuts
+
+**Signed + notarized macOS builds.** `build-app.yml` now signs with a Developer ID Application certificate, notarizes through Apple's service, and staples the ticket — verified in CI by `codesign --verify`, `spctl --assess` (Gatekeeper's own check: `accepted / source=Notarized Developer ID`) and `stapler validate`. Users no longer need `xattr -cr`; the app opens with a double-click. Notarization reuses the existing App Store Connect key, so only the signing certificate was new. **`Entitlements.plist` was required, not optional:** notarized apps run under the hardened runtime, which denies microphone access unless entitled — without it dictation would work unsigned and silently fail for every notarized user. Signing degrades gracefully: without the secrets the job still builds unsigned and warns.
+
+**Storage shows where models live** (`models_dir` / `reveal_models_dir`). macOS is the only platform where deleting the app leaves the models behind — and it offers no uninstall hook to ask about them — so instead of an impossible prompt, Storage shows the folder path with an "Open folder" button and says plainly that removing Verdure leaves it. iOS/Android delete their container on uninstall and get the opposite line.
+
+**Chat renders Markdown.** Models emit `**bold**` and lists unprompted (they're trained on it, and telling them not to costs quality), and we were showing it literally. ~40 lines covering what these models actually produce, with the output HTML-escaped first so nothing the model emits can inject markup. User messages stay literal.
+
+**System prompt shortened again.** The 08-14 anti-confabulation version made replies measurably worse on the capable 4B, not just the tiny models — every instruction token competes with the user's question for attention. Cut from five clauses to three lines, keeping "if you don't know, say so."
+
+**CI cost reduced ~90%** — see the changelog for the four leaks. Not user-facing, but it's what makes iteration affordable.
+
 ### 2026-08-14 — Beta feedback: three fixes (batch overflow, doubled dictation, confabulation)
 
 First round of real beta-tester reports, all three real:

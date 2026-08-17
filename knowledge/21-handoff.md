@@ -2,7 +2,27 @@
 
 *Role: current **state + next steps** — "where are we now / what do I do next." Overwritten as the build moves; it does not narrate chronology. For the dated history of how we got here, see `KNOWLEDGE.md`'s changelog.*
 
-**Status:** 🟢 Current working state as of 2026-08-14. **Chat memory is confirmed working on-device (iPad, build 9+)** — the first beta round produced three reports, all fixed (see the changelog); those fixes are green in CI and awaiting an on-device confirmation build. The app now runs **on-device on three platforms** (Intel Mac, iPad via TestFlight, Pixel 8a via CI APK) with chat, live dictation, and resumable model downloads working. **The next gate is distribution:** the Play open-testing workflow is ready, but the first upload makes the Android package name permanent — the `porter` rename decision (`[OQ-60]`) must be made first. **New session? Read this first** (then `18` pivot, `20` personal-AI). This is the single source of truth for *where the build is*; older files (`01/14/15/16/17`) predate the pivot — see "Doctrine" below.
+**Status:** 🟡 Current working state as of 2026-08-17. **Two things block progress and both have a known next action** (see "Blocked" below): chat produces garbage on Intel macOS (`[OQ-71]`), and local Rust builds are not yet possible (the Xcode 27 *beta* Command Line Tools refuse to install on macOS Sequoia 15.7 — the **stable** "Command Line Tools for Xcode 16.4" is the fix). macOS code-signing + notarization now WORK. **Chat memory is confirmed working on-device (iPad, build 9+)** — the first beta round produced three reports, all fixed (see the changelog); those fixes are green in CI and awaiting an on-device confirmation build. The app now runs **on-device on three platforms** (Intel Mac, iPad via TestFlight, Pixel 8a via CI APK) with chat, live dictation, and resumable model downloads working. **The next gate is distribution:** the Play open-testing workflow is ready, but the first upload makes the Android package name permanent — the `porter` rename decision (`[OQ-60]`) must be made first. **New session? Read this first** (then `18` pivot, `20` personal-AI). This is the single source of truth for *where the build is*; older files (`01/14/15/16/17`) predate the pivot — see "Doctrine" below.
+
+
+## Blocked — start here next session
+
+**1. `[OQ-71]` — chat output is garbage on the Intel Mac.** Every chat model returns token salad or single-token repetition on x86_64 macOS, while the same files answer coherently on iPad. Confirmed *not*: low memory, chat memory, corrupt model files, model family, or recency (a 2026-07-02 build fails too). Whisper (f16) works perfectly on the same machine; every failing model is K-quantized, and the Mac `.dmg` is the only **cross-compiled** artifact (Apple Silicon runner → x86_64).
+
+*The decisive test is set up and one command from done.* A reference `llama.cpp` — official prebuilt macOS **x64**, i.e. NOT cross-compiled — is at `~/Verdure-bisect/llama-cpp-reference/llama-cli`, verified to run on the machine, and the 0.5B Q4_K_M model is restored at `~/Library/Application Support/ai.verdure.porter/`. Run the same prompt through it:
+
+```
+~/Verdure-bisect/llama-cpp-reference/llama-cli \
+  -m ~/Library/Application\ Support/ai.verdure.porter/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+  -p "<|im_start|>user\nHow do the northern lights work?<|im_end|>\n<|im_start|>assistant\n" \
+  -n 100 -c 1024 -no-cnv -st
+```
+
+(First attempt hung because `-no-cnv` alone left it waiting on stdin; add `-st` / redirect stdin from `/dev/null`.) **Coherent ⇒ our cross-compiled build is the bug** (fix: native Intel runner, or pin ggml's CPU-feature flags). **Garbage ⇒ the K-quant kernels are wrong on this CPU** (fix: ship a non-K quantization for Intel). Diagnostic models — the same 0.5B at Q8_0 and fp16 — are already in the picker for the in-app version of the same test.
+
+**2. Local Rust builds — Command Line Tools.** The **beta** package fails with "can't be installed on this computer": Xcode 27 beta tools need a newer macOS than Sequoia 15.7. Install **Command Line Tools for Xcode 16.4** from developer.apple.com/download/all instead (~840 MB `.dmg`, then run the `.pkg` inside — downloading the dmg alone does nothing). Note `xcode-select --install`'s dialog routes to the 17 GB App Store Xcode; ignore it. Once `clang --version` works: `cd app/src-tauri && cargo test` runs the suite locally in seconds, and a **native** x86_64 build settles `[OQ-71]` directly.
+
+**Bisect artifacts kept** at `~/Verdure-bisect/` (two older builds, both reproduce the bug). Older macOS builds back to 2026-06-19 are still downloadable from Actions if the bisect needs to go further back.
 
 ## What exists and works (branch `mvp-porter-buzz`, not merged to main)
 
@@ -20,6 +40,7 @@ Verified on-device (founder's 2019 Intel Mac 8 GB, iPad via TestFlight, Pixel 8a
 - **Storage management** ✅ — per-model size, Remove (in-panel + global screen), disk fail-state warnings, free-space readout.
 - **Chat memory** ✅ (`22`) — the conversation is remembered; **confirmed on-device on iPad 2026-08-14**. Beta round found and fixed a batch-overflow regression that surfaced as a raw "ran out of context" error.
 - **UI** — chat-first layout (2026-07-17); **"midnight glass" visual identity shipped 2026-08-12** (deep navy + aurora mint + frosted glass, from the founder's brand video; canonical spec in `skills/design.md` "Visual identity"). Entry animations are CSS-only and reduced-motion-safe. Blur performance on the 2019 Intel Mac unverified until the next `app-build-N`.
+- **macOS signing + notarization** ✅ (2026-08-17) — `build-app.yml` signs with the founder's Developer ID cert, notarizes via Apple, and staples; verified in CI by `codesign` + `spctl` (`accepted / source=Notarized Developer ID`) + `stapler validate`. **No more `xattr -cr`** — the .dmg opens with a double-click. Notarization reuses the existing App Store Connect key; only the signing certificate was new. `Entitlements.plist` grants microphone + outgoing network (the hardened runtime would otherwise break dictation).
 - **Distribution** — macOS Intel .dmg via `app-build-N` tags; **iOS via TestFlight** (signed, no expiry, `testflight-N` tags); **Android test APK** via `android-build-N` tags; **Play open-testing workflow ready** (`build-android-play.yml`, signed .aab) but ungated founder-side steps remain — see Next steps.
 
 Green: decider + website suites pass locally; the porter Rust suite (segmenter, model gating, prompt styles, chat-memory budget/eviction, Android meminfo parser) compiles and runs in CI — which now also compile-checks **iOS and Android on every push**, not only at tag time. **Last green CI: the branch tip (2026-08-14, the beta-fix round).**
