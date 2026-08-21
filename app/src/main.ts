@@ -419,7 +419,15 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
       const fitsDisk = !opt || opt.fitsDisk;
       const sizeText = opt ? (opt.installed ? "Downloaded" : `${gb(opt.downloadMb)} download`) : "";
       let warn = "";
-      if (!fitsMem) warn = "Not enough free memory to run this one right now.";
+      // Memory is a LIVE condition, not a blocker: downloading depends on disk,
+      // running depends on how much memory is free at that moment. Selecting is
+      // never prevented, and the backend explains it properly at load time. So
+      // this is a heads-up, phrased as something the user can act on — the old
+      // wording ("Not enough free memory") read as a refusal, directly under a
+      // line saying "7.0 GB free space", which looked like a contradiction
+      // unless you already knew "memory" meant RAM.
+      if (!fitsMem)
+        warn = `You'll need to close some apps to use this one — it wants about ${gb(opt!.runtimeMb)} of free memory.`;
       else if (!fitsDisk) {
         warn = `Not enough free space to download (needs ${gb(opt!.downloadMb)}). Remove a model to make room.`;
         // iPhone/iPad: no API and no deep link — honest instructions are the help.

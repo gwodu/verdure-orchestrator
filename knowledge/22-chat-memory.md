@@ -62,6 +62,28 @@ The mechanism is platform-neutral: it is arithmetic plus prompt assembly, and it
 
 Only the **model weights** are held across turns, not the llama context/KV cache. Keeping the KV cache alive would let each turn prefill only its new tokens — the larger optimization — but `LlamaContext` borrows both the backend and the model, so storing it requires a self-referential struct (an `ouroboros`-style dependency or `unsafe`). That complexity is not justified before the simple version is measured: re-reading 0.4–1.4 GB from disk was the dominant cost, and that is what residency removes. Re-prefilling a bounded ~1000-token window is comparatively cheap. Revisit with a measurement in hand, not a guess.
 
+## Two gates, deliberately separate (the orchestration seam)
+
+Whether a model can be **downloaded** and whether it can be **run** are different
+questions, and Verdure keeps them apart on purpose:
+
+- **Download** depends on *disk* — a durable fact. Gate: `fits_disk`.
+- **Run** depends on *memory free at that moment* — a live fact, re-evaluated on
+  every message. Gate: `chat_model_choice(model_id, available_ram_mb)`.
+
+So the picker never blocks a choice on memory. You may select any model your disk
+can hold; if memory is short when you actually send a message, the backend
+declines with the real numbers and what to do about it ("needs about 2.4 GB of
+free memory, but only 1.9 GB is free right now"). The picker's memory note is a
+*heads-up*, not a refusal — phrased as an action, because "Not enough free
+memory" sitting under "7.0 GB free space" read as a contradiction (founder
+report, 2026-08-21).
+
+**Keep these separate when either side changes.** A runtime decision that
+re-reads live memory per request is the foundation any future per-task model
+orchestration would need (`20`); collapsing it back into a single install-time
+check would have to be undone later.
+
 ## Cross-session memory (deliberately separate)
 
 Surviving an app restart is a *different* change: persist the transcript as JSON in the app data dir and reload it at launch. No vector store, no embeddings, no RAG. It touches disk rather than the inference loop and carries its own privacy question (a conversation kept on disk is a conversation someone else with the device could read), which deserves its own decision and its own user-facing control. It is the honest precursor to the personal context core (`[OQ-56]`), not a competitor to it.
