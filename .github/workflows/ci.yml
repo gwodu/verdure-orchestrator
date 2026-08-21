@@ -50,6 +50,14 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          # On a PUSH, diff against the commit we were on before it — i.e. what
+          # this push actually changed. Without this, paths-filter defaults to
+          # comparing the whole BRANCH against `main`, and since mvp-porter-buzz
+          # carries months of unmerged work in app/, every filter matched on
+          # every push: a three-file docs commit was triggering 7.6 minutes of
+          # Android compilation. Leave it unset for pull_request, where the
+          # default (diff against the base branch) is the correct behaviour.
+          base: ${{ github.event_name == 'push' && github.event.before || '' }}
           filters: |
             common: &common
               - 'package.json'
