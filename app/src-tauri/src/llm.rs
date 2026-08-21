@@ -235,6 +235,61 @@ fn backend() -> Result<&'static LlamaBackend, String> {
     Ok(BACKEND.get_or_init(|| b))
 }
 
+/// How the model is loaded — specifically, whether any layers go to the GPU.
+///
+/// `LlamaModelParams::default()` sets `n_gpu_layers = -1`, meaning **offload
+/// everything to the GPU**. On Apple platforms llama.cpp's GPU backend is Metal,
+/// and it is compiled in unconditionally (`llama-cpp-sys-2`'s build script only
+/// disables Metal for watchOS), so our `default-features = false` never made this
+/// "plain CPU" the way `Cargo.toml` claimed for two months.
+///
+/// On Apple Silicon that is right and fast. **On an Intel Mac it produces
+/// garbage** — the cause of `[OQ-71]`: every chat model returned token salad or a
+/// single repeating token on the founder's 2019 Intel Mac, while the identical
+/// model file answered correctly through upstream's prebuilt macOS **x64**
+/// binary, which ships CPU-only. Metal's kernels target Apple Silicon; on an
+/// Intel Mac's integrated GPU the arithmetic comes back wrong rather than
+/// failing loudly, which is why this looked like a model problem for days.
+///
+/// So: keep the GPU everywhere it is trustworthy, and stay on the CPU on
+/// x86_64 macOS. The reference build gets ~42 tok/s on that machine's CPU, so
+/// this costs very little.
+///
+/// **`with_n_gpu_layers(0)` alone is not enough** — measured. It keeps the
+/// *weights* off the GPU, but llama.cpp still registers Metal as a device and
+/// schedules compute onto it (observed: a 436 MiB Metal compute buffer and 302
+/// graph splits), and the output stayed wrong — merely a different flavour of
+/// wrong. The device list is what actually decides the backend, so we pin the
+/// model to the CPU device explicitly.
+fn model_params() -> LlamaModelParams {
+    let params = LlamaModelParams::default();
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    let params = {
+        let cpu: Vec<usize> = crate::llm::cpu_device_indices();
+        // Belt and braces: no weight offload AND only the CPU device visible.
+        let p = params.with_n_gpu_layers(0);
+        match p.with_devices(&cpu) {
+            Ok(p) => p,
+            // If the device list is ever unavailable, a CPU-only weight
+            // placement is still better than silently trusting Metal here.
+            Err(_) => LlamaModelParams::default().with_n_gpu_layers(0),
+        }
+    };
+
+    params
+}
+
+/// Indices of the CPU backend devices llama.cpp has registered.
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+fn cpu_device_indices() -> Vec<usize> {
+    llama_cpp_2::list_llama_ggml_backend_devices()
+        .into_iter()
+        .filter(|d| d.backend.eq_ignore_ascii_case("CPU"))
+        .map(|d| d.index)
+        .collect()
+}
+
 /// A chat model kept loaded across messages (knowledge/22, part 2). Re-reading
 /// 0.4–1.4 GB of weights from disk per message was the dominant cost and made
 /// sending history unaffordable; holding the weights removes it.
@@ -260,7 +315,7 @@ pub fn ensure_resident<'a>(
         // Drop the old weights BEFORE loading the new ones: holding both at once
         // is what OOM-aborts a tight machine (knowledge/21 gap #2).
         *slot = None;
-        let model = LlamaModel::load_from_file(backend()?, path, &LlamaModelParams::default())
+        let model = LlamaModel::load_from_file(backend()?, path, &model_params())
             .map_err(|e| format!("couldn't load the chat model: {e}"))?;
         *slot = Some(ResidentModel {
             id: info.id.to_string(),
@@ -498,6 +553,41 @@ mod tests {
         assert_eq!(p.matches(SYSTEM).count(), 1);
         assert!(!p.contains("<|im_start|>"));
         assert!(p.trim_end().ends_with("<start_of_turn>model"));
+    }
+
+    /// Reproduction harness for `[OQ-71]` — garbage chat output on Intel macOS.
+    ///
+    /// Runs OUR real inference path against a real model, with no Tauri, no
+    /// WebView, no frontend: the "simplest possible test case" rule from
+    /// `skills/debugging.md`. Garbage here ⇒ the fault is in this file or in
+    /// llama.cpp as we build it. Coherent here ⇒ the fault is above us.
+    ///
+    /// `#[ignore]` because it needs a multi-hundred-MB model; run it explicitly:
+    ///   VERDURE_REPRO_MODEL=/path/to/model.gguf \
+    ///     cargo test --lib repro_oq71 -- --ignored --nocapture
+    ///
+    /// Delete with `[OQ-71]`.
+    #[test]
+    #[ignore]
+    fn repro_oq71_generates_from_a_real_model() {
+        let Ok(path) = std::env::var("VERDURE_REPRO_MODEL") else {
+            panic!("set VERDURE_REPRO_MODEL to a .gguf path");
+        };
+        let path = std::path::Path::new(&path);
+        assert!(path.is_file(), "no such model: {}", path.display());
+
+        eprintln!("arch={} os={}", std::env::consts::ARCH, std::env::consts::OS);
+
+        let info = &crate::model::QWEN_CHAT_SMALL; // id/prompt-style only; ChatML
+        let mut slot = None;
+        let resident = ensure_resident(&mut slot, info, path).expect("model loads");
+
+        // Fixed window so context size is not a variable in this experiment.
+        let out = decide(resident, &[], "How do the northern lights work?", PromptStyle::ChatMl, 1024)
+            .expect("generation succeeds");
+
+        eprintln!("--- reply ---\n{}\n-------------", out.reply);
+        assert!(!out.reply.trim().is_empty(), "empty reply");
     }
 
     #[test]
