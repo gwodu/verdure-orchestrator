@@ -54,6 +54,7 @@ Routing:
 - Writing any user-facing text (website copy, app text, emails, error messages) → `skills/copywriting.md` + `skills/design.md`
 - Updating knowledge files → `skills/documentation.md`
 - Investigating an open question → `skills/research.md` + `skills/documentation.md`
+- Something behaves impossibly, or a regression appeared → `skills/debugging.md` (+ `skills/testing.md` once the cause is known)
 - Code review / cleanup pass → `skills/refactoring.md` + `skills/testing.md` (shortcut: `/cleanup`)
 - Auditing architecture/principles, or a pre-redesign alignment check → `skills/inspection.md` (shortcut: `/inspect`)
 

@@ -13,6 +13,7 @@ Before starting any task, identify which skills apply and load them. A typical t
 - `documentation.md` — knowledge maintenance: open questions, feature logs, cross-references
 - `research.md` — honest inquiry: filling gaps without inventing content
 - `copywriting.md` — user-facing text: conversion through trust, awareness stages, honest specificity
+- `debugging.md` — locating a defect that already escaped: verify the artifact not the source, differential diagnosis against a reference implementation, bisect over existing build artifacts
 - `inspection.md` — auditing the project against its own principles: the four modes, the truck-driver test, drift
 
 ## Quick routing
@@ -24,6 +25,7 @@ This table is the canonical routing. `../CLAUDE.md`'s Skills section summarizes 
 - Writing any user-facing text (website, app, emails, error messages) → `copywriting` + `design`
 - Updating knowledge files → `documentation`
 - Investigating an open question → `research` + `documentation`
+- **Something behaves impossibly / a regression appeared → `debugging`** (+ `testing` once the cause is known)
 - Code review / cleanup pass → `refactoring` + `testing` (shortcut: `/cleanup`)
 - Auditing architecture/principles, or pre-redesign alignment check → `inspection` (shortcut: `/inspect`)
 
