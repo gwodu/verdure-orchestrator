@@ -13,7 +13,7 @@ Before starting any task, identify which skills apply and load them. A typical t
 - `documentation.md` — knowledge maintenance: open questions, feature logs, cross-references
 - `research.md` — honest inquiry: filling gaps without inventing content
 - `copywriting.md` — user-facing text: conversion through trust, awareness stages, honest specificity
-- `debugging.md` — locating a defect that already escaped: verify the artifact not the source, differential diagnosis against a reference implementation, bisect over existing build artifacts
+- `debugging.md` — locating a defect that already escaped: Agans' nine rules as the spine, with what this codebase has actually cost us under each — verify the artifact not the source, differential diagnosis against upstream's own binary, bisecting over CI artifacts, the FFI boundary, and telling a broken harness apart from a merely weak model
 - `inspection.md` — auditing the project against its own principles: the four modes, the truck-driver test, drift
 
 ## Quick routing
