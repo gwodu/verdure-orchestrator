@@ -2,31 +2,26 @@
 
 *Role: current **state + next steps** — "where are we now / what do I do next." Overwritten as the build moves; it does not narrate chronology. For the dated history of how we got here, see `KNOWLEDGE.md`'s changelog.*
 
-**Status:** 🟡 Current working state as of 2026-08-21. **Two things block progress and both have a known next action** (see "Blocked" below): chat produces garbage on Intel macOS (`[OQ-71]`), and local Rust builds are not yet possible (the Xcode 27 *beta* Command Line Tools refuse to install on macOS Sequoia 15.7 — the **stable** "Command Line Tools for Xcode 16.4" is the fix). macOS code-signing + notarization now WORK. **Chat memory is confirmed working on-device (iPad, build 9+)** — the first beta round produced three reports, all fixed (see the changelog); those fixes are green in CI and awaiting an on-device confirmation build. The app now runs **on-device on three platforms** (Intel Mac, iPad via TestFlight, Pixel 8a via CI APK) with chat, live dictation, and resumable model downloads working. **The next gate is distribution:** the Play open-testing workflow is ready, but the first upload makes the Android package name permanent — the `porter` rename decision (`[OQ-60]`) must be made first. **New session? Read this first** (then `18` pivot, `20` personal-AI). This is the single source of truth for *where the build is*; older files (`01/14/15/16/17`) predate the pivot — see "Doctrine" below.
+**Status:** 🟢 Current working state as of **2026-08-21**. **The long-running macOS chat bug is FIXED** (`[OQ-71]` — it was the Metal GPU backend on Intel; see Resolved in `open-questions.md`). **Local Rust builds now work** (Xcode CLT 16.4 + `cmake` installed), which changes the daily loop and the CI economics. **New session? Read this first**, then `18` (pivot), `20` (personal AI), `22` (chat memory).
 
+## Start here — next session
 
-## Blocked — start here next session
+**Ready to do, in order:**
 
-**1. `[OQ-71]` — chat output is garbage on the Intel Mac. NARROWED TO OUR BINARY (2026-08-21).** Upstream's official prebuilt `llama.cpp` for macOS **x64** — natively compiled, kept at `~/Verdure-bisect/llama-cpp-reference/` — answered the SAME model file on the SAME machine correctly at **42.5 tok/s**, while ours emits `uids@@@@@`. That eliminates the machine, memory, disk, the model file, Q4_K_M on this CPU (the K-quant theory was wrong), the 0.5B being "too small", chat memory, the prompt, and the sampler config — plus the "8 GB floor Mac is too weak" assumption carried since June. Also eliminated: our tokenizer (llama-cpp-2 hardcodes `parse_special: true`). **Two suspects remain, both ours:** a **stale `llama-cpp-2` pin** (0.1.150, dated 2026-06-16; 0.1.151–0.1.154 have shipped since, tracking upstream llama.cpp) — the cheapest next experiment, one line — or the **cross-compile** (Apple Silicon runner → x86_64 vs upstream's native x64). Separating them cleanly needs a native local build, i.e. Command Line Tools. **NB there is no committed `Cargo.lock` for the app**, so the exact llama.cpp in each build has been drifting within the patch range.
+1. **Ship the Metal fix to the founder's Mac.** It exists in the repo and in a local build only. Before tagging: **remove the Q8_0/fp16 "Test:" diagnostic models** from `model.rs` + `main.ts` (`MODEL_TIERS`) + the CI URL check — they tested the disproven K-quant theory and would otherwise ship to users as two baffling options. Then `git tag release-14 && git push origin release-14` (one tag → macOS + TestFlight + Android).
+2. **Verify on-device**, per `skills/debugging.md`: install the new `.dmg`, ask a question, expect a coherent answer. Also confirm **dictation still works** — the build is notarized, and the hardened runtime denies the mic without `Entitlements.plist`; that path has never been exercised on a device.
+3. **Check `whisper-rs` for the same Metal exposure.** Transcription is *correct* on this Mac (~3.9× real-time), so it either avoids Metal or tolerates it. Worth knowing — but **do not change working code without evidence.**
+4. **`[OQ-72]`** (iOS asks to re-install Whisper after an update): diagnosed, not fixed. `main.ts`'s mic check does `.catch(() => [])`, so any failed query reads as "not installed". Confirming test: tap the prompt — if dictation starts in ~1s the file was always there.
+5. **`[OQ-73]`** Storage reports the model registry, not the disk, so strays and orphaned `.part`s are invisible.
 
-*The decisive test is set up and one command from done.* A reference `llama.cpp` — official prebuilt macOS **x64**, i.e. NOT cross-compiled — is at `~/Verdure-bisect/llama-cpp-reference/llama-cli`, verified to run on the machine, and the 0.5B Q4_K_M model is restored at `~/Library/Application Support/ai.verdure.porter/`. Run the same prompt through it:
+**Then the standing debt:** process isolation (`[OQ-58]`, still P0 before real users — ggml `abort()` kills the GUI), the `porter` rename before the first Play upload (`[OQ-60]`, becomes permanent at publish), and the evals harness (`[OQ-74]`).
 
-```
-~/Verdure-bisect/llama-cpp-reference/llama-cli \
-  -m ~/Library/Application\ Support/ai.verdure.porter/qwen2.5-0.5b-instruct-q4_k_m.gguf \
-  -p "<|im_start|>user\nHow do the northern lights work?<|im_end|>\n<|im_start|>assistant\n" \
-  -n 100 -c 1024 -no-cnv -st
-```
+**Local loop (new):** `cd app/src-tauri && cargo test` — 51 tests, seconds. The `#[ignore]`d `repro_oq71_generates_from_a_real_model` runs real inference against a model:
+`VERDURE_REPRO_MODEL=~/Verdure-bisect/models/qwen2.5-0.5b-q4km.gguf cargo test --lib repro_oq71 -- --ignored --nocapture`
 
-(First attempt hung because `-no-cnv` alone left it waiting on stdin; add `-st` / redirect stdin from `/dev/null`.) **Coherent ⇒ our cross-compiled build is the bug** (fix: native Intel runner, or pin ggml's CPU-feature flags). **Garbage ⇒ the K-quant kernels are wrong on this CPU** (fix: ship a non-K quantization for Intel). Diagnostic models — the same 0.5B at Q8_0 and fp16 — are already in the picker for the in-app version of the same test.
+**Kept on disk for diagnostics** (delete when no longer useful): `~/Verdure-bisect/llama-cpp-reference/` (upstream's prebuilt macOS x64 binaries — `llama-cli`, `llama-tokenize`, `llama-perplexity`, `llama-bench`) and `~/Verdure-bisect/models/qwen2.5-0.5b-q4km.gguf` (kept outside the app's data dir because the switch-model prompt deleted it twice mid-investigation).
 
-**2. Local Rust builds — Command Line Tools.** The **beta** package fails with "can't be installed on this computer": Xcode 27 beta tools need a newer macOS than Sequoia 15.7. Install **Command Line Tools for Xcode 16.4** from developer.apple.com/download/all instead (~840 MB `.dmg`, then run the `.pkg` inside — downloading the dmg alone does nothing). Note `xcode-select --install`'s dialog routes to the 17 GB App Store Xcode; ignore it. Once `clang --version` works: `cd app/src-tauri && cargo test` runs the suite locally in seconds, and a **native** x86_64 build settles `[OQ-71]` directly.
-
-**3. Queued behind the above (small, known fixes).** `[OQ-72]` the mic install check swallows errors (`.catch(() => [])` reads as "not installed" and prompts for a 140 MB download of a file that's present — confirm by tapping the prompt: instant start = diagnosis holds). `[OQ-73]` Storage reports the model registry rather than the disk, so stray files and orphaned `.part`s are invisible. Also: **the model picker has no way to clear an unfinished download** — only Storage does, which is not where the user is when it happens.
-
-**Diagnostic leftovers to delete when `[OQ-71]` closes:** `~/Verdure-bisect/` (two old builds, the reference `llama.cpp`, and a 468 MB model copy kept outside the app's reach because the switch-model prompt deleted it twice mid-investigation), and — more important, because it would ship — **the Q8_0 / fp16 "Test:" models in the picker**, which tested the now-disproven K-quant theory.
-
-**Bisect artifacts kept** at `~/Verdure-bisect/` (two older builds, both reproduce the bug). Older macOS builds back to 2026-06-19 are still downloadable from Actions if the bisect needs to go further back.
+**Disk is tight** (~5 GB free after a native build; `app/src-tauri/target` grows to ~2 GB). npm and Homebrew caches are safely clearable and were worth 4.3 GB.
 
 ## What exists and works (branch `mvp-porter-buzz`, not merged to main)
 

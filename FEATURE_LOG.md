@@ -6,6 +6,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-08-21 — Chat works on Intel Macs (the Metal fix)
+
+**What:** chat now produces correct answers on the founder's 2019 Intel Mac. It never had — every reply was token salad or a single repeating character.
+
+**Cause:** we were running inference on the **Metal GPU backend**. Metal targets Apple Silicon; on an Intel Mac's integrated GPU it returns wrong numbers instead of failing. `Cargo.toml` claimed we were "plain CPU" and we never were.
+
+**Fix:** `llm.rs::model_params()` now chooses the backend explicitly — CPU device only on x86_64 macOS, unchanged everywhere else. Costs little: upstream's CPU build does ~42 tok/s on this machine.
+
+**User impact:** the desktop app's headline feature works on the founder's own machine for the first time. It also removes the false premise — carried in the handoff since June — that this Mac was "too weak" for these models. It never was.
+
+**Verification:** coherent answer with the fix on, CPU buffers only; Metal and the garbage both return with it off. All 51 tests green locally.
+
 ### 2026-08-17 — macOS signing + notarization; Storage shows where models live; CI cost cuts
 
 **Signed + notarized macOS builds.** `build-app.yml` now signs with a Developer ID Application certificate, notarizes through Apple's service, and staples the ticket — verified in CI by `codesign --verify`, `spctl --assess` (Gatekeeper's own check: `accepted / source=Notarized Developer ID`) and `stapler validate`. Users no longer need `xattr -cr`; the app opens with a double-click. Notarization reuses the existing App Store Connect key, so only the signing certificate was new. **`Entitlements.plist` was required, not optional:** notarized apps run under the hardened runtime, which denies microphone access unless entitled — without it dictation would work unsigned and silently fail for every notarized user. Signing degrades gracefully: without the secrets the job still builds unsigned and warns.
