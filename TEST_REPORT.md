@@ -4,6 +4,14 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-08-21 — Removing the `[OQ-71]` diagnostic models (`model.rs`, `main.ts`, `ci.yml`)
+
+**No test changes needed — and that is the result worth recording.** Deleting two entries from `MODELS` and two from `chat_candidates` left all 51 tests green with no edits, because the model tests assert *behavior against the lists* (`entries.len() == MODELS.len()`, `opts.len() == CHAT_MODEL_CHOICES.len()`, "the preferred model is whatever the top candidate is") rather than hard-coding which models exist. That is `testing.md`'s "test behavior, not implementation" paying out: a whole category of change — adding or retiring a model — costs zero test churn.
+
+**Gap this exposed, not yet closed:** nothing asserts that the frontend's `MODEL_TIERS` (picker copy, by model id) and the backend's `CHAT_MODEL_CHOICES` describe the same set. They drifted for a week — the diagnostics were in `MODEL_TIERS` but never in `CHAT_MODEL_CHOICES`, so they rendered as cards with copy but no size or fit line, and the `opt` lookup silently fell through to "assume it fits." The two lists live on opposite sides of the Tauri boundary with no shared schema; either could grow an entry the other lacks. Worth a contract test once `main.ts` has a harness.
+
+**Verified locally** (the new inner loop): `cargo test` → 51 passed, 0 failed, 1 ignored; `npm run build` (`tsc` + `vite build`) clean.
+
 ### 2026-08-14 — Beta-fix round (`llm.rs` batch/reserve, `main.ts` listener lifecycle)
 
 **Unit tests written (2 new):**

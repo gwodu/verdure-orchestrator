@@ -101,55 +101,6 @@ pub const QWEN_CHAT_SMALL: ModelInfo = ModelInfo {
     prompt_style: Some(PromptStyle::ChatMl),
 };
 
-// ---------------------------------------------------------------------------
-// DIAGNOSTIC MODELS — temporary, for [OQ-71] (garbage output on Intel macOS).
-//
-// The same Qwen2.5 0.5B in two NON-K-quant formats. Every model that produces
-// garbage on the founder's Intel Mac is K-quantized (Q4_K_M / Q3_K_S), while
-// Whisper `base.en` — f16, same ggml library, same machine — transcribes
-// perfectly, and the identical K-quant files work on ARM (iPad, Pixel). That
-// points at the x86_64 **K-quant dot-product kernels**, not at the model.
-//
-// These two isolate it, because ggml uses a different vec_dot implementation per
-// weight type:
-//   * Q8_0  — quantized, but the simple legacy path, not the K-quant one.
-//   * fp16  — no quantization at all; the same path Whisper already proves works.
-//
-// Read the result as: fp16 good + Q4_K_M bad ⇒ quantized kernels are the fault.
-// Q8_0 good too ⇒ specifically the K-quant kernels. Both bad ⇒ the fault is
-// elsewhere and this whole theory is wrong.
-//
-// DELETE THESE once [OQ-71] is answered — they are a probe, not a product.
-// ---------------------------------------------------------------------------
-
-/// Diagnostic: 0.5B at Q8_0 (legacy quant path, not K-quant). ~644 MB.
-pub const QWEN_05B_Q8: ModelInfo = ModelInfo {
-    id: "qwen2.5-0.5b-instruct-q8",
-    name: "Diagnostic (0.5B, Q8_0)",
-    modality: "Chat",
-    file: "qwen2.5-0.5b-instruct-q8_0.gguf",
-    url: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q8_0.gguf",
-    approx_mb: 644,
-    runtime_mb: 1400,
-    kv_kb_per_token: 12,
-    trained_ctx: 32768,
-    prompt_style: Some(PromptStyle::ChatMl),
-};
-
-/// Diagnostic: 0.5B at fp16 — unquantized, the same data type as Whisper. ~1.2 GB.
-pub const QWEN_05B_F16: ModelInfo = ModelInfo {
-    id: "qwen2.5-0.5b-instruct-f16",
-    name: "Diagnostic (0.5B, fp16)",
-    modality: "Chat",
-    file: "qwen2.5-0.5b-instruct-fp16.gguf",
-    url: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-fp16.gguf",
-    approx_mb: 1207,
-    runtime_mb: 2000,
-    kv_kb_per_token: 12,
-    trained_ctx: 32768,
-    prompt_style: Some(PromptStyle::ChatMl),
-};
-
 /// Larger chat model for roomier machines. ~1.1 GB download.
 pub const QWEN_CHAT: ModelInfo = ModelInfo {
     id: "qwen2.5-1.5b-instruct",
@@ -257,10 +208,6 @@ fn chat_candidates() -> Vec<&'static ModelInfo> {
     }
     candidates.push(&QWEN_CHAT);
     candidates.push(&QWEN_CHAT_SMALL);
-    // Diagnostics last: they are never AUTO-picked (the models above always fit
-    // first), but they are selectable in the picker. [OQ-71]
-    candidates.push(&QWEN_05B_Q8);
-    candidates.push(&QWEN_05B_F16);
     candidates
 }
 
@@ -399,8 +346,7 @@ pub fn chat_model_choice(
 /// screen can show + manage it uniformly, but the chat picker won't auto-select it
 /// until it's verified (see `chat_model_for_available`).
 pub const MODELS: &[ModelInfo] =
-    &[WHISPER_BASE_EN, BYTESHAPE_QWEN3_4B, QWEN_CHAT_SMALL, QWEN_CHAT, GEMMA4_E2B,
-      QWEN_05B_Q8, QWEN_05B_F16]; // last two: diagnostics for [OQ-71]
+    &[WHISPER_BASE_EN, BYTESHAPE_QWEN3_4B, QWEN_CHAT_SMALL, QWEN_CHAT, GEMMA4_E2B];
 
 /// Look up a model by id.
 pub fn find(id: &str) -> Option<&'static ModelInfo> {

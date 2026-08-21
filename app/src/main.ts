@@ -61,11 +61,6 @@ const MODEL_TIERS: { id: string; tier: string; blurb: string }[] = [
   { id: "qwen2.5-0.5b-instruct", tier: "Small", blurb: "Quick and light — runs on any device. Great for short questions." },
   { id: "qwen2.5-1.5b-instruct", tier: "Balanced", blurb: "A capable all-rounder for everyday chat." },
   { id: "qwen3-4b-instruct-2507-byteshape", tier: "Powerful", blurb: "The most capable — richer answers, needs a little more room." },
-  // Temporary diagnostics for [OQ-71] — same 0.5B in non-K-quant formats, to
-  // test whether garbage output on Intel macOS comes from the quantized
-  // kernels. Remove once answered.
-  { id: "qwen2.5-0.5b-instruct-q8", tier: "Test: Q8", blurb: "Diagnostic only — same small model, different compression (644 MB)." },
-  { id: "qwen2.5-0.5b-instruct-f16", tier: "Test: fp16", blurb: "Diagnostic only — same small model, no compression at all (1.2 GB)." },
 ];
 const tierName = (id: string): string =>
   MODEL_TIERS.find((t) => t.id === id)?.tier ?? "Chat model";
@@ -384,7 +379,12 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
   panel.appendChild(list);
   root.appendChild(panel);
 
-  let selected = chosenModelId() || MODEL_TIERS[0].id;
+  // A stored id can name a tier that no longer exists (a model retired between
+  // versions — the [OQ-71] diagnostics were the first case). Fall back to the
+  // first tier so the picker always shows a real selection, matching what the
+  // backend already does with a stale choice (`chat_model_choice` auto-picks).
+  const stored = chosenModelId();
+  let selected = MODEL_TIERS.some((t) => t.id === stored) ? stored : MODEL_TIERS[0].id;
   let options = await chatModelOptions().catch(() => [] as ChatModelOption[]);
 
   const gb = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);

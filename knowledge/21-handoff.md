@@ -8,7 +8,7 @@
 
 **Ready to do, in order:**
 
-1. **Ship the Metal fix to the founder's Mac.** It exists in the repo and in a local build only. Before tagging: **remove the Q8_0/fp16 "Test:" diagnostic models** from `model.rs` + `main.ts` (`MODEL_TIERS`) + the CI URL check — they tested the disproven K-quant theory and would otherwise ship to users as two baffling options. Then `git tag release-14 && git push origin release-14` (one tag → macOS + TestFlight + Android).
+1. **Ship the Metal fix to the founder's Mac.** It exists in the repo and in a local build only. The diagnostic-model removal that gated this is **done (2026-08-21)** — Q8_0/fp16 are out of `model.rs`, `MODEL_TIERS`, and the CI URL check. Remaining: `git tag release-14 && git push origin release-14` (one tag → macOS + TestFlight + Android).
 2. **Verify on-device**, per `skills/debugging.md`: install the new `.dmg`, ask a question, expect a coherent answer. Also confirm **dictation still works** — the build is notarized, and the hardened runtime denies the mic without `Entitlements.plist`; that path has never been exercised on a device.
 3. **Check `whisper-rs` for the same Metal exposure.** Transcription is *correct* on this Mac (~3.9× real-time), so it either avoids Metal or tolerates it. Worth knowing — but **do not change working code without evidence.**
 4. **`[OQ-72]`** (iOS asks to re-install Whisper after an update): diagnosed, not fixed. `main.ts`'s mic check does `.catch(() => [])`, so any failed query reads as "not installed". Confirming test: tap the prompt — if dictation starts in ~1s the file was always there.
@@ -78,9 +78,9 @@ Green: decider + website suites pass locally; the porter Rust suite (segmenter, 
 - **Personal context core** — local, user-owned store every model reads/writes (`[OQ-56]`).
 - **AI-first dictation** — system-wide voice button → commands into Verdure + transcription into the context core (`[OQ-57]`). Foundation exists in `live.rs`; what's left is the system-wide surface and routing.
 
-## How to build / ship (no local toolchain needed)
+## How to build / ship
 
-The founder's Mac has **no Xcode CLT and tight disk**, so everything builds in CI:
+Rust builds and tests run **locally** since 2026-08-21 (Xcode CLT 16.4 + `cmake`) — that's the inner loop. **Shipping** still runs entirely in CI, because the runners hold the signing identities (Developer ID, App Store Connect, Android keystores) and cross-compile the platforms this Mac can't:
 - **Ship everywhere at once: `git tag release-N && git push origin release-N`** — one tag triggers the macOS `.dmg`, the TestFlight upload, and the Android test APK from the same commit. **Use this by default**; reach for a per-platform tag only when iterating on one platform. (Added 2026-08-12 after iOS silently sat three weeks behind: per-platform tags meant "shipped" was really "shipped to whichever platform I remembered".) The Play `.aab` is deliberately *not* on `release-*` — it stays a manual `android-play-N` until its signing secrets exist.
 - Push to `mvp-porter-buzz` → CI runs (`.github/workflows/ci.yml`): decider+website (Linux), porter (macOS: `cargo test` + x86_64 **and iOS** cross-compile checks + model-URL reachability), porter-android (Linux: `aarch64-linux-android` compile check). **All three platforms now compile-check on every push**, so a platform-specific break surfaces immediately rather than at tag time.
 - **macOS Intel app:** `git tag app-build-N && git push origin app-build-N` → `build-app.yml` → `verdure-porter-macos-intel` (.dmg/.app). Install: `gh run download <run-id> -n verdure-porter-macos-intel`, mount, copy to /Applications, `xattr -cr`, open.
@@ -92,4 +92,4 @@ The founder's Mac has **no Xcode CLT and tight disk**, so everything builds in C
 
 ## Environment constraints (carry forward)
 
-2019 Intel Mac (x86_64), **8 GB RAM** (hard ceiling — exercises only the fallback chat tier), no Xcode CLT, ~3 GB free disk. Build/verify in CI; test the 4B on the iPad or Pixel 8a. See the `build-env-constraints` memory.
+2019 Intel Mac (x86_64), **8 GB RAM** (hard ceiling — exercises only the fallback chat tier), Xcode CLT 16.4 + `cmake` installed (since 2026-08-21), ~5.9 GB free disk. Build and test locally; ship via CI. The 4B *is* downloaded on this Mac (1.4 GB in the app data dir) but rarely fits the ~1.5 GB typically free — judge its reply quality on the iPad or Pixel 8a. See the `build-env-constraints` memory.
