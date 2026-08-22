@@ -59,6 +59,19 @@ jobs:
           echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
           echo "NDK at: $ANDROID_NDK_LATEST_HOME"
+      - name: Cache cargo build
+        # Same reasoning as build-android.yml: without this the NDK recompiles
+        # llama.cpp + whisper.cpp from scratch every run (~19 min measured on the
+        # sibling APK job). Added before first use so the Play path never pays
+        # that bill. Its own key — a .aab release build, distinct from the APK's.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/src-tauri/target
+          key: android-aab-cargo-${{ hashFiles('app/src-tauri/Cargo.lock') }}
+          restore-keys: android-aab-cargo-
       - name: Install workspaces
         run: npm ci
       - name: Generate the Android project (tauri android init)
@@ -113,3 +126,7 @@ jobs:
           name: verdure-android-play
           path: verdure-release.aab
           if-no-files-found: error
+          # 14 days, not the 90-day default: this is a PRIVATE repo, so artifact
+          # storage bills as GB-months. These builds are installed within a day
+          # or two and are always reproducible from the tag.
+          retention-days: 14

@@ -75,6 +75,34 @@ Never merge red. When CI fails, the fix lives in the same change.
 
 **CI is the gate, not the compiler (since 2026-08-21).** Xcode CLT 16.4 + `cmake` are installed on the founder's Mac: `cd app/src-tauri && cargo test` runs the suite locally in seconds, and that is now the inner loop. What follows described the era when it wasn't possible — kept because it still explains the CI design: The Tauri backend needs the macOS toolchain (Xcode Command Line Tools) to build, so a dev machine without them can't `cargo build`/`cargo test` the porter locally — that's expected, not a blocker. Pushing a branch runs the macOS job, which compiles `app/src-tauri` and runs the tests for you. For porter changes the loop is therefore **push to compile-check**; write the pure logic (parsers, prompt formatting, model gating) to be unit-testable so it's actually exercised there. Don't report "can't build locally" as "unverifiable" — it's verified in CI on push.
 
+## CI cost discipline — compile continuously, package on request
+
+CI minutes are a real budget on a private repo, and **macOS runners bill at 10×**. The rule that keeps the bill small without giving up safety:
+
+**Compile-checking is continuous and cheap. Packaging is deliberate and expensive.** Never conflate them.
+
+- **Compile checks** answer "does the code still build for this platform." They run on push, on Linux where possible, and cost ~1–2 billable minutes. Keep them.
+- **Packaging builds** produce an installable artifact (`.dmg`, `.ipa`, `.apk`). They are triggered by a **tag you type on purpose**, never automatically. Measured on `release-14` (2026-08-22): macOS `.dmg` **66 billable min**, TestFlight **57**, Android `.apk` **19** (before caching). One ship-everywhere tag ≈ **144 billable minutes**.
+
+**Pick the narrowest trigger that answers your question:**
+
+| What you need | How | Billable |
+|---|---|---|
+| Test macOS yourself | **Build locally** — `cd app && npm run tauri build` | **0** |
+| Rust/logic correctness | **Locally** — `cd app/src-tauri && cargo test` | **0** |
+| Signed + notarized macOS for someone else | tag `app-build-N` | ~66 |
+| Test on iPad | tag `testflight-N` | ~57 |
+| Test on Android | tag `android-build-N` | ~8 cached |
+| Genuinely ship everywhere | tag `release-N` | ~144 |
+
+`release-N` exists because iOS once sat three weeks behind (2026-08-12) — but it is a **shipping** tag, not a testing one. Reaching for it to test one platform buys the other two builds nobody asked for. That happened on `release-14`: macOS was wanted, and the tag also spent 57 minutes on an iOS archive that failed on an unrelated Apple account limit.
+
+**The default loop is local.** The founder's Mac has the toolchain (since 2026-08-21), so a macOS build needs no runner at all. Reach for CI when you need a *signature*, a *platform this machine isn't*, or the pre-merge gate.
+
+**Other levers already in place** (don't undo them): `concurrency: cancel-in-progress` so three quick pushes don't queue three builds; `dorny/paths-filter` diffing the actual push so a docs commit triggers nothing; `timeout-minutes` on every job so a hung runner can't bill for hours; cargo caching on every compiling job; and `retention-days: 14` on artifacts, since private-repo storage bills by GB-month.
+
+**A known gap this creates, tracked honestly:** the macOS CI job is gated to PRs and manual runs, so on a long-lived branch that never opens a PR, the **iOS and x86_64 cross-compile checks effectively never run**. iOS can therefore break silently until a `testflight-N` tag fails. Before tagging iOS after a long gap, trigger CI manually (`workflow_dispatch`) — that path is not gated to PRs and compile-checks iOS for ~40 billable minutes instead of discovering it inside a 57-minute signed build.
+
 When you add a new component, add its CI job in the same change that adds the component. A component without CI is unprotected. The known remaining CI gaps are the FFI sanitizer net (`[OQ-63]`) and a job for the long-term `src/` core once it's real. When you add a downloaded model to `model.rs`, add its URL to the porter job's resolve check in the same change (so a rotted release URL fails in CI, not on a user's machine).
 
 ## Self-check before declaring a feature done

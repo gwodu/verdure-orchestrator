@@ -66,7 +66,12 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             app/src-tauri/target
-          key: ${{ runner.os }}-ios-${{ hashFiles('app/src-tauri/Cargo.toml') }}
+          # Keyed on Cargo.lock, not Cargo.toml: the lock is committed (2026-08-21)
+          # and is what actually determines the compiled dependency set. Cargo.toml
+          # goes stale in BOTH directions — a transitive bump changes the lock while
+          # the toml is untouched (stale cache reused), and an unrelated toml edit
+          # busts a cache that was still perfectly valid.
+          key: ${{ runner.os }}-ios-${{ hashFiles('app/src-tauri/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-ios-
       - name: Build the frontend
         working-directory: app
@@ -212,3 +217,7 @@ jobs:
           name: verdure-testflight-signed
           path: app/build-ios/export/*.ipa
           if-no-files-found: error
+          # 14 days, not the 90-day default: this is a PRIVATE repo, so artifact
+          # storage bills as GB-months. These builds are installed within a day
+          # or two and are always reproducible from the tag.
+          retention-days: 14

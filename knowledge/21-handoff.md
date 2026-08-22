@@ -84,9 +84,22 @@ Green: decider + website suites pass locally; the porter Rust suite (segmenter, 
 ## How to build / ship
 
 Rust builds and tests run **locally** since 2026-08-21 (Xcode CLT 16.4 + `cmake`) — that's the inner loop. **Shipping** still runs entirely in CI, because the runners hold the signing identities (Developer ID, App Store Connect, Android keystores) and cross-compile the platforms this Mac can't:
-- **Ship everywhere at once: `git tag release-N && git push origin release-N`** — one tag triggers the macOS `.dmg`, the TestFlight upload, and the Android test APK from the same commit. **Use this by default**; reach for a per-platform tag only when iterating on one platform. (Added 2026-08-12 after iOS silently sat three weeks behind: per-platform tags meant "shipped" was really "shipped to whichever platform I remembered".) The Play `.aab` is deliberately *not* on `release-*` — it stays a manual `android-play-N` until its signing secrets exist.
-- Push to `mvp-porter-buzz` → CI runs (`.github/workflows/ci.yml`): decider+website (Linux), porter (macOS: `cargo test` + x86_64 **and iOS** cross-compile checks + model-URL reachability), porter-android (Linux: `aarch64-linux-android` compile check). **All three platforms now compile-check on every push**, so a platform-specific break surfaces immediately rather than at tag time.
-- **macOS Intel app:** `git tag app-build-N && git push origin app-build-N` → `build-app.yml` → `verdure-porter-macos-intel` (.dmg/.app). Install: `gh run download <run-id> -n verdure-porter-macos-intel`, mount, copy to /Applications, `xattr -cr`, open.
+**Decision rule (set 2026-08-22): compile continuously, package on request.** Pick the narrowest trigger that answers your question — full costs and rationale in `skills/testing.md` ("CI cost discipline").
+
+| What you need | How | Billable min |
+|---|---|---|
+| Test macOS yourself | **local** `cd app && npm run tauri build` | **0** |
+| Rust/logic correctness | **local** `cd app/src-tauri && cargo test` | **0** |
+| Signed+notarized macOS for someone else | tag `app-build-N` | ~66 |
+| Test on iPad | tag `testflight-N` | ~57 |
+| Test on Android | tag `android-build-N` | ~8 cached |
+| Genuinely ship everywhere | tag `release-N` | ~144 |
+
+- **macOS is built on this machine, not in CI.** `npm run tauri build` in `app/` produces `.app` + `.dmg` under `app/src-tauri/target/release/bundle/`. Unsigned — which is fine for the founder's own testing (a locally built app carries no quarantine flag, so Gatekeeper doesn't prompt and it won't translocate). CI's macOS build exists only to *sign and notarize* for handing to someone else.
+- **iOS and Android are built only on request** — when the founder asks, or when enough has changed that they should be re-verified on device. Never as a side effect of shipping something else.
+- **`release-N` is a SHIPPING tag, not a testing one.** It fires all three platforms (~144 billable min). It was added 2026-08-12 after iOS silently sat three weeks behind, and it still earns its place for a real release — but reaching for it to test *one* platform buys two builds nobody asked for. That is exactly what happened on `release-14`. The Play `.aab` is deliberately *not* on `release-*`.
+- Push to `mvp-porter-buzz` → CI (`.github/workflows/ci.yml`) runs the **Linux jobs only**: decider+website and the Android `cargo check`. ~2 billable minutes; a docs-only push triggers nothing but the 6-second change detector. **The macOS job is gated to PRs and manual runs** — so the **x86_64 and iOS cross-compile checks do NOT run on push**. Consequence to watch: on this long-lived branch, which rarely sees a PR, iOS can break silently until a `testflight-N` tag fails. Before tagging iOS after a long gap, trigger CI manually (`workflow_dispatch`) — that path isn't push-gated.
+- **macOS Intel app from CI (signed):** `git tag app-build-N && git push origin app-build-N` → `build-app.yml` → `verdure-porter-macos-intel` (.dmg/.app). Install with `gh run download <run-id> -n verdure-porter-macos-intel`, then copy to /Applications. **Use `gh`, not the browser** — a Safari download carries a quarantine flag that makes macOS run the app translocated from `/private/var`, so you can end up testing a stale copy (this bit us 2026-08-22). No `xattr -cr` needed since notarization landed.
 - **iPad via TestFlight** (the current iOS channel, `[OQ-65]`): `git tag testflight-N` → `build-testflight.yml` signs with the founder's App Store Connect API key (GitHub secrets: `ASC_API_KEY_P8`/`ASC_API_KEY_ID`/`ASC_API_ISSUER_ID`/`APPLE_TEAM_ID`) and uploads. iOS bundle ID is `ai.verdure.porter.898PY37K5S` to match the App Store record. Test vehicle only — the shippable iOS strategy stays `11`'s thin-decider.
 - **Android test APK** (`[OQ-66]`): `git tag android-build-N` → `build-android.yml` (Linux runners) → test-signed `.apk` (throwaway CI key — uninstall before installing a differently-signed build).
 - **Android Play open testing:** `git tag android-play-N` → `build-android-play.yml` → signed `.aab` via the persistent upload keystore (secrets pending founder-side). Both Android workflows share `app/scripts/patch-android-project.py` (manifest + mic wiring), so they cannot diverge.
@@ -95,4 +108,6 @@ Rust builds and tests run **locally** since 2026-08-21 (Xcode CLT 16.4 + `cmake`
 
 ## Environment constraints (carry forward)
 
-2019 Intel Mac (x86_64), **8 GB RAM** (hard ceiling — exercises only the fallback chat tier), Xcode CLT 16.4 + `cmake` installed (since 2026-08-21), ~5.9 GB free disk. Build and test locally; ship via CI. The 4B *is* downloaded on this Mac (1.4 GB in the app data dir) but rarely fits the ~1.5 GB typically free — judge its reply quality on the iPad or Pixel 8a. See the `build-env-constraints` memory.
+2019 Intel Mac (x86_64), **8 GB RAM**, Xcode CLT 16.4 + `cmake` installed (since 2026-08-21), ~7 GB free disk. Build and test locally — including the macOS app bundle; CI is for signatures and other platforms.
+
+**The "this Mac only runs the fallback chat tier" constraint is retired (2026-08-22).** It ran the Qwen3 4B ("Powerful") with the weights resident. That belief formed while the Metal bug (`[OQ-71]`) made every model emit garbage here, so a correctness failure was recorded as a memory ceiling — see `[OQ-64]`'s note, which also has the first real footprint measurement. Disk stays the live constraint: `target/debug` ~2.1 GB and `target/release` adds ~1 GB more. See the `build-env-constraints` memory.

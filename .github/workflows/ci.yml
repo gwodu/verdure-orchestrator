@@ -121,7 +121,12 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             app/src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('app/src-tauri/Cargo.toml') }}
+          # Keyed on Cargo.lock, not Cargo.toml: the lock is committed (2026-08-21)
+          # and is what actually determines the compiled dependency set. Cargo.toml
+          # goes stale in BOTH directions — a transitive bump changes the lock while
+          # the toml is untouched (stale cache reused), and an unrelated toml edit
+          # busts a cache that was still perfectly valid.
+          key: ${{ runner.os }}-cargo-${{ hashFiles('app/src-tauri/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - name: Install workspaces
         run: npm ci
@@ -195,7 +200,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             app/src-tauri/target
-          key: android-check-cargo-${{ hashFiles('app/src-tauri/Cargo.toml') }}
+          key: android-check-cargo-${{ hashFiles('app/src-tauri/Cargo.lock') }}
           restore-keys: android-check-cargo-
       - name: Install workspaces
         run: npm ci

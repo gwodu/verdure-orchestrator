@@ -46,6 +46,23 @@ jobs:
           echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
           echo "NDK at: $ANDROID_NDK_LATEST_HOME"
+      - name: Cache cargo build
+        # This job had NO cache until 2026-08-22 and so recompiled llama.cpp and
+        # whisper.cpp through the NDK on every single run — measured at 18.9
+        # minutes for release-14, the most expensive Linux job we run and second
+        # only to the macOS packaging overall. The C++ dominates that time and
+        # changes only when the pinned crates do, so it caches well.
+        # Key is separate from ci.yml's `android-check-cargo-*`: that job runs
+        # `cargo check` (metadata only), this one `cargo build --release`, and
+        # sharing a key would let the cheaper artifacts evict the expensive ones.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/src-tauri/target
+          key: android-apk-cargo-${{ hashFiles('app/src-tauri/Cargo.lock') }}
+          restore-keys: android-apk-cargo-
       - name: Install workspaces
         run: npm ci
       - name: Generate the Android project (tauri android init)
@@ -100,3 +117,7 @@ jobs:
           name: verdure-android-test
           path: verdure-android-test.apk
           if-no-files-found: error
+          # 14 days, not the 90-day default: this is a PRIVATE repo, so artifact
+          # storage bills as GB-months. These builds are installed within a day
+          # or two and are always reproducible from the tag.
+          retention-days: 14
