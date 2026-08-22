@@ -4,6 +4,16 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-08-22 — Build stamp (`vite.config.ts`, `main.ts`, `styles.css`) + corrected `approx_mb`
+
+**Verified by looking at it**, per `design.md`'s visual self-review loop: built, served, and screenshotted. The stamp renders bottom-right as `dev 1097ec8+` at 10px / 38% opacity / `pointer-events: none`, and the full-page shot confirms it disturbs no other element. Asserted programmatically too — element present, text correct, computed `position: fixed`, and the value `dev 1097ec8+` is present in the emitted bundle (proving Vite's `define` substitution actually happened, rather than the identifier surviving as a runtime lookup that would throw).
+
+**`approx_mb`: 51 Rust tests stayed green,** because none of them assert a specific size — they assert *relationships* (does this fit, is the list consistent). Correct behaviour-not-implementation testing, but it also means **no test would have caught the wrong numbers.** They were only found by curling each URL for `Content-Length` while verifying something unrelated.
+
+**The gap, stated plainly:** `approx_mb` is unverifiable offline — the truth lives on Hugging Face. A test can't reach it, and the CI URL check (which could) now costs money and runs rarely. So these five numbers are correct as of 2026-08-22 and will silently rot if a publisher re-quantizes a file. The cheap fix when someone next touches the CI job: have it compare `Content-Length` against `approx_mb` rather than just checking the URL resolves — same request, one extra assertion.
+
+**Tooling finding: `app/scripts/shots.mjs` is broken and has been since July.** It waits for `.grid .card`, the legacy home screen that stopped being the entry point in the chat-first redesign — so it times out on every run. `TEST_REPORT` has been citing it as the frontend's verification step the whole time. Screenshots for this change were taken with a direct Playwright call instead. Worth repairing or deleting; a test harness nobody can run is `debugging.md` §7 in miniature — a broken tool whose silence reads as a clean result.
+
 ### 2026-08-21 — Removing the `[OQ-71]` diagnostic models (`model.rs`, `main.ts`, `ci.yml`)
 
 **No test changes needed — and that is the result worth recording.** Deleting two entries from `MODELS` and two from `chat_candidates` left all 51 tests green with no edits, because the model tests assert *behavior against the lists* (`entries.len() == MODELS.len()`, `opts.len() == CHAT_MODEL_CHOICES.len()`, "the preferred model is whatever the top candidate is") rather than hard-coding which models exist. That is `testing.md`'s "test behavior, not implementation" paying out: a whole category of change — adding or retiring a model — costs zero test churn.

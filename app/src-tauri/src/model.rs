@@ -66,7 +66,7 @@ pub const WHISPER_BASE_EN: ModelInfo = ModelInfo {
     modality: "Transcription",
     file: "ggml-base.en.bin",
     url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
-    approx_mb: 142,
+    approx_mb: 141,
     runtime_mb: 600,
     kv_kb_per_token: 0,
     trained_ctx: 0,
@@ -84,14 +84,17 @@ pub const WHISPER_BASE_EN: ModelInfo = ModelInfo {
 // pair are the always-present floor/fallback, and Gemma 4 E2B is a roomy-tier option
 // gated until verified. Sampling is plain (no grammar) — see `llm.rs`. [OQ-55].
 
-/// Smaller chat model for memory-constrained machines (≤ 8 GB). ~400 MB.
+/// Smaller chat model for memory-constrained machines (≤ 8 GB). ~469 MB.
+/// (Sizes across this file are the URLs' real Content-Length, measured 2026-08-22;
+/// they were round guesses before, and `approx_mb` feeds the picker's fits-disk
+/// check — an understated size can tell a user a download fits when it doesn't.)
 pub const QWEN_CHAT_SMALL: ModelInfo = ModelInfo {
     id: "qwen2.5-0.5b-instruct",
     name: "Chat model (Qwen2.5 0.5B)",
     modality: "Chat",
     file: "qwen2.5-0.5b-instruct-q4_k_m.gguf",
     url: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
-    approx_mb: 400,
+    approx_mb: 469,
     // ~469 MB weights + KV/compute at 2048 ctx + llama overhead. On an 8 GB Intel
     // Mac this still aborted with only ~2 GB free — so the gate is on AVAILABLE,
     // not total, RAM (knowledge/21).
@@ -101,14 +104,14 @@ pub const QWEN_CHAT_SMALL: ModelInfo = ModelInfo {
     prompt_style: Some(PromptStyle::ChatMl),
 };
 
-/// Larger chat model for roomier machines. ~1.1 GB download.
+/// Larger chat model for roomier machines. ~1.04 GB download.
 pub const QWEN_CHAT: ModelInfo = ModelInfo {
     id: "qwen2.5-1.5b-instruct",
     name: "Chat model (Qwen2.5 1.5B)",
     modality: "Chat",
     file: "qwen2.5-1.5b-instruct-q4_k_m.gguf",
     url: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-    approx_mb: 1100,
+    approx_mb: 1066,
     runtime_mb: 2400,
     kv_kb_per_token: 28,
     trained_ctx: 32768,
@@ -118,7 +121,7 @@ pub const QWEN_CHAT: ModelInfo = ModelInfo {
 /// Roomy-tier chat model: Gemma 4 E2B (Google, 2026-04-02, Apache 2.0). Sparse
 /// activation (Per-Layer Embeddings) → ~2.3B *effective* params, so short-prompt
 /// replies feel close to a 1.5B while carrying more capability — the appeal for the
-/// chat front door (knowledge/03, the speed axis). BUT the Q4_K_M file is ~3.1 GB,
+/// chat front door (knowledge/03, the speed axis). BUT the Q4_K_M file is ~2.9 GB,
 /// and the advertised <1.5 GB *active* footprint only materialises if the runtime
 /// implements PLE offload — unverified in our pinned llama-cpp-2. So `runtime_mb`
 /// is set to the full resident cost (conservative), and the model is held OUT of
@@ -130,7 +133,7 @@ pub const GEMMA4_E2B: ModelInfo = ModelInfo {
     modality: "Chat",
     file: "gemma-4-E2B-it-Q4_K_M.gguf",
     url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf",
-    approx_mb: 3100,
+    approx_mb: 2963,
     // Full resident estimate: ~3.1 GB weights + KV/compute at 2048 ctx + overhead.
     // Revisit DOWN once PLE offload is confirmed (then it can drop toward ~1.5 GB).
     runtime_mb: 4000,
@@ -161,7 +164,7 @@ pub const BYTESHAPE_QWEN3_4B: ModelInfo = ModelInfo {
     modality: "Chat",
     file: "Qwen3-4B-Instruct-2507-Q3_K_S-2.77bpw.gguf",
     url: "https://huggingface.co/byteshape/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q3_K_S-2.77bpw.gguf",
-    approx_mb: 1400,
+    approx_mb: 1336,
     // Provisional: ~1.4 GB weights + KV/compute at 1024 ctx (llm.rs N_CTX) + llama
     // overhead ≈ ~2.3 GB. Calibrate on-device like the transcription predictor
     // (knowledge/19). NOTE: the 1.4 GB of weights is a hard floor — this can never

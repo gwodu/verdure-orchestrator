@@ -1164,8 +1164,23 @@ function escapeHtml(s: string): string {
   });
 }
 
+// Which build is this? Stamped into the corner so the answer is never a guess —
+// on 2026-08-22 a stale copy of the app was tested for several minutes because
+// two builds were indistinguishable on screen. Attached to <body>, not to #app,
+// because every screen re-render clears #app; this must outlive all of them.
+// Deliberately tiny and dim: useful when you look for it, invisible when you
+// don't (design.md — the interface shows the user's work, not the software's).
+function mountBuildStamp(): void {
+  const stamp = el("div", "build-stamp", __BUILD_STAMP__);
+  // Not announced to screen readers: it is a developer breadcrumb, not content.
+  stamp.setAttribute("aria-hidden", "true");
+  stamp.title = `Verdure build ${__BUILD_STAMP__}`;
+  document.body.appendChild(stamp);
+}
+
 // --- boot -------------------------------------------------------------------
 async function boot(): Promise<void> {
+  mountBuildStamp();
   // First launch (no model chosen yet) → the "Choose your model" screen; otherwise
   // straight into chat. Detection refines the tier in the background either way.
   if (chosenModelId()) renderChat();

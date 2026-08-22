@@ -1,13 +1,27 @@
 name: CI
 
+# CI DOES NOT RUN ON PUSH (since 2026-08-22). Pushing code to GitHub is free.
+#
+# Why: the Actions budget is real money and nearly spent. Every check this
+# workflow performs can now run on the founder's Mac for free — `cargo test`,
+# the frontend typecheck+build, the decider and website suites, and a full
+# `tauri build`. Paying a runner to repeat work that already passed locally
+# buys nothing but a green tick. So GitHub is the code's home, not its compiler:
+# commit and push freely, and verify BEFORE pushing (see skills/testing.md).
+#
+# What still triggers it, both deliberate acts:
+#   * pull_request  — the gate before merging to main.
+#   * workflow_dispatch — "run CI now" from the Actions tab or `gh workflow run`.
+#     This is how you compile-check iOS and Android, which the Mac cannot do.
+#
+# Escape hatch if push is ever restored: `[skip ci]` in a commit message stops
+# GitHub scheduling a run at all (also `[skip actions]`, `[no ci]`).
 on:
-  push:
-    branches: ["*"]
   pull_request:
     branches: ["*"]
   workflow_dispatch:
 
-# Only the newest run per branch matters. Without this, three quick pushes queue
+# Only the newest run per ref matters. Without this, three quick PR updates queue
 # three full builds — and a macOS minute bills at 10x, so a rapid iteration
 # session was costing real money for results nobody would read.
 concurrency:
@@ -50,14 +64,15 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: filter
         with:
-          # On a PUSH, diff against the commit we were on before it — i.e. what
-          # this push actually changed. Without this, paths-filter defaults to
-          # comparing the whole BRANCH against `main`, and since mvp-porter-buzz
-          # carries months of unmerged work in app/, every filter matched on
-          # every push: a three-file docs commit was triggering 7.6 minutes of
-          # Android compilation. Leave it unset for pull_request, where the
-          # default (diff against the base branch) is the correct behaviour.
-          base: ${{ github.event_name == 'push' && github.event.before || '' }}
+          # Left unset deliberately, which is correct for both remaining events:
+          #   * pull_request — diffs against the base branch (what the PR changes).
+          #   * workflow_dispatch — diffs the branch against the default branch, so
+          #     on mvp-porter-buzz everything matches and a manual run checks
+          #     everything. That is what you want from "run CI now."
+          # The old push-only `base: github.event.before` is gone with the push
+          # trigger. It existed because this branch carries months of unmerged
+          # work, so without it every filter matched on every push and a
+          # three-file docs commit triggered 7.6 minutes of Android compilation.
           filters: |
             common: &common
               - 'package.json'
@@ -95,12 +110,15 @@ jobs:
   porter:
     name: Desktop porter (macOS)
     needs: changes
-    # macOS runners bill at 10x. This job used to run on every push, which is
-    # what made a day of iteration cost real money — and it is now redundant:
-    # the founder's Mac has Xcode CLT, so `cd app/src-tauri && cargo test` runs
-    # the same suite locally in seconds. CI keeps it as the gate before merge
-    # (PRs) and on demand; the release tag builds compile everything anyway.
-    if: ${{ needs.changes.outputs.porter == 'true' && github.event_name != 'push' }}
+    # macOS runners bill at 10x — the single most expensive thing we can run.
+    # Most of what this job does is now free on the founder's Mac (`cargo test`,
+    # the frontend build, the x86_64 native compile). It earns its cost for ONE
+    # thing the Mac cannot do: the **iOS** cross-compile check. Reach for it via
+    # workflow_dispatch before tagging `testflight-N` after a long gap, so an
+    # iOS break surfaces here rather than inside a signed TestFlight build.
+    # (The push gate that used to live here is gone — push no longer triggers
+    # this workflow at all; see the header.)
+    if: ${{ needs.changes.outputs.porter == 'true' }}
     runs-on: macos-latest
     timeout-minutes: 30
     # Deployment target (10.15, for whisper.cpp's std::filesystem) is forced in

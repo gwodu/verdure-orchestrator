@@ -20,6 +20,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 **Cleanup before shipping it:** removed the two diagnostic models (`Q8_0` and `fp16` 0.5B) added to isolate the — now disproven — K-quant theory. They were probes, not products: the picker showed them as "Test: Q8" and "Test: fp16", two baffling extra options for anyone who isn't debugging ggml kernels. Gone from `model.rs` (constants, `chat_candidates`, `MODELS`), the picker's `MODEL_TIERS`, and the CI URL check. They never shipped in a tag and were never downloaded on-device, so nobody has a stray file or a stale selection. The picker now also falls back to the first tier when the stored model id names a tier that no longer exists — previously a retired model left the picker with nothing selected, and Verdure will retire models again.
 
+### 2026-08-22 — Build stamp in the corner; honest download sizes; CI off the push path
+
+**Build stamp.** Every screen now carries a tiny, dim line bottom-right saying which build it is — `release-14` when the commit is tagged, `dev 1097ec8` otherwise, with a trailing `+` when the tree had uncommitted changes. Captured at compile time by `vite.config.ts` from git and baked in via Vite `define` (the running app has no git and no shell).
+
+*Why it exists:* on 2026-08-22 a stale, translocated copy of Verdure was tested for several minutes because two builds looked identical on screen. "Which build am I looking at?" should never be a guess. Deliberately faint (10px, 38% opacity, `pointer-events: none`) — findable when you look for it, invisible when you don't.
+
+**Honest download sizes.** `approx_mb` was a set of round guesses; every one was wrong against the actual `Content-Length`. The worst mattered: **"Small" claimed 400 MB and is really 469** — and `approx_mb` feeds the picker's `fits_disk` check, so Verdure could tell the most disk-constrained user a download fits when it doesn't. All five corrected to measured values (Whisper 141, Small 469, Balanced 1066, Powerful 1336, Gemma 2963).
+
+**CI no longer runs on push.** Pushing code to GitHub is now free; verification happens on this machine before the push. Details in the changelog and `skills/testing.md`.
+
 ### 2026-08-22 — Chat confirmed working on the founder's Mac (`release-14`)
 
 **What:** the Metal fix shipped. `release-14` built, signed, notarized and stapled; installed from the CI artifact (via `gh`, so no Safari quarantine flag and no AppTranslocation). Asked it a question, got a coherent answer.

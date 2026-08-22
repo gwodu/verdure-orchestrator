@@ -968,3 +968,28 @@ body::after {
   border-radius: 6px;
   padding: 1px 5px;
 }
+
+/* Build stamp — which build am I looking at? Bottom-right, deliberately faint:
+   findable when you go looking, ignorable otherwise. Fixed to the viewport and
+   attached to <body>, so it survives every screen re-render. Non-interactive so
+   it can never intercept a click meant for the composer beneath it. */
+.build-stamp {
+  position: fixed;
+  right: 10px;
+  bottom: 6px;
+  z-index: 5;
+  pointer-events: none;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  opacity: 0.38;
+  /* The gradient behind this varies; a soft dark halo keeps it legible on both
+     the pale mint glow and the deep navy without raising its visual weight. */
+  text-shadow: 0 1px 2px rgba(2, 8, 18, 0.65);
+}
+/* Respect the OS reduce-transparency setting the same way the glass does. */
+@media (prefers-reduced-transparency: reduce) {
+  .build-stamp { opacity: 0.55; }
+}
