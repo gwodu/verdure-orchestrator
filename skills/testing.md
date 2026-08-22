@@ -88,7 +88,7 @@ CI minutes are a real budget on a private repo, and **macOS runners bill at 10×
 
 | What you need | How | Billable |
 |---|---|---|
-| Test macOS yourself | **Build locally** — `cd app && npm run tauri build` | **0** |
+| Test macOS yourself | **Build locally** — `cd app && npm run tauri build` (~8 min cold, gives `bundle/macos/Verdure.app`; the `.dmg` step fails locally and doesn't matter) | **0** |
 | Rust/logic correctness | **Locally** — `cd app/src-tauri && cargo test` | **0** |
 | Signed + notarized macOS for someone else | tag `app-build-N` | ~66 |
 | Test on iPad | tag `testflight-N` | ~57 |
