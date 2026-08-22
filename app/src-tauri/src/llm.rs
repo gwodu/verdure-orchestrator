@@ -566,7 +566,18 @@ mod tests {
     ///   VERDURE_REPRO_MODEL=/path/to/model.gguf \
     ///     cargo test --lib repro_oq71 -- --ignored --nocapture
     ///
-    /// Delete with `[OQ-71]`.
+    /// **Getting a model to point it at.** The 469 MB Qwen2.5 0.5B copy this was
+    /// developed against was deleted on 2026-08-22 to reclaim disk; the harness is
+    /// kept because it is the regression check for `[OQ-71]`. Two ways back:
+    ///   * Any `.gguf` already installed by the app works — check
+    ///     `~/Library/Application Support/ai.verdure.porter/`. Match the prompt
+    ///     style below to the model (`ChatMl` for Qwen, `Gemma` for Gemma).
+    ///   * Or re-fetch the original (`model::QWEN_CHAT_SMALL`, 491,400,032 bytes):
+    ///     curl -L -o /tmp/qwen05b.gguf \
+    ///       https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
+    ///
+    /// Keep while `[OQ-71]` can regress — the Metal fix it guards is a one-line
+    /// backend choice in `model_params()`, easy to undo by accident.
     #[test]
     #[ignore]
     fn repro_oq71_generates_from_a_real_model() {
