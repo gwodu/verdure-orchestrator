@@ -20,6 +20,20 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 **Cleanup before shipping it:** removed the two diagnostic models (`Q8_0` and `fp16` 0.5B) added to isolate the — now disproven — K-quant theory. They were probes, not products: the picker showed them as "Test: Q8" and "Test: fp16", two baffling extra options for anyone who isn't debugging ggml kernels. Gone from `model.rs` (constants, `chat_candidates`, `MODELS`), the picker's `MODEL_TIERS`, and the CI URL check. They never shipped in a tag and were never downloaded on-device, so nobody has a stray file or a stale selection. The picker now also falls back to the first tier when the stored model id names a tier that no longer exists — previously a retired model left the picker with nothing selected, and Verdure will retire models again.
 
+### 2026-08-22 — Chat confirmed working on the founder's Mac (`release-14`)
+
+**What:** the Metal fix shipped. `release-14` built, signed, notarized and stapled; installed from the CI artifact (via `gh`, so no Safari quarantine flag and no AppTranslocation). Asked it a question, got a coherent answer.
+
+**Why it matters:** chat has never worked on this machine. Every reply since June was token salad. `[OQ-71]` is now closed end-to-end — repo → CI → signed build → on-device.
+
+**Two assumptions it killed:**
+1. **"The 8 GB Intel Mac only exercises the fallback chat tier."** It doesn't — it answered on the **Powerful (Qwen3 4B)** tier, weights resident. That belief formed while the Metal bug made every model produce garbage here, so a *correctness* failure was misread as a *memory ceiling*.
+2. **"`runtime_mb: 2300` is about right for the 4B."** Measured RSS ≈ **1.40 GB** resident, ~1.55 GB with a full 1024-token KV window. The gate is ~750 MB too conservative and is denying the 4B to machines that could run it. Recorded under `[OQ-64]`, deliberately **not** acted on yet: one short conversation isn't a peak measurement, and undershooting this number OOM-`abort()`s the app.
+
+**Not shipped:** iOS. The TestFlight archive failed on an Apple *account* limit (certificate cap reached), not on anything in this change. Pre-existing, founder-side, non-blocking.
+
+**Still unverified:** dictation under the hardened runtime. `Entitlements.plist` grants the mic, but no notarized build has ever had that path exercised on a device.
+
 ### 2026-08-17 — macOS signing + notarization; Storage shows where models live; CI cost cuts
 
 **Signed + notarized macOS builds.** `build-app.yml` now signs with a Developer ID Application certificate, notarizes through Apple's service, and staples the ticket — verified in CI by `codesign --verify`, `spctl --assess` (Gatekeeper's own check: `accepted / source=Notarized Developer ID`) and `stapler validate`. Users no longer need `xattr -cr`; the app opens with a double-click. Notarization reuses the existing App Store Connect key, so only the signing certificate was new. **`Entitlements.plist` was required, not optional:** notarized apps run under the hardened runtime, which denies microphone access unless entitled — without it dictation would work unsigned and silently fail for every notarized user. Signing degrades gracefully: without the secrets the job still builds unsigned and warns.
