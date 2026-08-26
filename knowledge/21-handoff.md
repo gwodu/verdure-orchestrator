@@ -19,20 +19,25 @@
 
 **Then the standing debt:** process isolation (`[OQ-58]`, still P0 before real users — ggml `abort()` kills the GUI), the `porter` rename before the first Play upload (`[OQ-60]`, becomes permanent at publish), and the evals harness (`[OQ-74]`).
 
-**Local loop (new):** `cd app/src-tauri && cargo test` — 51 tests, seconds. The `#[ignore]`d `repro_oq71_generates_from_a_real_model` runs real inference against a model:
-`VERDURE_REPRO_MODEL=~/Verdure-bisect/models/qwen2.5-0.5b-q4km.gguf cargo test --lib repro_oq71 -- --ignored --nocapture`
+**Local loop:** everything verifies free on this machine, and **CI no longer runs on push** — see "How to build / ship" below.
+- `cd app/src-tauri && cargo test` — 51 tests, seconds.
+- `cd app && npm run build` — frontend typecheck + build.
+- `npm test --workspace @verdure/decider` — 74 tests.
+- `cd app && npm run tauri build` — the whole macOS app (~8 min cold).
 
-**Kept on disk for diagnostics** (delete when no longer useful): `~/Verdure-bisect/llama-cpp-reference/` (upstream's prebuilt macOS x64 binaries — `llama-cli`, `llama-tokenize`, `llama-perplexity`, `llama-bench`) and `~/Verdure-bisect/models/qwen2.5-0.5b-q4km.gguf` (kept outside the app's data dir because the switch-model prompt deleted it twice mid-investigation).
+The `#[ignore]`d `repro_oq71_generates_from_a_real_model` needs a `.gguf` to point at; its own doc comment says how to get one (the 469 MB copy was deleted 2026-08-22 to reclaim disk).
 
-**Disk is tight** (~5 GB free after a native build; `app/src-tauri/target` grows to ~2 GB). npm and Homebrew caches are safely clearable and were worth 4.3 GB.
+**Kept on disk for diagnostics:** `~/Verdure-bisect/llama-cpp-reference/` (26 MB — upstream's prebuilt macOS x64 `llama-cli`, `llama-tokenize`, `llama-perplexity`, `llama-bench`). This is the known-good reference that exonerated everything outside our binary during `[OQ-71]`, and `llama-tokenize` is the tool `[OQ-74]`'s tokenizer-parity check needs. Worth its space.
+
+**Disk is tight** (~5–7 GB free; `target/debug` ~2 GB, `target/release` ~1 GB, and a universal build adds an `aarch64` tree on top). npm and Homebrew caches are safely clearable and were worth 4.3 GB.
 
 ## What exists and works (branch `mvp-porter-buzz`, not merged to main)
 
-The MVP is a **Tauri app** (`app/`) — Verdure, the local personal AI — that runs models **inside one interface**, shipped entirely via CI (no local toolchain; see "How to build/ship").
+The MVP is a **Tauri app** (`app/`) — Verdure, the local personal AI — that runs models **inside one interface**. Built and tested locally; CI is used only for signatures and the platforms this Mac isn't (see "How to build / ship").
 
 Verified on-device (founder's 2019 Intel Mac 8 GB, iPad via TestFlight, Pixel 8a via sideloaded APK):
 
-- **Chat** ✅ — a plain conversation with a local model via llama.cpp. **Confirmed loading and generating on the iPad** (2026-07-27, answering `[OQ-64]`'s core question). The JSON tool-calling wrapper was **removed** on-device evidence (the tiny model over-triggered tools and leaked malformed JSON); capabilities-as-tools returns later, constrained + process-isolated (`[OQ-55]`). Model lineup: **ByteShape Qwen3 4B** (`Q3_K_S-2.77bpw`, ~1.4 GB) as the top RAM-gated pick, Qwen2.5 0.5B/1.5B as floor/fallback. A first-launch **model picker** (Small/Balanced/Powerful, with download size + per-device memory fit, persisted, changeable from the header) replaced the earlier "best model only" toggle. The 8 GB Mac exercises only the fallback tier (~1.5 GB free vs the 4B's ~2.3 GB floor); the 4B's `runtime_mb` still needs on-device calibration (`[OQ-64]` residual).
+- **Chat** ✅ — a plain conversation with a local model via llama.cpp. **Confirmed loading and generating on the iPad** (2026-07-27, answering `[OQ-64]`'s core question). The JSON tool-calling wrapper was **removed** on-device evidence (the tiny model over-triggered tools and leaked malformed JSON); capabilities-as-tools returns later, constrained + process-isolated (`[OQ-55]`). Model lineup: **ByteShape Qwen3 4B** (`Q3_K_S-2.77bpw`, ~1.4 GB) as the top RAM-gated pick, Qwen2.5 0.5B/1.5B as floor/fallback. A first-launch **model picker** (Small/Balanced/Powerful, with download size + per-device memory fit, persisted, changeable from the header) replaced the earlier "best model only" toggle. **The 8 GB Mac runs the 4B** — confirmed 2026-08-22, weights resident, coherent replies; the old "fallback tier only" claim was an artefact of the Metal bug. `runtime_mb` (2300) now looks ~900 MB too conservative against a measured ~1.40 GB, but needs a *peak* measurement before it's lowered (`[OQ-64]`).
 - **Transcription (file)** ✅ — drop audio → text via whisper.cpp `base.en`; ~3.9× real-time measured on the Intel Mac.
 - **Transcription (live mic)** ✅ **on all three platforms** — `live.rs`: `cpal` capture + a pure energy-gated `Segmenter` + transcribe-once-per-segment with a resident Whisper context. macOS confirmed 2026-06-30; iPad with the TestFlight builds; **Android confirmed 2026-08-03** (Pixel 8a) after root-causing the `ndk_context` initialization gap in Tauri v2 (changelog 2026-08-02).
 - **Dictation into chat** ✅ — the mic button dictates straight into the chat box; the standalone transcription page was removed (2026-07-25). First mic tap without Whisper installed shows a size-and-consent prompt before downloading.
@@ -90,10 +95,10 @@ Rust builds and tests run **locally** since 2026-08-21 (Xcode CLT 16.4 + `cmake`
 |---|---|---|
 | Test macOS yourself | **local** `cd app && npm run tauri build` | **0** |
 | Rust/logic correctness | **local** `cd app/src-tauri && cargo test` | **0** |
-| Signed+notarized macOS for someone else | tag `app-build-N` | ~66 |
+| Signed+notarized macOS for someone else (universal) | tag `app-build-N` | ~130 |
 | Test on iPad | tag `testflight-N` | ~57 |
 | Test on Android | tag `android-build-N` | ~8 cached |
-| Genuinely ship everywhere | tag `release-N` | ~144 |
+| Genuinely ship everywhere | tag `release-N` | ~200 |
 
 - **macOS is built on this machine, not in CI.** `cd app && npm run tauri build` → **`target/release/bundle/macos/Verdure.app`**. Verified 2026-08-22: compiles in **~8 min** cold (llama.cpp + whisper.cpp at `-O3`; incremental rebuilds are far quicker), produces a valid x86_64 Mach-O, and **launches**. Unsigned, which is fine for the founder's own testing — a locally built app carries no quarantine flag, so Gatekeeper doesn't prompt and it won't translocate. CI's macOS build exists only to *sign and notarize* for handing to someone else.
   **The `.dmg` step fails locally and that's OK.** `bundle_dmg.sh` errors after the `.app` is already built (it drives Finder via AppleScript to style the disk image, which needs an interactive session + Automation permission). The `.app` is the deliverable — copy it to /Applications and run it. If it fails, `hdiutil detach` any leftover `/Volumes/dmg.*` and delete the `rw.*.dmg` intermediate it strands, or the next run inherits the mess. Want a real `.dmg`? That's what `app-build-N` is for.
@@ -101,7 +106,7 @@ Rust builds and tests run **locally** since 2026-08-21 (Xcode CLT 16.4 + `cmake`
 - **iOS and Android are built only on request** — when the founder asks, or when enough has changed that they should be re-verified on device. Never as a side effect of shipping something else.
 - **`release-N` is a SHIPPING tag, not a testing one.** It fires all three platforms (~144 billable min). It was added 2026-08-12 after iOS silently sat three weeks behind, and it still earns its place for a real release — but reaching for it to test *one* platform buys two builds nobody asked for. That is exactly what happened on `release-14`. The Play `.aab` is deliberately *not* on `release-*`.
 - Push to `mvp-porter-buzz` → CI (`.github/workflows/ci.yml`) runs the **Linux jobs only**: decider+website and the Android `cargo check`. ~2 billable minutes; a docs-only push triggers nothing but the 6-second change detector. **The macOS job is gated to PRs and manual runs** — so the **x86_64 and iOS cross-compile checks do NOT run on push**. Consequence to watch: on this long-lived branch, which rarely sees a PR, iOS can break silently until a `testflight-N` tag fails. Before tagging iOS after a long gap, trigger CI manually (`workflow_dispatch`) — that path isn't push-gated.
-- **macOS Intel app from CI (signed):** `git tag app-build-N && git push origin app-build-N` → `build-app.yml` → `verdure-porter-macos-intel` (.dmg/.app). Install with `gh run download <run-id> -n verdure-porter-macos-intel`, then copy to /Applications. **Use `gh`, not the browser** — a Safari download carries a quarantine flag that makes macOS run the app translocated from `/private/var`, so you can end up testing a stale copy (this bit us 2026-08-22). No `xattr -cr` needed since notarization landed.
+- **macOS app from CI (signed + notarized, UNIVERSAL):** `git tag app-build-N && git push origin app-build-N` → `build-app.yml` → `verdure-macos-universal` (.dmg/.app). Runs natively on both Apple Silicon and Intel ([OQ-76]). Install with `gh run download <run-id> -n verdure-macos-universal`, then copy to /Applications. **Use `gh`, not the browser** — a Safari download carries a quarantine flag that makes macOS run the app translocated from `/private/var`, so you can end up testing a stale copy (this bit us 2026-08-22). No `xattr -cr` needed since notarization landed.
 - **iPad via TestFlight** (the current iOS channel, `[OQ-65]`): `git tag testflight-N` → `build-testflight.yml` signs with the founder's App Store Connect API key (GitHub secrets: `ASC_API_KEY_P8`/`ASC_API_KEY_ID`/`ASC_API_ISSUER_ID`/`APPLE_TEAM_ID`) and uploads. iOS bundle ID is `ai.verdure.porter.898PY37K5S` to match the App Store record. Test vehicle only — the shippable iOS strategy stays `11`'s thin-decider.
 - **Android test APK** (`[OQ-66]`): `git tag android-build-N` → `build-android.yml` (Linux runners) → test-signed `.apk` (throwaway CI key — uninstall before installing a differently-signed build).
 - **Android Play open testing:** `git tag android-play-N` → `build-android-play.yml` → signed `.aab` via the persistent upload keystore (secrets pending founder-side). Both Android workflows share `app/scripts/patch-android-project.py` (manifest + mic wiring), so they cannot diverge.

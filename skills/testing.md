@@ -63,17 +63,17 @@ A skipped test rots faster than no test at all, because it creates the illusion 
 
 ## Continuous integration
 
-Tests and the build run on every push and every pull request. CI is the firebreak that catches the failure mode "I forgot to run tests before pushing" — exactly the mode the discipline above is designed to prevent and that CI enforces structurally.
+**CI does not run on push (since 2026-08-22) — see "CI cost discipline" below.** It runs on pull requests and on demand. The firebreak against "I forgot to run the tests" is no longer a runner; it is the rule that you run them here, free, before you push. That trade is only honest because every check moved to this machine: `cargo test`, the frontend build, the decider and website suites, and a full `tauri build`.
 
 Verdure is a monorepo over one brain (the shared decider, `packages/decider`), so CI lives in one `.github/workflows/ci.yml` with **path-filtered** jobs — each runs only when it or a dependency changes:
 
 - **Decider + website** (Linux): the decider tests (the single source of truth), the website tests, and the website production build. Triggers on `packages/decider/**` or `website/**`.
-- **Desktop porter** (macOS runner): the MVP. **This is where the app gets compiled.** It runs the frontend typecheck+build, then `cargo test` (which compiles the Tauri Rust backend), then `cargo check --target x86_64-apple-darwin` to cross-compile for the founder's Intel Mac (the pivot's main C++/whisper risk), then a check that every model-download URL in `model.rs` still resolves. Triggers on `app/**` or `packages/decider/**`.
+- **Desktop porter** (macOS runner, PR/manual only): its remaining reason to exist is the **iOS** cross-compile check, which this Mac cannot do. It also runs the frontend build, `cargo test`, the x86_64 check, and the model-URL reachability check — all of which now duplicate free local work. Triggers on `app/**` or `packages/decider/**`.
 - The long-term Rust core (`src/`/`tests/`) has **no job yet** — it's a scaffold with a malformed manifest; it gets one when it becomes real.
 
 Never merge red. When CI fails, the fix lives in the same change.
 
-**CI is the gate, not the compiler (since 2026-08-21).** Xcode CLT 16.4 + `cmake` are installed on the founder's Mac: `cd app/src-tauri && cargo test` runs the suite locally in seconds, and that is now the inner loop. What follows described the era when it wasn't possible — kept because it still explains the CI design: The Tauri backend needs the macOS toolchain (Xcode Command Line Tools) to build, so a dev machine without them can't `cargo build`/`cargo test` the porter locally — that's expected, not a blocker. Pushing a branch runs the macOS job, which compiles `app/src-tauri` and runs the tests for you. For porter changes the loop is therefore **push to compile-check**; write the pure logic (parsers, prompt formatting, model gating) to be unit-testable so it's actually exercised there. Don't report "can't build locally" as "unverifiable" — it's verified in CI on push.
+**The Mac is the compiler; CI is the gate and the signing service (since 2026-08-21/22).** Xcode CLT 16.4 + `cmake` are installed, so `cargo test` runs in seconds and `npm run tauri build` produces the whole app in ~8 minutes. *Historical note, because much of this repo was written under the opposite constraint:* from 2026-06-16 to 2026-08-21 this machine had no toolchain, nothing Rust compiled locally, and the loop really was "push to compile-check." Docs from that window still read that way — treat those passages as stale, not as instructions.
 
 ## CI cost discipline — compile continuously, package on request
 
@@ -90,10 +90,10 @@ CI minutes are a real budget on a private repo, and **macOS runners bill at 10×
 |---|---|---|
 | Test macOS yourself | **Build locally** — `cd app && npm run tauri build` (~8 min cold, gives `bundle/macos/Verdure.app`; the `.dmg` step fails locally and doesn't matter) | **0** |
 | Rust/logic correctness | **Locally** — `cd app/src-tauri && cargo test` | **0** |
-| Signed + notarized macOS for someone else | tag `app-build-N` | ~66 |
+| Signed + notarized macOS for someone else | tag `app-build-N` | ~130 (universal: compiles both arches) |
 | Test on iPad | tag `testflight-N` | ~57 |
 | Test on Android | tag `android-build-N` | ~8 cached |
-| Genuinely ship everywhere | tag `release-N` | ~144 |
+| Genuinely ship everywhere | tag `release-N` | ~200 |
 
 `release-N` exists because iOS once sat three weeks behind (2026-08-12) — but it is a **shipping** tag, not a testing one. Reaching for it to test one platform buys the other two builds nobody asked for. That happened on `release-14`: macOS was wanted, and the tag also spent 57 minutes on an iOS archive that failed on an unrelated Apple account limit.
 
