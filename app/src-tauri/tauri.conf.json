@@ -36,6 +36,18 @@
     "macOS": {
       "minimumSystemVersion": "10.15",
       "entitlements": "Entitlements.plist"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/gwodu/verdure-releases/releases/latest/download/latest.json"
+      ],
+      "pubkey": "REPLACE_ME_WITH_TAURI_SIGNER_PUBLIC_KEY",
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

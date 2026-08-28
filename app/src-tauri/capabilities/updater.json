@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "Lets the main window check for and install Verdure updates. DESKTOP ONLY — iOS and Android update through their stores. Granting this permission makes a check possible, not automatic: every check is started by the frontend and only after the user has allowed it on first launch (knowledge/23).",
+  "platforms": ["macOS", "linux", "windows"],
+  "windows": ["main"],
+  "permissions": ["updater:default", "process:allow-restart"]
+}

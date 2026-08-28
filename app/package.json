@@ -3,20 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Verdure desktop porter — the reused decider UI over the Rust porter.",
+  "description": "Verdure desktop porter \u2014 the reused decider UI over the Rust porter.",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@verdure/decider": "*"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "typescript": "^5",
-    "vite": "^6"
+    "vite": "^6",
+    "vitest": "^4.1.7",
+    "jsdom": "^25.0.1"
   }
 }

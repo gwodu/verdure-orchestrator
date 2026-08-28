@@ -46,6 +46,16 @@ const friendlyError = (err: unknown): string => {
     typeof err === "string" ? err : err instanceof Error ? err.message : "";
   return msg.trim() ? msg : "Something went wrong. Please try again.";
 };
+import {
+  checkForUpdate,
+  checkOnLaunch,
+  installUpdate,
+  setUpdateMode,
+  shouldAskAboutUpdates,
+  updateMode,
+  updatesSupported,
+  type UpdateMode,
+} from "./updates";
 import "./styles.css";
 
 // Modalities now wrapped *inside* Verdure (knowledge/18 — run the model here, no
@@ -196,6 +206,12 @@ function renderStorage(): void {
       "Models you've downloaded live on your computer so they work offline. Remove any to free up space — Verdure re-downloads it next time you need it.",
     ),
   );
+
+  // Updates. Lives here because Storage is already the "Verdure and your
+  // computer" screen, and because a consent choice the user cannot revisit isn't
+  // really consent (knowledge/23) — the mode they picked on first launch is
+  // changeable from this row, forever.
+  if (updatesSupported()) panel.appendChild(updatesSection());
 
   // Live "Your computer" readout — the machine-context Verdure uses to size what
   // it runs (knowledge/20/21). Honest, plain numbers; no jargon.
@@ -1178,6 +1194,141 @@ function mountBuildStamp(): void {
   document.body.appendChild(stamp);
 }
 
+// --- Updates ----------------------------------------------------------------
+
+// The one-time question (knowledge/23). Shown as a quiet bar rather than a modal:
+// the user came here to use Verdure, and a blocking dialog on first launch — on
+// top of the model picker — would be two walls before the product. Choosing is
+// one tap, and every option is reversible from Storage.
+//
+// Copy rule (copywriting.md): say what actually happens, not what sounds safest.
+// "Check for updates?" hides that checking IS the network request; the wording
+// below names it, because that is the thing being consented to.
+function updateConsentBar(onDone: () => void): HTMLElement {
+  const bar = el("div", "update-consent");
+  bar.appendChild(
+    el(
+      "p",
+      "update-consent-q",
+      "How should Verdure handle new versions? Checking asks our server whether one exists — the only time Verdure reaches the internet on its own. Everything else stays on your device.",
+    ),
+  );
+  const row = el("div", "update-consent-row");
+  const choose = (mode: UpdateMode, label: string, title: string): HTMLElement => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "update-choice" + (mode === "notify" ? " preferred" : "");
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener("click", () => {
+      setUpdateMode(mode);
+      bar.remove();
+      onDone();
+    });
+    return b;
+  };
+  row.appendChild(choose("notify", "Tell me", "Check on launch and let you decide whether to install"));
+  row.appendChild(choose("auto", "Update automatically", "Download and install new versions in the background"));
+  row.appendChild(choose("manual", "Don't check", "Verdure never reaches out; check yourself from Storage"));
+  bar.appendChild(row);
+  return bar;
+}
+
+// A found update, offered rather than imposed. In "auto" mode we install without
+// asking (that is what they chose); in "notify" mode this bar is the choice.
+function updateAvailableBar(version: string): HTMLElement {
+  const bar = el("div", "update-available");
+  const msg = el("p", "update-available-msg", `Verdure ${version} is available.`);
+  bar.appendChild(msg);
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "update-choice preferred";
+  btn.textContent = "Install and restart";
+  btn.addEventListener("click", () => {
+    btn.disabled = true;
+    void installUpdate((f) => {
+      msg.textContent =
+        f < 0 ? "Downloading…" : f >= 1 ? "Installing…" : `Downloading… ${Math.round(f * 100)}%`;
+    }).catch((e) => {
+      msg.textContent = `That update couldn't be installed: ${String(e)}`;
+      btn.disabled = false;
+    });
+  });
+  bar.appendChild(btn);
+  return bar;
+}
+
+/**
+ * The Updates row in Storage: check now, and change the automatic-check setting.
+ * "Check for updates" works in every mode INCLUDING "Don't check" — pressing it
+ * is itself the consent for that one request, which is why it is always offered.
+ */
+function updatesSection(): HTMLElement {
+  const box = el("div", "updates-box");
+  box.appendChild(el("h2", "section-title", "Updates"));
+
+  const status = el("p", "updates-status", `You're on ${__BUILD_STAMP__}.`);
+  box.appendChild(status);
+
+  const check = document.createElement("button");
+  check.type = "button";
+  // Same pill as the consent bar's choices — the update UI should read as one
+  // thing wherever it appears, and this is not a primary action competing with
+  // the model controls below it.
+  check.className = "update-choice";
+  check.textContent = "Check for updates";
+  check.addEventListener("click", () => {
+    check.disabled = true;
+    status.textContent = "Checking…";
+    void checkForUpdate()
+      .then((found) => {
+        if (!found) {
+          status.textContent = "You're up to date.";
+          return;
+        }
+        status.textContent = `Verdure ${found.version} is available.`;
+        box.appendChild(updateAvailableBar(found.version));
+      })
+      .catch(() => {
+        // Say what failed in the user's terms. Most likely cause by far is being
+        // offline, and guessing that is more useful than echoing a stack trace.
+        status.textContent = "Couldn't reach the update server. Check your connection and try again.";
+      })
+      .finally(() => {
+        check.disabled = false;
+      });
+  });
+  box.appendChild(check);
+
+  // The reversible preference. Radio-style so the current state is visible at a
+  // glance rather than hidden behind a toggle whose meaning has to be inferred.
+  const modes: { mode: UpdateMode; label: string }[] = [
+    { mode: "notify", label: "Tell me when there's a new version" },
+    { mode: "auto", label: "Install new versions automatically" },
+    { mode: "manual", label: "Never check on its own" },
+  ];
+  const list = el("div", "updates-modes");
+  const paint = () => {
+    list.innerHTML = "";
+    const current = updateMode() ?? "notify";
+    for (const m of modes) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "updates-mode" + (m.mode === current ? " selected" : "");
+      b.textContent = m.label;
+      b.setAttribute("aria-pressed", String(m.mode === current));
+      b.addEventListener("click", () => {
+        setUpdateMode(m.mode);
+        paint();
+      });
+      list.appendChild(b);
+    }
+  };
+  paint();
+  box.appendChild(list);
+  return box;
+}
+
 // --- boot -------------------------------------------------------------------
 async function boot(): Promise<void> {
   mountBuildStamp();
@@ -1190,6 +1341,38 @@ async function boot(): Promise<void> {
   } catch {
     // keep the safe default; detection is an optimization, never a blocker
   }
+  void runUpdateFlow();
+}
+
+/**
+ * Ask about updates once, then act on the answer. Runs AFTER the first paint and
+ * after device detection, so it never delays the app appearing — an update is
+ * never more urgent than the thing the user opened Verdure to do.
+ *
+ * Ordering note: the question is deliberately held back until a model has been
+ * chosen. On a true first launch the model picker is already on screen, and
+ * stacking a second decision under it would make Verdure feel like a settings
+ * wizard. They get asked the next time they land in chat.
+ */
+async function runUpdateFlow(): Promise<void> {
+  if (!updatesSupported()) return; // iOS/Android update through their stores
+  const host = document.querySelector<HTMLElement>(".panel");
+  if (shouldAskAboutUpdates()) {
+    if (!chosenModelId() || !host) return; // ask once they're past onboarding
+    host.prepend(updateConsentBar(() => void runUpdateFlow()));
+    return;
+  }
+  const found = await checkOnLaunch();
+  if (!found) return;
+  if (updateMode() === "auto") {
+    // They asked for this to be silent, so it is — no bar, no interruption.
+    await installUpdate(() => {}).catch(() => {
+      // A failed background update is not worth a dialog; the Storage button and
+      // the next launch both remain available.
+    });
+    return;
+  }
+  document.querySelector<HTMLElement>(".panel")?.prepend(updateAvailableBar(found.version));
 }
 
 void boot();

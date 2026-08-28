@@ -53,6 +53,26 @@ llama-cpp-2 = { version = "0.1.150", default-features = false, features = ["comm
 # x86_64 (no -march=native). We only use the input side. See live.rs.
 cpal = "0.15"
 
+# Self-update for the DESKTOP app only. iOS and Android get updates from their
+# stores, so the plugin is scoped to desktop targets — pulling it into the mobile
+# builds would add a code path that can never run there.
+#
+# Verdure's update check is OPT-IN (knowledge/06 — no telemetry): a check is a
+# network request that reveals someone runs Verdure and roughly when, so the user
+# is asked once, on first launch, and can decline entirely and still update by
+# hand from the header. See `main.ts` (the consent prompt) and knowledge/23.
+# NOTE: this predicate must be spelled out for CARGO, which resolves dependencies
+# before Tauri's build script runs and therefore does not know `cfg(desktop)`.
+# `[target.'cfg(desktop)'.dependencies]` silently matches nothing and the plugin
+# never gets compiled in — which surfaces later as "Permission updater:default
+# not found" from tauri-build, a confusing way to learn it. The Rust-side
+# `#[cfg(desktop)]` in lib.rs IS valid, because tauri-build defines that cfg.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+# Needed to relaunch after an update is installed; the updater swaps the bundle
+# on disk but the running process is still the old one until it restarts.
+tauri-plugin-process = "2"
+
 # iPad test build only ([OQ-65], knowledge/11 deviation note): iOS apps cannot
 # spawn processes, so the macOS shell-outs (curl / sysctl / vm_stat / df) need
 # in-process replacements there. Scoped to non-macOS so the verified Mac build's

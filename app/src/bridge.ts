@@ -367,3 +367,71 @@ async function simulateTranscribe(onProgress: ProgressFn): Promise<Transcription
     processingSeconds: 15,
   };
 }
+
+// --- Updates (desktop only) -------------------------------------------------
+//
+// Verdure checks for updates ONLY when the user has allowed it (knowledge/23).
+// A check is a network request that reveals someone runs Verdure and roughly
+// when they use it, which is exactly the kind of quiet signal knowledge/06 says
+// we don't collect — so it is opt-in, asked once, and always reversible.
+//
+// The capability is desktop-only. iOS and Android update through their stores,
+// so on those platforms every function here reports "no update" rather than
+// pretending to check.
+
+export type UpdateInfo = {
+  version: string;
+  notes: string;
+};
+
+/** True where self-update exists at all — desktop, in the real shell. */
+export const updatesSupported = (): boolean =>
+  inTauri && !/iPhone|iPad|Android/i.test(navigator.userAgent);
+
+/**
+ * Ask whether a newer Verdure exists. Returns `null` for "you're up to date",
+ * and throws only on a genuine failure the caller should surface (offline, bad
+ * endpoint) — being up to date is not an error.
+ *
+ * The caller is responsible for having consent. This function does not check
+ * the stored preference, deliberately: the "check now" button is an explicit
+ * act of consent on its own, and burying that rule here would make the two
+ * paths disagree.
+ */
+export async function checkForUpdate(): Promise<UpdateInfo | null> {
+  if (!updatesSupported()) return null;
+  const { check } = await import("@tauri-apps/plugin-updater");
+  const update = await check();
+  if (!update) return null;
+  return { version: update.version, notes: update.body ?? "" };
+}
+
+/**
+ * Download and install the pending update, then restart into it. `onProgress`
+ * receives a 0–1 fraction where the total size is known, and -1 where it isn't
+ * (the endpoint may omit content-length) so the UI can show motion rather than
+ * a bar frozen at zero.
+ */
+export async function installUpdate(
+  onProgress: (fraction: number) => void,
+): Promise<void> {
+  const { check } = await import("@tauri-apps/plugin-updater");
+  const update = await check();
+  if (!update) return;
+  let total = 0;
+  let got = 0;
+  await update.downloadAndInstall((event) => {
+    if (event.event === "Started") {
+      total = event.data.contentLength ?? 0;
+      onProgress(total ? 0 : -1);
+    } else if (event.event === "Progress") {
+      got += event.data.chunkLength;
+      onProgress(total ? got / total : -1);
+    } else if (event.event === "Finished") {
+      onProgress(1);
+    }
+  });
+  // The bundle on disk is new; this process is still the old one until it restarts.
+  const { relaunch } = await import("@tauri-apps/plugin-process");
+  await relaunch();
+}

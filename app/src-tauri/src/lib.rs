@@ -545,7 +545,18 @@ fn try_allocate(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Self-update, desktop only — iOS and Android update through their stores.
+    // Registering the plugin does NOT make Verdure phone home: it only makes a
+    // check *possible*. Every check is initiated by the frontend, and only after
+    // the user has chosen to allow it (knowledge/23). That split is deliberate —
+    // the capability lives in Rust, the consent lives with the UI that asked for
+    // it, so no code path here can check for updates on its own.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+    builder
         .manage(LiveState::default())
         .manage(ChatState::default())
         .invoke_handler(tauri::generate_handler![

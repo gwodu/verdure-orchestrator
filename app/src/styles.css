@@ -993,3 +993,81 @@ body::after {
 @media (prefers-reduced-transparency: reduce) {
   .build-stamp { opacity: 0.55; }
 }
+
+/* --- Updates ---------------------------------------------------------------
+   The consent bar and the Storage row. Quiet by construction: this is Verdure
+   asking for something, and an app that shouts while asking permission has
+   already answered for you (design.md). */
+.update-consent,
+.update-available {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--glass-line);
+  border-radius: 14px;
+  background: var(--glass-thin);
+}
+.update-consent-q,
+.update-available-msg {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.update-available-msg { color: var(--ink); }
+.update-consent-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.update-choice {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-line);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.update-choice:hover { background: rgba(76, 216, 173, 0.10); }
+/* The recommended option carries the weight — but the others are equally
+   reachable. A greyed-out "decline" would be a dark pattern. */
+.update-choice.preferred {
+  background: var(--mint);
+  color: var(--ink-on-mint);
+  border-color: transparent;
+  font-weight: 600;
+}
+.update-choice:disabled { opacity: 0.55; cursor: default; }
+
+.updates-box { margin: 0 0 20px; }
+.updates-status {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.updates-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.updates-mode {
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.updates-mode:hover { background: var(--glass-thin); }
+.updates-mode.selected {
+  border-color: var(--glass-line);
+  background: var(--glass-thin);
+  color: var(--ink);
+}
+.updates-mode.selected::before { content: "✓ "; color: var(--mint); }

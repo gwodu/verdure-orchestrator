@@ -90,7 +90,7 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s' "$ASC_API_KEY_P8" > ~/private_keys/AuthKey_${ASC_API_KEY_ID}.p8
           echo "APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" >> "$GITHUB_ENV"
-      - name: Build the Intel app bundle
+      - name: Build the universal app bundle
         # tauri build runs beforeBuildCommand (npm run build) for the frontend,
         # then builds BOTH architectures and lipos them into one universal binary.
         #
@@ -108,7 +108,55 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_API_KEY: ${{ secrets.ASC_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.ASC_API_ISSUER_ID }}
+          # Update signing (knowledge/23) — a minisign keypair, SEPARATE from the
+          # Apple identity above. Tauri signs the .app.tar.gz with the private
+          # half; the app verifies with the public half compiled into it, so an
+          # update cannot be swapped by whoever hosts the file. Absent, the build
+          # still succeeds and simply produces no updater artifacts.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build --target universal-apple-darwin
+      - name: Check the updater artifacts were produced
+        # `createUpdaterArtifacts` is config; the signing key is a secret. Config
+        # without key = a release that silently cannot be updated, discoverable
+        # only much later on a user's machine. Fail loudly here instead.
+        run: |
+          B=app/src-tauri/target/universal-apple-darwin/release/bundle/macos
+          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+            test -f "$B"/*.app.tar.gz || { echo "::error::no .app.tar.gz — updates would be impossible for this release"; exit 1; }
+            test -f "$B"/*.app.tar.gz.sig || { echo "::error::updater artifact is unsigned; the app will reject it"; exit 1; }
+            echo "updater artifacts present and signed ✓"
+          else
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set — this build cannot be offered as an update (knowledge/23)"
+          fi
+      - name: Generate latest.json for the updater
+        # The manifest the app polls (knowledge/23). Generated rather than
+        # hand-written because the signature is a long base64 blob and a single
+        # wrong character makes every client silently reject the update — a
+        # failure that presents as "nobody ever updated", with no error anywhere.
+        if: hashFiles('app/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig') != ''
+        env:
+          # darwin-universal covers both architectures from the single bundle.
+          RELEASES_BASE: https://github.com/gwodu/verdure-releases/releases/latest/download
+        run: |
+          B=app/src-tauri/target/universal-apple-darwin/release/bundle/macos
+          python3 - "$B" > latest.json <<'PYEOF'
+          import datetime, glob, json, os, sys
+          bundle = sys.argv[1]
+          sig = open(glob.glob(f"{bundle}/*.app.tar.gz.sig")[0]).read().strip()
+          tarball = os.path.basename(glob.glob(f"{bundle}/*.app.tar.gz")[0])
+          version = json.load(open("app/src-tauri/tauri.conf.json"))["version"]
+          base = os.environ["RELEASES_BASE"]
+          print(json.dumps({
+              "version": version,
+              "notes": "See the release page for what changed.",
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "platforms": {
+                  "darwin-universal": {"signature": sig, "url": f"{base}/{tarball}"}
+              },
+          }, indent=2))
+          PYEOF
+          echo "--- latest.json ---"; cat latest.json
       - name: Verify the signature and notarization
         # Proof, not hope: `spctl` is what Gatekeeper itself runs on first launch,
         # and `stapler validate` proves the ticket travels with the app offline.
@@ -128,6 +176,9 @@ jobs:
           path: |
             app/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
             app/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+            app/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            app/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+            latest.json
           if-no-files-found: error
           # 14 days, not the 90-day default: this is a PRIVATE repo, so artifact
           # storage bills as GB-months. These builds are installed within a day

@@ -102,6 +102,8 @@ When a question is resolved:
 
 ## Defer — Month 2 and later
 
+- [ ] **[OQ-78]** The update check reveals an IP address (`23`). Verdure's update check is opt-in and carries no personal data, but any request to our endpoint exposes the caller's IP and, per-launch, a rough usage rhythm. At a handful of testers this does not matter; at scale it is a log we promised not to keep. **Honest options when it does matter:** (a) check on a long random interval rather than every launch, so the ping is not a usage signal; (b) serve `latest.json` from a CDN that does not retain request logs, and say which; (c) accept it and document it plainly on the download page. **Not solved, and the product should not imply it is** — `23` states the exposure rather than glossing it. (From `23-updates-and-consent.md`.)
+
 - [ ] **[OQ-16]** `burn` current state and applicability to LLM inference. (From `08-rust-ecosystem.md`.)
 - [ ] **[OQ-17]** `tract` maturity and relevance vs. GGUF focus. (From `08-rust-ecosystem.md`.)
 - [ ] **[OQ-22]** Model metadata schema — extend HF format or roll our own. (From `10-distribution.md`.)
