@@ -1,0 +1,19 @@
+# What Vercel does NOT need to build the website.
+#
+# The Vercel project's Root Directory is `website`, so deploys run from the REPO
+# ROOT — which makes the whole monorepo the upload context, including gigabytes
+# of Rust build output. Hence this file.
+
+# Rust build artifacts — by far the largest thing here.
+app/src-tauri/target/
+target/
+
+# Desktop app bits irrelevant to the website build.
+app/dist/
+app/src-tauri/gen/
+app/screenshots/
+
+# Local build/test output.
+website/.next/
+**/node_modules/
+screenshots/
