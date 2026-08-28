@@ -111,6 +111,27 @@ When a question is resolved:
 
 ## Resolved
 
+- [x] **[OQ-80]** **`source=Unnotarized Developer ID` / `Verdure.dmg does not have a ticket stapled to it` / user-facing: "Apple cannot check it for malicious software"** — the shipped `.dmg` was rejected by Gatekeeper while the `.app` inside it was correctly notarized. **RESOLVED 2026-08-28.**
+
+  **Symptom.** `v0.1.0` was published, signed, and notarization returned `Accepted` from Apple. Downloading the published `.dmg` and assessing it gave `rejected / source=Unnotarized Developer ID`; the `.app` extracted from that same `.dmg` gave `accepted / source=Notarized Developer ID`. Reproducible on demand: `spctl --assess --type open --context context:primary-signature <dmg>`.
+
+  **Cause.** Tauri notarizes and staples the `.app`, *then* creates and merely **signs** the `.dmg` around it. The wrapper is never submitted to Apple, so it carries no ticket. The two artifacts genuinely have different notarization states, and only the `.app` was ever checked.
+
+  **What the system allowed** (not who erred): the verification step ran `find .../macos -name "*.app"`, while the upload step separately listed `.../dmg/*.dmg`. Two independently-written path expressions with nothing forcing them to agree — so a true assertion about the `.app` was read as clearance for the `.dmg`. The check was structurally incapable of catching this.
+
+  **Hypotheses killed — do not re-test:**
+  - *"The Developer ID certificate or Apple credentials are misconfigured."* **Eliminated** — the same run notarized the `.app` successfully (`Notarizing Finished with status Accepted`), and `codesign` reports a valid `Developer ID Application: GESIKEME LESLIE WODU (898PY37K5S)` on both artifacts.
+  - *"Notarization silently failed and the log would show it."* **Eliminated** — the build log shows Apple accepting the submission; the `.dmg` was simply never part of it.
+  - *"It only looks broken locally because `curl` doesn't set quarantine."* **Eliminated** — setting `com.apple.quarantine` explicitly and re-assessing reproduced the rejection, which is the state a browser download produces.
+
+  **Method that found it.** Downloading the **published bytes** from the public URL and assessing those, rather than the CI artifact. Every check upstream of publication passed.
+
+  **Fix.** `build-app.yml` now runs `xcrun notarytool submit --wait` + `stapler staple` on the `.dmg`, and the verification step asserts **both** artifacts, using `--type open` for the disk image (the check Gatekeeper actually performs on it) rather than `--type execute`.
+
+  **Regression test.** `app/scripts/verify-release.py`, wired into CI before upload — see `TEST_REPORT.md` 2026-08-28. It was validated against the known-bad `v0.1.0` (19/21, failing exactly the two DMG assertions), because a verifier that has never seen a failure is not a tested verifier.
+
+  **Related, same session, same shape:** a licence search that returned zero from a wrong base path, and a crate-root scan that missed `whisper.cpp/LICENSE` one directory down (`[OQ-79]`). Three defects, one pattern: **the check was anchored to something adjacent to what shipped.** The rules drawn from all three now live in `skills/testing.md` ("Verifying artifacts, not intentions").
+
 - [x] **[OQ-79]** **RESOLVED 2026-08-28 — Verdure now attributes the open-source software it ships.** `app/scripts/generate-notices.py` reads the real dependency graph (`cargo metadata`) plus the licence texts cargo has already vendored, so it needs no network and cannot drift from what actually compiled. Output: `app/src-tauri/THIRD-PARTY-NOTICES.md` — **532 components, 245 distinct licence texts**, grouped by text so ~360 near-identical MIT copies don't bury the ones that differ. Ships **inside the .app** as a bundled resource (the obligation is to distribute notices *with the binary*), reachable from Storage → "Open-source licences".
   **Two near-misses, both found by checking rather than assuming:** (1) the first search for licence files returned **zero** because the base path was wrong — a broken tool reading as a clean result, `skills/debugging.md` §7; corrected, there were **817**. (2) A crate-root-only scan silently missed `whisper.cpp/LICENSE`, which sits one level down inside `whisper-rs-sys` — the single most important attribution, absent with no symptom. The generator now searches two levels.
   **`llama-cpp-sys-2` vendors the entire llama.cpp source tree and publishes no LICENSE for it** (verified against crate 0.1.154: no LICENSE, no README, no copyright headers). That text is therefore checked in at `app/src-tauri/licenses/llama.cpp-LICENSE` and folded in by the generator. **Fetched from upstream rather than copied from whisper.cpp, which mattered:** llama.cpp reads `2023-2026`, whisper.cpp reads `2023-2024`. Assuming they matched would have shipped a wrong copyright line.

@@ -4,6 +4,28 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-08-28 (later) — `verify-release.py`: the regression test for `[OQ-80]`
+
+**What it prevents.** A signed, notarized `.app` inside an **unnotarized `.dmg`** — shipped in `v0.1.0` while every check we had reported success (`[OQ-80]`). Also the two search failures from `[OQ-79]` in the same session.
+
+**Why the existing checks could not catch it.** CI asserted `spctl --assess --type execute` on the `.app` and passed. The `.dmg` was located by a *separately written* `find` in the upload step, so the assertion and the shipped artifact were never bound together. Everything asserted was true, about the wrong object. **Adding more assertions of that shape would only have produced more green.**
+
+**Assertions now made** (21 on a macOS release):
+- `.dmg` — stapled, and `spctl --assess --type open --context context:primary-signature` accepted. `--type open` matters: it is the check Gatekeeper runs on a disk image, and `--type execute` does not exercise it.
+- The `.dmg` is given a **quarantine flag first**, because without it Gatekeeper does not assess at all and a broken build looks fine locally. This is what a browser download produces.
+- `.app` mounted *from that `.dmg`* — signature intact, stapled, Gatekeeper-accepted, universal (`x86_64` + `arm64`).
+- Notices bundled and non-trivial; the ggml copyright present.
+- Updater public key compiled in; **no secrets embedded**.
+- `latest.json` parses, declares `darwin-universal`, and its signature matches the `.sig` byte-for-byte (a mismatch makes every client silently reject updates).
+
+**Positive controls — the part that addresses `[OQ-79]`.** The script begins by proving its instruments work: `spctl` must **reject** a synthesised unsigned app, and `strings` must **find** a known symbol in the binary. Without these, a disabled Gatekeeper or a mis-pathed search yields all-green and means nothing. This is `debugging.md` §7 promoted from a debugging habit to a testing rule.
+
+**Validated against a known failure, not only a success.** Run against the bad `v0.1.0` bundle it scores **19/21**, failing precisely `dmg is stapled` and `dmg passes Gatekeeper on double-click` — and nothing else. A verifier that has only ever seen a good build is untested.
+
+**`--url` mode** re-downloads the published bytes and runs the same contract. That is the only check with no blind spot, since it covers build, sign, staple, upload *and* host. Preferred after publishing a release.
+
+**Edge case caught while writing it:** the first run reported `exit=0` on a failing release — that was `tail`'s status coming through a pipe, not the script's. The same trap had already made a failed local `tauri build` look clean earlier the same day. Recorded in `skills/testing.md`; check for the artifact or `${PIPESTATUS[0]}`, never a piped exit code.
+
 ### 2026-08-28 — Update consent (`updates.ts`) + the available-memory identity (`device.rs`)
 
 **A frontend test harness now exists.** `app/` had none — `tsc` was the only automated check, and a typechecker cannot assert behaviour. Added vitest + jsdom for one reason: the update-consent rule is a **privacy promise**, and promises that are easy to break silently need a test more than features do.
