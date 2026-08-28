@@ -33,6 +33,7 @@ import {
   revealModelsDir,
   type PortOutcome,
   type ChatModelOption,
+  openThirdPartyNotices,
 } from "./bridge";
 
 const WHISPER_MODEL_ID = "whisper-base-en";
@@ -1326,6 +1327,18 @@ function updatesSection(): HTMLElement {
   };
   paint();
   box.appendChild(list);
+
+  // Attribution for the open-source software Verdure is built on ([OQ-79]).
+  // Placed here rather than behind an "About" screen we don't have: this is the
+  // app-and-your-computer screen, and the notices are about what the app is made
+  // of. Quiet link styling — it is a credit, not a call to action.
+  const credits = document.createElement("button");
+  credits.type = "button";
+  credits.className = "link";
+  credits.textContent = "Open-source licences";
+  credits.title = "The open-source software Verdure is built on";
+  credits.addEventListener("click", () => void openThirdPartyNotices());
+  box.appendChild(credits);
   return box;
 }
 

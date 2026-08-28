@@ -435,3 +435,16 @@ export async function installUpdate(
   const { relaunch } = await import("@tauri-apps/plugin-process");
   await relaunch();
 }
+
+/**
+ * Open the third-party notices bundled inside the app ([OQ-79]).
+ *
+ * Verdure is built on ~500 open-source components whose licences require their
+ * copyright notices to travel with the binary. The file ships inside the .app;
+ * this makes it reachable.
+ */
+export async function openThirdPartyNotices(): Promise<void> {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("open_third_party_notices");
+}

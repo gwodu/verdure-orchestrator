@@ -543,6 +543,92 @@ fn try_allocate(
     Ok(Ok(()))
 }
 
+/// Open the third-party notices bundled with the app ([OQ-79]).
+///
+/// The obligation attached to the MIT/Apache-2.0 code Verdure is built on is to
+/// distribute their copyright notices WITH the binary — so the file ships inside
+/// the .app as a bundled resource, not merely in the repo, and this makes it
+/// reachable. Opened with the OS default handler rather than rendered in-app:
+/// it is ~700 KB of licence text, which no one wants inside a chat window.
+#[tauri::command]
+fn open_third_party_notices<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    let path = app
+        .path()
+        .resolve("THIRD-PARTY-NOTICES.md", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("couldn't find the notices file: {e}"))?;
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("/usr/bin/open")
+            .arg(&path)
+            .status()
+            .map_err(|e| format!("couldn't open the notices: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        Err("Opening the notices is only wired up on macOS so far.".to_string())
+    }
+}
+
+/// The third-party notices must cover everything we actually ship ([OQ-79]).
+///
+/// Adding a dependency and forgetting to re-run `generate-notices.py` is the
+/// obvious way this rots, and the failure is invisible: the app still builds and
+/// runs, it just quietly distributes someone's code without their copyright
+/// notice. So this asserts every package in `Cargo.lock` appears in the file.
+///
+/// It reads `Cargo.lock` rather than calling cargo, so it stays fast and works
+/// offline. If it fails, the fix is one command:
+///     python3 app/scripts/generate-notices.py
+#[cfg(test)]
+mod notices_tests {
+    #[test]
+    fn third_party_notices_cover_every_dependency() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let notices = std::fs::read_to_string(root.join("THIRD-PARTY-NOTICES.md"))
+            .expect("THIRD-PARTY-NOTICES.md is missing — run app/scripts/generate-notices.py");
+        let lock = std::fs::read_to_string(root.join("Cargo.lock")).expect("Cargo.lock");
+
+        let mut missing = Vec::new();
+        for line in lock.lines() {
+            if let Some(name) = line.strip_prefix("name = \"").and_then(|r| r.strip_suffix('"')) {
+                if name == "verdure-porter" {
+                    continue; // ourselves
+                }
+                if !notices.contains(name) {
+                    missing.push(name.to_string());
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "{} dependencies are missing from THIRD-PARTY-NOTICES.md: {:?}\n\
+             Re-run: python3 app/scripts/generate-notices.py",
+            missing.len(),
+            missing
+        );
+    }
+
+    /// The two projects that ARE the product, specifically. llama.cpp ships no
+    /// LICENSE inside its crate, so its attribution comes from a checked-in
+    /// supplementary file and would vanish silently if that file were deleted.
+    #[test]
+    fn the_engines_we_wrap_are_credited() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let notices = std::fs::read_to_string(root.join("THIRD-PARTY-NOTICES.md")).unwrap();
+        assert!(
+            notices.contains("Copyright (c) 2023-2026 The ggml authors"),
+            "llama.cpp's copyright is absent — check app/src-tauri/licenses/"
+        );
+        assert!(
+            notices.contains("Copyright (c) 2023-2024 The ggml authors"),
+            "whisper.cpp's copyright is absent"
+        );
+        assert!(notices.contains("Symphonia"), "the MPL-2.0 source pointer is absent");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -572,6 +658,7 @@ pub fn run() {
             remove_model,
             models_dir,
             reveal_models_dir,
+            open_third_party_notices,
             free_up_space,
             open_storage_settings,
             port_tool

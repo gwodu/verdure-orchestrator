@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
       {
         source: "/updates/:file",
         destination:
-          "https://github.com/gwodu/verdure-releases/releases/latest/download/:file",
+          "https://github.com/gwodu/Verdure-Releases/releases/latest/download/:file",
         permanent: false,
       },
     ];
