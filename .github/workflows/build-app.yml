@@ -204,6 +204,19 @@ jobs:
           spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
           xcrun stapler validate "$DMG"
           echo "app AND dmg signed, notarized, and stapled - OK"
+      - name: Verify the release contract
+        # The independent check. The step above asserts specific facts; this one
+        # runs the same contract a human would run against a published release,
+        # INCLUDING positive controls that prove spctl and strings are actually
+        # working — so "all green" cannot mean "the instruments are broken".
+        #
+        # It is not redundant with the step above: that verifies what we believed
+        # to check, this verifies what the user receives. The v0.1.0 DMG passed
+        # every check we had and was still rejected by Gatekeeper.
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          python3 app/scripts/verify-release.py \
+            --dir app/src-tauri/target/universal-apple-darwin/release/bundle
       - name: Upload the runnable app
         uses: actions/upload-artifact@v4
         with:

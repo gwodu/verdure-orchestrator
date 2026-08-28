@@ -105,6 +105,45 @@ CI minutes are a real budget on a private repo, and **macOS runners bill at 10×
 
 When you add a new component, add its CI job in the same change that adds the component. A component without CI is unprotected. The known remaining CI gaps are the FFI sanitizer net (`[OQ-63]`) and a job for the long-term `src/` core once it's real. When you add a downloaded model to `model.rs`, add its URL to the porter job's resolve check in the same change (so a rotted release URL fails in CI, not on a user's machine).
 
+## Verifying artifacts, not intentions
+
+Three defects reached built artifacts on 2026-08-28 while every check reported
+success. They shared two root causes, and both are now rules rather than lessons.
+
+**1. A check that can pass by finding nothing needs a positive control.**
+A licence search returned zero because its base path was wrong. A crate-root scan
+missed `whisper.cpp/LICENSE`, one directory down. Both "succeeded". A search-based
+assertion without a control cannot tell *absent* from *my instrument is broken* —
+`debugging.md` §7 as a testing rule, not just a debugging one.
+
+So: before trusting that a search found nothing, make it find something you know
+is there. `verify-release.py` opens by proving `spctl` rejects an unsigned app and
+that `strings` can read the binary. If Gatekeeper were disabled on the runner,
+every signature check would pass and mean nothing; the control catches that.
+
+**2. Assert on the artifact the user receives.**
+CI verified the `.app` with `spctl --assess --type execute`. It passed. The `.dmg`
+wrapped around it — the file a person downloads and double-clicks — shipped
+**unnotarized**, and Gatekeeper rejected it. Everything asserted was true, about
+the wrong object. Two independently-written `find` expressions, one for verifying
+and one for uploading, with nothing forcing them to agree.
+
+So: verify the **shipped** artifact, in the state the user gets it — for macOS
+that means applying the quarantine flag first, because without it Gatekeeper does
+not assess at all and a broken build looks fine locally. `--type open` for a disk
+image, `--type execute` for an app; they are different checks.
+
+**3. Prefer post-publication verification where possible.**
+`verify-release.py --url <release>` re-downloads the published bytes and tests
+those. It is the only check with no blind spot, because it exercises the whole
+chain — build, sign, staple, upload, host. Run it after publishing a release, not
+only before.
+
+**4. Beware the exit code you are reading.** A shell pipeline exits with the
+status of its *last* command, so `build | tail` reports `tail`'s success and a
+failed build looks clean. This bit twice in one session, once while testing the
+verifier written to prevent it. Check for the artifact, or check `${PIPESTATUS[0]}`.
+
 ## Self-check before declaring a feature done
 
 - Are there unit tests for the pure logic?
