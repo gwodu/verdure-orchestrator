@@ -20,6 +20,18 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 **Cleanup before shipping it:** removed the two diagnostic models (`Q8_0` and `fp16` 0.5B) added to isolate the — now disproven — K-quant theory. They were probes, not products: the picker showed them as "Test: Q8" and "Test: fp16", two baffling extra options for anyone who isn't debugging ggml kernels. Gone from `model.rs` (constants, `chat_candidates`, `MODELS`), the picker's `MODEL_TIERS`, and the CI URL check. They never shipped in a tag and were never downloaded on-device, so nobody has a stray file or a stale selection. The picker now also falls back to the first tier when the stored model id names a tier that no longer exists — previously a retired model left the picker with nothing selected, and Verdure will retire models again.
 
+### 2026-08-28 — Verdure credits what it's built on
+
+**What:** the app now ships `THIRD-PARTY-NOTICES.md` — 532 open-source components, 245 distinct licence texts — bundled inside the `.app` and reachable from Storage → "Open-source licences".
+
+**Why it isn't just paperwork.** MIT and Apache-2.0 hand us the right to use, modify and sell software built on this code, commercially, for free. The one thing asked in return is that the copyright notice travels with the binaries we distribute. We were about to hand out a `.dmg` carrying none.
+
+The better reason is the second one: `knowledge/18` commits Verdure to never building a model or engine. **llama.cpp and whisper.cpp *are* the engine.** Building a product on Georgi Gerganov's work, pitched to the same open-source community, without naming him, is inconsistent with what this project says it is. The file costs nothing and is simply true.
+
+**Generated, not hand-maintained** — `app/scripts/generate-notices.py` reads the resolved dependency graph and the licence texts cargo already vendored, so it needs no network and can't drift from what compiled. Two tests keep it honest: every `Cargo.lock` package must appear in the file, and the engines must be credited by name.
+
+**One thing worth knowing:** `llama-cpp-sys-2` vendors all of llama.cpp but publishes no LICENSE for it. Its text is checked in separately, fetched from upstream — which mattered, because llama.cpp's copyright reads 2023-**2026** while whisper.cpp's reads 2023-**2024**. Copying one to the other would have shipped a false notice.
+
 ### 2026-08-28 — Verdure can update itself, and only if you let it
 
 **What:** the desktop app now checks for, downloads, and installs new versions. macOS has no store to do this for us, and with `[OQ-58]` open a stuck build is a real risk — the fix for a crash could exist for months while a tester sits on the version that vanishes. iOS and Android are untouched; their stores own updates, so every code path is desktop-gated.
