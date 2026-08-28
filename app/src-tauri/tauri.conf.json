@@ -42,9 +42,9 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/gwodu/verdure-releases/releases/latest/download/latest.json"
+        "https://verdureai.com/updates/latest.json"
       ],
-      "pubkey": "REPLACE_ME_WITH_TAURI_SIGNER_PUBLIC_KEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFFMjZDQUI5RTMwMjAyOTgKUldTWUFnTGp1Y29tSG5hektWVVRuQVZVYXdiTm9VMkRPZXdzNkJnRjFEcXU0THExUXh4VC9STzMK",
       "windows": {
         "installMode": "passive"
       }

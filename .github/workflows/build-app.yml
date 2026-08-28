@@ -137,7 +137,9 @@ jobs:
         if: hashFiles('app/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig') != ''
         env:
           # darwin-universal covers both architectures from the single bundle.
-          RELEASES_BASE: https://github.com/gwodu/verdure-releases/releases/latest/download
+          # Also verdureai.com, for the same reason as the endpoint itself: the
+          # tarball URL is embedded in latest.json, which old clients keep reading.
+          RELEASES_BASE: https://verdureai.com/updates
         run: |
           B=app/src-tauri/target/universal-apple-darwin/release/bundle/macos
           python3 - "$B" > latest.json <<'PYEOF'
