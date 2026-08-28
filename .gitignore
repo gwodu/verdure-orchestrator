@@ -24,6 +24,19 @@ node_modules/
 .env
 .env.local
 
+# Signing keys — a belt-and-braces net, NOT the intended location. Keys live
+# OUTSIDE the repo (~/.tauri/ for the Tauri updater key; Keychain for Apple's).
+# These patterns exist only so that a key saved in here by accident cannot be
+# committed: the Tauri updater private key is unrecoverable, and losing or
+# leaking it means every existing install can never be safely updated again
+# (knowledge/23). Anything matched here is a mistake to be moved, not stored.
+*.key
+*.pem
+*.p8
+*.p12
+*.jks
+*.keystore
+
 # Downloaded build artifacts (gh run download) — never committed
 *.ipa
 *.apk
