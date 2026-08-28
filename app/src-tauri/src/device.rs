@@ -341,13 +341,30 @@ fn read_low_power() -> bool {
 /// placebo (decided 2026-08-28): that memory is already counted here, and
 /// flushing it only makes the machine slower by discarding warm cache.
 ///
-/// **Known imprecision, erring optimistic — `[OQ-77]`.** Purgeable pages usually
-/// already sit in the active/inactive lists, so adding them likely double-counts
-/// (~97 MB on the founder's Mac; cross-checked against Activity Monitor's
-/// total − app − wired − compressed ≈ 2136 MB against our 2224 MB). Small, but it
-/// leans the way that hurts: this number gates an allocation whose failure
-/// `abort()`s the whole app (`[OQ-58]`). Also counts *dirty* inactive pages,
-/// which must be compressed or paged out before they are truly free.
+/// **Why purgeable is NOT added (fixed 2026-08-28, `[OQ-77]`).** It used to be,
+/// which double-counted: purgeable pages already sit in the active/inactive
+/// lists. Dropping the term is not an arbitrary trim — it makes this function
+/// agree exactly with macOS's own accounting, because the page categories
+/// partition physical memory:
+///
+/// ```text
+/// total = free + active + inactive + speculative + wired + compressor
+/// ⇒  free + inactive + speculative  ≡  total − (active + wired + compressor)
+/// ```
+///
+/// and the right-hand side is what Activity Monitor reports as available. Both
+/// forms were computed on the founder's Mac and agreed to the megabyte (1895 MB,
+/// against 1976 MB for the old formula), with the categories summing to 8190 MB
+/// on an 8 GB machine — so the identity holds against real data, not just on
+/// paper. `available_ram_is_the_complement_of_used` locks it in.
+///
+/// **Residual imprecision, still optimistic:** *dirty* inactive pages are counted
+/// as available although they must be compressed or paged out first. That is
+/// bounded and much smaller than the double-count was, and correcting it is not
+/// possible from `vm_stat` alone. Deliberately left rather than papered over with
+/// a fudge factor: a safety margin belongs in `model.rs`'s `runtime_mb`, where it
+/// is visible and adjustable, not hidden inside a measurement (knowledge/06 —
+/// honest numbers).
 #[cfg(any(target_os = "macos", test))]
 fn parse_available_bytes(vm_stat: &str) -> Option<u64> {
     let page_size: u64 = vm_stat
@@ -356,8 +373,10 @@ fn parse_available_bytes(vm_stat: &str) -> Option<u64> {
         .and_then(|s| s.split_whitespace().next())
         .and_then(|s| s.parse().ok())?;
     let mut pages = 0u64;
+    // NOT "Pages purgeable" — see the doc comment. Purgeable pages already sit in
+    // the active/inactive lists, so adding them double-counts.
     for line in vm_stat.lines() {
-        if ["Pages free:", "Pages inactive:", "Pages speculative:", "Pages purgeable:"]
+        if ["Pages free:", "Pages inactive:", "Pages speculative:"]
             .iter()
             .any(|p| line.starts_with(p))
         {
@@ -446,8 +465,10 @@ mod tests {
 
     #[test]
     fn parses_available_ram_from_vm_stat() {
-        // 16 KB pages; free(100) + inactive(50) + speculative(10) + purgeable(40)
-        // = 200 pages × 16384 = 3_276_800 bytes. Active/wired must be ignored.
+        // 16 KB pages; free(100) + inactive(50) + speculative(10) = 160 pages.
+        // Active and wired must be ignored — and so must PURGEABLE, which is not
+        // a separate pool: those pages are already inside active/inactive, so
+        // adding them counted the same memory twice ([OQ-77], fixed 2026-08-28).
         let sample = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n\
             Pages free:                          100.\n\
             Pages active:                       9999.\n\
@@ -455,7 +476,37 @@ mod tests {
             Pages speculative:                    10.\n\
             Pages wired down:                   8888.\n\
             Pages purgeable:                      40.\n";
-        assert_eq!(parse_available_bytes(sample), Some(200 * 16384));
+        assert_eq!(parse_available_bytes(sample), Some(160 * 16384));
+    }
+
+    /// The reason the fix above is correct rather than merely smaller: macOS's
+    /// page categories partition physical memory, so what we compute is exactly
+    /// the complement of what is in use — which is what Activity Monitor shows.
+    /// If someone ever re-adds `purgeable` (it is a tempting-looking line in
+    /// `vm_stat`), this fails and says why.
+    #[test]
+    fn available_ram_is_the_complement_of_used() {
+        const PAGE: u64 = 4096;
+        let (free, active, inactive, speculative, wired, compressor, purgeable) =
+            (3_u64, 514_u64, 506_u64, 9_u64, 691_u64, 287_u64, 24_u64);
+        let sample = format!(
+            "Mach Virtual Memory Statistics: (page size of {PAGE} bytes)\n\
+             Pages free:                {free}.\n\
+             Pages active:              {active}.\n\
+             Pages inactive:            {inactive}.\n\
+             Pages speculative:         {speculative}.\n\
+             Pages wired down:          {wired}.\n\
+             Pages purgeable:           {purgeable}.\n\
+             Pages occupied by compressor: {compressor}.\n"
+        );
+        let total = (free + active + inactive + speculative + wired + compressor) * PAGE;
+        let used = (active + wired + compressor) * PAGE;
+        assert_eq!(
+            parse_available_bytes(&sample),
+            Some(total - used),
+            "available must equal total minus what is in use; adding purgeable \
+             breaks this because those pages are already in active/inactive"
+        );
     }
 
     #[test]

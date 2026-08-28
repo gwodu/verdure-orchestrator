@@ -1,8 +1,29 @@
 # TEST_REPORT.md
 
-Test discipline record across the Verdure monorepo. Decider: `npm test --workspace @verdure/decider`. Website: `npm test --workspace nextjs`. Porter app frontend: `cd app && npm run build` (typecheck) + `node app/scripts/shots.mjs` (screenshots). Porter Rust: `cd app/src-tauri && cargo test`. Long-term binary: `cargo test`. Newest first.
+Test discipline record across the Verdure monorepo. Decider: `npm test --workspace @verdure/decider`. Website: `npm test --workspace nextjs`. Porter app frontend: `cd app && npm test` (vitest, since 2026-08-28) + `npm run build` (typecheck). **`app/scripts/shots.mjs` is broken** — it waits for the pre-July home screen and times out; take screenshots with a direct Playwright call until it is repaired or deleted. Porter Rust: `cd app/src-tauri && cargo test`. Long-term binary: `cargo test`. Newest first.
 
 ## Verdure desktop app (`app/`) — post-pivot
+
+### 2026-08-28 — Update consent (`updates.ts`) + the available-memory identity (`device.rs`)
+
+**A frontend test harness now exists.** `app/` had none — `tsc` was the only automated check, and a typechecker cannot assert behaviour. Added vitest + jsdom for one reason: the update-consent rule is a **privacy promise**, and promises that are easy to break silently need a test more than features do.
+
+**Unit tests written (5, `updates.test.ts`) — the valuable ones are negative:**
+- `asks before it ever checks` — an *unanswered* question must not be read as consent. This is the one a future refactor is most likely to break, by adding a `check()` to a launch path.
+- `never touches the network when the user said don't check` — asserts `checkForUpdate` is **not called**, not merely that nothing was shown.
+- `checks on launch for both modes that opted in` — the positive path, both modes.
+- `stays quiet when a check fails` — resolves rather than throws; a person with no wifi should not get a broken launch.
+- `keeps the choice reversible and ignores a corrupted stored value` — a hand-edited `localStorage` value reads as "never asked", failing toward the private side.
+
+**Why these are unit tests and not an integration test:** the rule lives in `updates.ts` and the network call in `bridge.ts`, deliberately separated (`knowledge/23`). Mocking the bridge is therefore testing the real seam, not a stub of one.
+
+**`device.rs` — a test that encodes the reason, not the number.** Fixing `[OQ-77]` meant dropping `purgeable` from the available-memory sum. A test asserting a new constant would have recorded *what* changed and lost *why*. `available_ram_is_the_complement_of_used` instead asserts the identity that makes the fix correct — `free + inactive + speculative ≡ total − (active + wired + compressor)` — so re-adding the tempting `Pages purgeable` line fails with an explanation attached. Verified against live `vm_stat` first: both forms agreed to the megabyte (1895 MB), categories summing to 8190 MB on an 8 GB machine.
+
+**Two bugs caught by looking rather than reasoning:**
+1. `btn-secondary` — a class I used that exists nowhere in `styles.css`. It typechecked, built clean, and rendered as a raw white browser button. Only the screenshot showed it.
+2. `[target.'cfg(desktop)'.dependencies]` in `Cargo.toml` silently matches nothing, because Cargo resolves dependencies before Tauri defines that cfg. The symptom appeared far away, as `Permission updater:default not found` from `tauri-build`.
+
+**Verified locally:** `cargo test` 52 passed / 0 failed / 1 ignored; `npm test` (app) 5 passed; `npm run build` clean; decider 74 passed.
 
 ### 2026-08-22 — Build stamp (`vite.config.ts`, `main.ts`, `styles.css`) + corrected `approx_mb`
 

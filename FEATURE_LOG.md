@@ -20,6 +20,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 **Cleanup before shipping it:** removed the two diagnostic models (`Q8_0` and `fp16` 0.5B) added to isolate the — now disproven — K-quant theory. They were probes, not products: the picker showed them as "Test: Q8" and "Test: fp16", two baffling extra options for anyone who isn't debugging ggml kernels. Gone from `model.rs` (constants, `chat_candidates`, `MODELS`), the picker's `MODEL_TIERS`, and the CI URL check. They never shipped in a tag and were never downloaded on-device, so nobody has a stray file or a stale selection. The picker now also falls back to the first tier when the stored model id names a tier that no longer exists — previously a retired model left the picker with nothing selected, and Verdure will retire models again.
 
+### 2026-08-28 — Verdure can update itself, and only if you let it
+
+**What:** the desktop app now checks for, downloads, and installs new versions. macOS has no store to do this for us, and with `[OQ-58]` open a stuck build is a real risk — the fix for a crash could exist for months while a tester sits on the version that vanishes. iOS and Android are untouched; their stores own updates, so every code path is desktop-gated.
+
+**The decision that mattered wasn't technical.** An update check is a network request that reveals someone runs Verdure, roughly when, and from what IP — the exact shape of quiet signal `knowledge/06` promises we don't collect. Shipping a silent launch-time check would have been a small, invisible breach of the product's central claim. So it is **opt-in**: asked once, in wording that names the actual thing (*"checking asks our server whether one exists"* — not *"check for updates?"*, which hides that checking **is** the request), and changeable from Storage forever, because a choice you can't revisit is a trap rather than consent. Three modes — tell me, install automatically, never check — and "never check" is styled like the others, since a greyed-out decline would make the whole question theatre. Full rationale in `knowledge/23`.
+
+**Also fixed: Verdure was over-reporting free memory** (`[OQ-77]`). `available_ram_mb` added `purgeable` pages to a sum that already included them via active/inactive — 1976 MB claimed where 1895 MB was true. That leaned the one dangerous way, since this number gates an allocation whose failure kills the whole app. Dropping the term makes our figure *equal* macOS's own accounting rather than approximate it, because the page categories partition memory exactly.
+
+**User impact:** a tester can install once and receive every fix afterwards without being asked to re-download anything — and without Verdure quietly acquiring a habit of phoning home. Updates are ~30 MB, not 1.4 GB, because models live outside the app bundle.
+
 ### 2026-08-22 — Build stamp in the corner; honest download sizes; CI off the push path
 
 **Build stamp.** Every screen now carries a tiny, dim line bottom-right saying which build it is — `release-14` when the commit is tagged, `dev 1097ec8` otherwise, with a trailing `+` when the tree had uncommitted changes. Captured at compile time by `vite.config.ts` from git and baked in via Vite `define` (the running app has no git and no shell).
