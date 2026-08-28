@@ -332,6 +332,22 @@ fn read_low_power() -> bool {
 
 /// Parse `vm_stat` output into available bytes (free + inactive + speculative +
 /// purgeable pages, the memory macOS can hand out). Pure — unit-tested.
+///
+/// **Why not "Pages free".** On a working Mac free is almost nothing — 15 MB was
+/// measured on the founder's 8 GB machine while 2224 MB was genuinely available.
+/// macOS deliberately fills spare RAM with file cache and reclaims it on demand,
+/// so *reclaimable* memory is the honest number and "free" would gate out every
+/// model. This is also why a "clear cache to free memory" button would be a
+/// placebo (decided 2026-08-28): that memory is already counted here, and
+/// flushing it only makes the machine slower by discarding warm cache.
+///
+/// **Known imprecision, erring optimistic — `[OQ-77]`.** Purgeable pages usually
+/// already sit in the active/inactive lists, so adding them likely double-counts
+/// (~97 MB on the founder's Mac; cross-checked against Activity Monitor's
+/// total − app − wired − compressed ≈ 2136 MB against our 2224 MB). Small, but it
+/// leans the way that hurts: this number gates an allocation whose failure
+/// `abort()`s the whole app (`[OQ-58]`). Also counts *dirty* inactive pages,
+/// which must be compressed or paged out before they are truly free.
 #[cfg(any(target_os = "macos", test))]
 fn parse_available_bytes(vm_stat: &str) -> Option<u64> {
     let page_size: u64 = vm_stat
