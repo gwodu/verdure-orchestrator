@@ -159,18 +159,51 @@ jobs:
           }, indent=2))
           PYEOF
           echo "--- latest.json ---"; cat latest.json
+      - name: Notarize and staple the .dmg itself
+        # Tauri notarizes and staples the .APP, then creates and merely SIGNS the
+        # .dmg around it — so the wrapper is never notarized. That gap is
+        # invisible when you check the .app (which passes) and fatal when a user
+        # double-clicks the download: Gatekeeper assesses the DMG and rejects it
+        # with "Apple cannot check it for malicious software", which is the exact
+        # warning notarization exists to remove.
+        #
+        # Caught 2026-08-28 on the shipped v0.1.0 by testing the released bytes
+        # rather than the CI artifact: the .app said "accepted / Notarized
+        # Developer ID", the .dmg said "rejected / Unnotarized Developer ID".
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: |
+          DMG=$(find app/src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name "*.dmg" | head -1)
+          test -n "$DMG"
+          echo "notarizing: $DMG"
+          xcrun notarytool submit "$DMG" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$ASC_API_KEY_ID" \
+            --issuer "$ASC_API_ISSUER_ID" \
+            --wait
+          xcrun stapler staple "$DMG"
       - name: Verify the signature and notarization
-        # Proof, not hope: `spctl` is what Gatekeeper itself runs on first launch,
-        # and `stapler validate` proves the ticket travels with the app offline.
-        # The icon bug taught us to check the artifact, not the intent.
+        # Proof, not hope: `spctl` is what Gatekeeper itself runs, and `stapler
+        # validate` proves the ticket travels with the artifact offline. The icon
+        # bug taught us to check the artifact, not the intent.
+        #
+        # BOTH are asserted. Checking only the .app is what let an unnotarized
+        # .dmg ship in v0.1.0 — the DMG is the thing a user actually opens, and
+        # it needs `--type open`, not `--type execute`.
         if: steps.signing.outputs.enabled == 'true'
         run: |
           APP=$(find app/src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
-          echo "verifying: $APP"
+          DMG=$(find app/src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name "*.dmg" | head -1)
+          echo "verifying app: $APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute --verbose=4 "$APP"
           xcrun stapler validate "$APP"
-          echo "signed, notarized, and stapled ✓"
+          echo "verifying dmg: $DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
+          xcrun stapler validate "$DMG"
+          echo "app AND dmg signed, notarized, and stapled - OK"
       - name: Upload the runnable app
         uses: actions/upload-artifact@v4
         with:
