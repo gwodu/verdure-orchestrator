@@ -66,6 +66,22 @@ When a question is resolved:
 
 ## Important — resolve in Month 1
 
+- [ ] **[OQ-81]** **`Cannot find module '@tailwindcss/oxide-linux-x64-gnu'` / `Failed to load native binding` — the monorepo website does not build on Vercel.** Blocks deploying `mvp-porter-buzz`'s `website/` to production; `main`'s copy still deploys fine, and the updater redirect was landed on `main` alone as a result (2026-08-28).
+
+  **Symptom.** `npx vercel --yes` from the repo root, on `mvp-porter-buzz`: upload and install succeed, then `next build --turbopack` fails with `Error evaluating Node.js code → Failed to load native binding → Cannot find module './tailwindcss-oxide.linux-x64-gnu.node'`. Reproducible on demand; costs nothing (preview only, production untouched).
+
+  **Cause (measured, not assumed).** `mvp-porter-buzz` deletes `website/package-lock.json` in favour of the hoisted root workspace lock. `main:website/package-lock.json` records `oxide-linux-x64-gnu` **3 times**; the root `package-lock.json` records it **once**. Vercel builds on Linux; the native binary it needs is not fully described by the lock it installs from. This is npm's known optional-dependency-per-platform behaviour, surfaced by the workspace hoist.
+
+  **What must be true for a fix to work:**
+  1. `@verdure/decider` must resolve — `website/` imports it instead of carrying its own `lib/recommend.ts` etc. The Vercel project's **Root Directory is `website`**, so deploys must run from the **repo root** (running `vercel` inside `website/` fails with *"Root Directory 'website' does not exist"*), which is also why `.vercelignore` exists — the upload context is the whole monorepo, including gigabytes of Rust `target/`.
+  2. The Linux Tailwind binary must be installed.
+
+  **Options, in the order worth trying:** (a) set the project's **Install Command** to run `npm ci` at the repo root so workspaces resolve together, and confirm the root lock is regenerated on Linux or with `--include=optional`; (b) regenerate the root lockfile so all platform-specific optional deps are recorded (`npm i --package-lock-only --os=linux --cpu=x64`, or add the `@tailwindcss/oxide-linux-x64-gnu` optional dep explicitly); (c) enable Vercel's *Include files outside the Root Directory* and use a monorepo-aware install; (d) drop Turbopack for the production build if it proves to be the specific consumer of the native binding — test before believing it.
+
+  **What the visible site does NOT need:** the page-level diff between `main` and this branch is **12 lines, all import statements** (`@/lib/recommend` → `@verdure/decider`). No copy, layout or content changes. The 4,881 deletions are logic *moved* into the shared package. So this is purely a build-configuration problem, not a content review.
+
+  **Verify with,** before promoting: `npx vercel --yes` from the repo root (a preview, free, production untouched), then — since Vercel preview URLs sit behind SSO and cannot be fetched anonymously — `npx next build && npx next start` locally and curl the routes. That combination is what proved the `main` redirect before it shipped. (Raised 2026-08-28.)
+
 - [ ] **[OQ-01]** Commit formally to laptops-first, or develop Phase 1 and Phase 2 in parallel. (From `01-thesis.md`.)
 - [ ] **[OQ-02]** Phase 2 first OS — Android or iOS? (From `01-thesis.md`.)
 - [ ] **[OQ-04]** Practical floor — support 4 GB phones or start at 6 GB? (From `02-hardware-tiers.md`.)

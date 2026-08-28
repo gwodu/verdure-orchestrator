@@ -2,22 +2,22 @@
 
 *Role: current **state + next steps** — "where are we now / what do I do next." Overwritten as the build moves; it does not narrate chronology. For the dated history of how we got here, see `KNOWLEDGE.md`'s changelog.*
 
-**Status:** 🟢 Current working state as of **2026-08-21**. **The long-running macOS chat bug is FIXED** (`[OQ-71]` — it was the Metal GPU backend on Intel; see Resolved in `open-questions.md`). **Local Rust builds now work** (Xcode CLT 16.4 + `cmake` installed), which changes the daily loop and the CI economics. **New session? Read this first**, then `18` (pivot), `20` (personal AI), `22` (chat memory).
+**Status:** 🟢 Current working state as of **2026-08-28**. **Verdure for macOS is PUBLISHED and shareable** — universal, signed, notarized, with a working self-updater: <https://github.com/gwodu/Verdure-Releases/releases/latest>. **New session? Read this first**, then `18` (pivot), `20` (personal AI), `22` (chat memory), `23` (updates + consent).
 
 ## Start here — next session
 
 **Ready to do, in order:**
 
-1. ~~**Ship the Metal fix to the founder's Mac.**~~ **DONE 2026-08-22** — diagnostics removed, `release-14` tagged, the signed/notarized build is installed at `/Applications/Verdure.app`.
-2. **Verify on-device** — **chat CONFIRMED 2026-08-22**: a coherent answer on the founder's 2019 Intel Mac, the first time chat has ever worked on that machine. `[OQ-71]` is closed end-to-end. It answered on the **"Powerful" (Qwen3 4B) tier**, not the fallback — see `[OQ-64]`'s 2026-08-22 note, which retires the "this Mac only exercises the fallback tier" premise and records a first real footprint measurement (RSS ≈ 1.40 GB vs a 2300 MB gate).
-   **Still unverified: dictation.** The hardened runtime denies the mic without `Entitlements.plist`, and that path has never been exercised on a notarized device. Tap the mic in the installed build and speak — this is the last unproven thing about the notarization work.
-   **iOS is NOT shipped for release-14.** The TestFlight job failed at the archive step: *"Your account has reached the maximum number of certificates."* Automatic signing tried to mint one and hit the account cap. Fix is founder-side (developer.apple.com → Certificates → revoke an unused one), then re-tag. Pre-existing account state, unrelated to this change, and not blocking anything. Secondary oddity to check then: the archive requested an *iOS App Development* profile where a TestFlight archive should want Distribution.
-   **Tag choice matters:** `release-N` fires all three platforms. When only one is wanted, use the per-platform tag (`app-build-N`) — `release-14` triggered an iOS build nobody asked for and turned a pre-existing account problem into a red build.
-3. **Check `whisper-rs` for the same Metal exposure.** Transcription is *correct* on this Mac (~3.9× real-time), so it either avoids Metal or tolerates it. Worth knowing — but **do not change working code without evidence.**
-4. **`[OQ-72]`** (iOS asks to re-install Whisper after an update): diagnosed, not fixed. `main.ts`'s mic check does `.catch(() => [])`, so any failed query reads as "not installed". Confirming test: tap the prompt — if dictation starts in ~1s the file was always there.
-5. **`[OQ-73]`** Storage reports the model registry, not the disk, so strays and orphaned `.part`s are invisible.
+1. **Website: make the monorepo build on Vercel (`[OQ-81]`).** This is the one that blocks a whole area of work. `mvp-porter-buzz`'s `website/` fails to build on Vercel — `Cannot find module '@tailwindcss/oxide-linux-x64-gnu'` — because the branch drops `website/package-lock.json` for the hoisted root lock, which records that Linux native binary once where main's records it three times. **`[OQ-81]` has the full diagnosis, four ranked fix options, and the exact verify loop.** Until it is fixed, the live site runs from `main` and `website/` changes on this branch cannot ship.
+   **Consequence today:** the updater redirect was landed on **`main` alone** (10 lines in `next.config.ts`) so `verdureai.com/updates/*` works. That is the only difference between the live site and `main`.
+2. **Dictation on the notarized build — still unverified.** The hardened runtime denies the mic without `Entitlements.plist`, and no notarized build has had that path exercised on a device. Tap the mic in the installed app and speak. It is the last unproven thing about the signing work.
+3. **`[OQ-58]` process isolation — the P0 before a *public* link.** A ggml `abort()` kills the whole app rather than surfacing an error. Fine for a handful of testers who expect early software; not fine for strangers, who do not file bugs, they delete the app. `[OQ-58]` has the mechanism, the real risk profile, and three options with a recommendation.
+4. **`[OQ-64]` / `[OQ-70]` — one measurement session settles both.** `runtime_mb` for the 4B is ~900 MB too conservative against a measured ~1.40 GB resident; `[OQ-77]` separately tightened the available-memory figure. Needs a *peak* RSS measurement across a conversation that fills the context window, not another short chat.
+5. **`[OQ-72]`** (iOS re-install prompt) and **`[OQ-73]`** (Storage reports the registry, not the disk) — both diagnosed, neither fixed.
 
-**Then the standing debt:** process isolation (`[OQ-58]`, still P0 before real users — ggml `abort()` kills the GUI), the `porter` rename before the first Play upload (`[OQ-60]`, becomes permanent at publish), and the evals harness (`[OQ-74]`).
+**Then the standing debt:** the `porter` rename before the first Play upload (`[OQ-60]`, permanent once published), the evals harness (`[OQ-74]`), and `[OQ-78]` (the update check exposes an IP).
+
+**iOS is behind.** `release-14`'s TestFlight job failed on an Apple *account* limit — *"Your account has reached the maximum number of certificates"*. Founder-side: developer.apple.com → Certificates → revoke an unused one, then re-tag. Pre-existing, unrelated to any change here.
 
 **Local loop:** everything verifies free on this machine, and **CI no longer runs on push** — see "How to build / ship" below.
 - `cd app/src-tauri && cargo test` — 51 tests, seconds.
@@ -112,6 +112,18 @@ Rust builds and tests run **locally** since 2026-08-21 (Xcode CLT 16.4 + `cmake`
 - **Android Play open testing:** `git tag android-play-N` → `build-android-play.yml` → signed `.aab` via the persistent upload keystore (secrets pending founder-side). Both Android workflows share `app/scripts/patch-android-project.py` (manifest + mic wiring), so they cannot diverge.
 - The legacy unsigned iOS path (`build-ipad.yml`, `ipad-build-N` → 7-day sideload) was **retired 2026-08-12** — TestFlight superseded it and `[OQ-65]`'s exit condition was met. To restore it: `git show 2026-08-12 -- .github/workflows/build-ipad.yml` (git history is the archive; the file is not kept as dead code).
 - Key fix in place: `app/src-tauri/.cargo/config.toml` forces `MACOSX_DEPLOYMENT_TARGET=10.15` so whisper/llama cross-compile.
+
+## Distribution — how Verdure reaches people (2026-08-28)
+
+**The link to share:** <https://github.com/gwodu/Verdure-Releases/releases/latest>
+Direct download, skipping the release page: `.../releases/latest/download/Verdure_0.1.0_universal.dmg`
+**Do NOT share `verdureai.com/updates/...`** — that is the machine-facing updater endpoint; a human clicking it gets JSON.
+
+- **`gwodu/Verdure-Releases`** is a **public** repo holding downloads only, no source. It carries **no licence file** deliberately: a public repo with none is "all rights reserved", the right default for a proprietary binary, and adding one would licence the product away (`[OQ-79]`). It exists because release assets on a *private* repo require an auth token — verified: anonymous requests 404.
+- **Updater endpoint:** `https://verdureai.com/updates/latest.json`, redirected by `website/next.config.ts` (on **`main`**) to the GitHub release. **The endpoint is compiled into every binary** — a copy of Verdure asks that exact address for the rest of its life, so it points at our own domain rather than GitHub, and moving hosting later must never strand an install. Redirect, not rewrite, so GitHub serves the bytes.
+- **Cutting a release:** `git tag app-build-N && git push origin app-build-N` → signed, notarized, stapled universal `.dmg` + `.app.tar.gz` + `.sig` + `latest.json`. Then `gh release create vX.Y.Z --repo gwodu/Verdure-Releases <artifacts>`.
+- **Before publishing, always:** `python3 app/scripts/verify-release.py --dir <bundle>`; **after publishing:** `--url https://verdureai.com/updates`. The second is the one with no blind spot — it re-downloads the published bytes through the live redirect chain. It is wired into CI as of `app-build-26` onward; `app-build-25` predates it and was checked by hand.
+- **`v0.1.0` shipped once with a Gatekeeper-rejected `.dmg`** and was pulled within minutes (`[OQ-80]`). Tauri notarizes the `.app` and merely *signs* the `.dmg` around it; CI verified only the `.app`. Both are now notarized and both are asserted, with `--type open` for the disk image.
 
 ## Environment constraints (carry forward)
 
