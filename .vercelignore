@@ -1,0 +1,24 @@
+# What Vercel does NOT need to build the website.
+#
+# The Vercel project's Root Directory is `website`, but deploys must be made from
+# the REPO ROOT so the workspace package `@verdure/decider` — which website/ now
+# imports instead of carrying its own copy — is present to resolve. That means
+# the whole monorepo is the upload context, including 2.6 GB of Rust build
+# output. Hence this file.
+#
+# Keep: website/, packages/decider/, and the root workspace manifests.
+
+# Rust build artifacts — by far the largest thing here.
+app/src-tauri/target/
+target/
+
+# Desktop app bits irrelevant to the website build.
+app/dist/
+app/src-tauri/gen/
+app/screenshots/
+app/src-tauri/THIRD-PARTY-NOTICES.md
+
+# Local build/test output.
+website/.next/
+**/node_modules/
+screenshots/
