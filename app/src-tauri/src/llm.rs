@@ -173,7 +173,12 @@ fn format_chat_prompt(history: &[Turn], user: &str, style: PromptStyle) -> Strin
     let mut p = String::new();
     match style {
         // ChatML — Qwen et al. No BOS (the tokenizer adds none for this family).
-        PromptStyle::ChatMl => {
+        // The two ChatML arms differ only in what follows the final assistant
+        // marker, so they share one body: a reasoning model gets a pre-filled
+        // EMPTY thinking block, which is its documented "answer directly" switch
+        // (see `PromptStyle::ChatMlNoThink`). Sharing the body means history
+        // framing can never drift between them.
+        PromptStyle::ChatMl | PromptStyle::ChatMlNoThink => {
             p.push_str(&format!("<|im_start|>system\n{SYSTEM}<|im_end|>\n"));
             for t in history {
                 p.push_str(&format!(
@@ -184,6 +189,9 @@ fn format_chat_prompt(history: &[Turn], user: &str, style: PromptStyle) -> Strin
             p.push_str(&format!(
                 "<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n"
             ));
+            if style == PromptStyle::ChatMlNoThink {
+                p.push_str("<think>\n\n</think>\n\n");
+            }
         }
         // Gemma has no system role, so the instruction rides the first user turn.
         // The leading BOS is added by the tokenizer (AddBos::Always), not written
@@ -217,7 +225,7 @@ fn format_chat_prompt(history: &[Turn], user: &str, style: PromptStyle) -> Strin
 /// BOS convention for the family — see `format_chat_prompt`.
 fn add_bos_for(style: PromptStyle) -> AddBos {
     match style {
-        PromptStyle::ChatMl => AddBos::Never,
+        PromptStyle::ChatMl | PromptStyle::ChatMlNoThink => AddBos::Never,
         PromptStyle::Gemma => AddBos::Always,
     }
 }
@@ -589,12 +597,23 @@ mod tests {
 
         eprintln!("arch={} os={}", std::env::consts::ARCH, std::env::consts::OS);
 
-        let info = &crate::model::QWEN_CHAT_SMALL; // id/prompt-style only; ChatML
+        // The prompt style is a variable of the experiment, not a constant: a
+        // reasoning model framed as a plain ChatML one spends its whole reply
+        // budget thinking out loud. Default ChatML; override for another family:
+        //   VERDURE_REPRO_STYLE=nothink|gemma
+        let style = match std::env::var("VERDURE_REPRO_STYLE").unwrap_or_default().as_str() {
+            "nothink" => PromptStyle::ChatMlNoThink,
+            "gemma" => PromptStyle::Gemma,
+            _ => PromptStyle::ChatMl,
+        };
+        eprintln!("style={style:?}");
+
+        let info = &crate::model::QWEN_CHAT_SMALL; // id only; style is chosen above
         let mut slot = None;
         let resident = ensure_resident(&mut slot, info, path).expect("model loads");
 
         // Fixed window so context size is not a variable in this experiment.
-        let out = decide(resident, &[], "How do the northern lights work?", PromptStyle::ChatMl, 1024)
+        let out = decide(resident, &[], "How do the northern lights work?", style, 1024)
             .expect("generation succeeds");
 
         eprintln!("--- reply ---\n{}\n-------------", out.reply);
@@ -609,6 +628,34 @@ mod tests {
         assert!(p.trim_end().ends_with("<|im_start|>assistant"));
         // No BOS is written into the string; the tokenizer adds none for ChatML.
         assert_eq!(add_bos_for(PromptStyle::ChatMl), AddBos::Never);
+    }
+
+    #[test]
+    fn no_think_style_prefills_an_empty_thinking_block() {
+        // Qwen 3.5's documented "answer directly" switch is a PRE-FILLED EMPTY
+        // thinking block after the assistant marker. Without it the model emits
+        // hundreds of tokens of scratchpad and the answer never arrives — measured
+        // on-device 2026-09-10, and invisible to any test that only checks that a
+        // reply is non-empty.
+        let p = format_chat_prompt(&[], "hi", PromptStyle::ChatMlNoThink);
+        assert!(p.trim_end().ends_with("</think>"), "no-think block missing: {p}");
+        assert!(p.contains("<|im_start|>assistant\n<think>\n\n</think>"));
+        // Everything else must match plain ChatML exactly — the two arms share a
+        // body precisely so history framing cannot drift between them.
+        let plain = format_chat_prompt(&[], "hi", PromptStyle::ChatMl);
+        assert_eq!(p.strip_suffix("<think>\n\n</think>\n\n").unwrap(), plain);
+        assert_eq!(add_bos_for(PromptStyle::ChatMlNoThink), AddBos::Never);
+    }
+
+    #[test]
+    fn a_cheaper_kv_cache_buys_a_bigger_window() {
+        // The payoff of the hybrid architecture, in the one function that spends
+        // it: the same spare RAM buys a far longer conversation at 12 KB/token
+        // than at 144 KB/token (knowledge/22).
+        let spare = 64; // MB
+        let hybrid = context_for_budget(spare, 12, 262_144);
+        let dense = context_for_budget(spare, 144, 32_768);
+        assert!(hybrid > dense, "hybrid {hybrid} should exceed dense {dense}");
     }
 
     #[test]

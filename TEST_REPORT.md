@@ -4,6 +4,31 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-09-10 — Testing a model swap: six tests, and the one that would have caught a shipping bug
+
+**Unit tests written (6 new, 54 → 60 passing).**
+
+| Test | What it locks down |
+|---|---|
+| `no_think_style_prefills_an_empty_thinking_block` | The reasoning off-switch is present AND the no-think prompt is byte-identical to plain ChatML apart from the suffix — so history framing cannot drift between the two arms |
+| `reasoning_models_disable_thinking` | Both Qwen 3.5 entries carry `ChatMlNoThink`; a copy-pasted `ChatMl` is how this regresses |
+| `a_cheaper_kv_cache_buys_a_bigger_window` | The KV win is spent where it matters — `context_for_budget` yields a longer window at 12 KB/token than 144 |
+| `qwen35_context_is_far_cheaper_than_the_dense_4b` | The 10× KV advantage is a property of the registry, not a comment |
+| `unverified_qwen35_4b_stays_out_of_the_live_pick` | Abundant RAM cannot smuggle in an unmeasured model |
+| `every_menu_choice_is_in_the_registry` | Every menu/candidate id resolves via `find()` — a model missing from `MODELS` is both undownloadable and unremovable (`[OQ-73]`) |
+
+**The edge case that mattered — caught by running, not by reading.** Qwen 3.5 is a reasoning model. Framed as plain ChatML it produced **256 tokens of `<think>` scratchpad and no answer**. Every existing assertion passed: the model loaded, generation succeeded, the reply was non-empty. A reply that is 100% visible chain-of-thought is *exactly* the shape of output that a "non-empty reply" test certifies as healthy. **The lesson is the `[OQ-71]` lesson again — assert on the artifact the user receives, not on the call succeeding.**
+
+**A measurement that corrected the record.** The load log shows `CPU_REPACK` at 490 MB on a 1211 MB model, plus a ~500 MB compute buffer: peak resident runs ~1 GB above file size. `[OQ-64]`/`[OQ-70]` had recorded `runtime_mb: 2300` as "~900 MB too conservative" against a measured ~1.40 GB — that figure was **weights-only**. Corrected in `21-handoff.md` (×2) and `open-questions.md` before it could justify lowering an OOM guard that is doing its job.
+
+**A hypothesis falsified.** Head-to-head on the same probe, same build: the shipping 2.77 bpw model answered well. The "low bit-rate is degrading answers" theory is **not supported** and is not claimed. Settling it needs `[OQ-74]`'s eval harness, not another anecdote.
+
+**Harness improvement.** `repro_oq71_generates_from_a_real_model` now takes `VERDURE_REPRO_STYLE=nothink|gemma`. The prompt style is a variable of the experiment; hardcoding ChatML is what would have hidden the reasoning-model failure.
+
+**Infrastructure fix.** CI's model-URL check was a hand-maintained copy of the URLs in `model.rs`, so every newly added model was silently exempt until someone remembered to paste it in — green precisely for the newest, least-proven URL. It now derives the list from `model.rs`, with a floor check (`< 5 URLs` fails) so a refactor that moves them turns into a failure rather than a silent no-op. All 7 URLs verified 200.
+
+**Not tested (stated plainly):** no on-device run on iOS or Android; no speed measurement (tok/s) for the hybrid architecture on any device; the 4B is unmeasured and gated off.
+
 ### 2026-08-28 (later) — `verify-release.py`: the regression test for `[OQ-80]`
 
 **What it prevents.** A signed, notarized `.app` inside an **unnotarized `.dmg`** — shipped in `v0.1.0` while every check we had reported success (`[OQ-80]`). Also the two search failures from `[OQ-79]` in the same session.

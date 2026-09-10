@@ -171,13 +171,23 @@ jobs:
       - name: Verify the model download URLs resolve
         # The models are downloaded on first use from these URLs (model.rs). If a
         # release URL rots, this fails here instead of on a user's machine.
+        #
+        # The list is READ FROM model.rs rather than repeated here. It used to be
+        # a hand-maintained copy, which meant every model added to the registry
+        # was silently exempt from the check until someone remembered to paste it
+        # in — the check would stay green precisely for the newest, least-proven
+        # URL. Deriving it means a new model is covered the moment it is added.
         run: |
-          for url in \
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin" \
-            "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf" \
-            "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf" \
-            "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf" \
-            "https://huggingface.co/byteshape/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q3_K_S-2.77bpw.gguf"; do
+          set -euo pipefail
+          mapfile -t urls < <(grep -oE 'https://huggingface\.co/[^"]+' app/src-tauri/src/model.rs | sort -u)
+          echo "found ${#urls[@]} model URLs in model.rs"
+          # Guard the derivation itself: a refactor that moves the URLs would
+          # otherwise turn this step into a silent no-op that always passes.
+          if [ "${#urls[@]}" -lt 5 ]; then
+            echo "::error::Only ${#urls[@]} URLs found in model.rs — the extraction is probably broken, not the registry."
+            exit 1
+          fi
+          for url in "${urls[@]}"; do
             echo "checking $url"
             curl -fsSL -I "$url" >/dev/null
           done

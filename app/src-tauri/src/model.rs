@@ -20,6 +20,20 @@ use serde::Serialize;
 pub enum PromptStyle {
     /// Qwen 2.5 etc. — ChatML (`<|im_start|>`…`<|im_end|>`), no leading BOS.
     ChatMl,
+    /// ChatML for a **reasoning** model (Qwen 3.5), with thinking turned OFF.
+    ///
+    /// Qwen 3.5's template appends `<think>\n` after the assistant marker, so the
+    /// model spends its whole reply budget narrating its reasoning and the actual
+    /// answer never arrives (measured: 256 tokens of scratchpad, no answer). The
+    /// model's own documented off-switch is a PRE-FILLED EMPTY thinking block —
+    /// `<think>\n\n</think>\n\n` — which satisfies the format and makes it answer
+    /// directly. That is a prompt-framing fact about the family, so it belongs
+    /// here with the model rather than in a runtime flag.
+    ///
+    /// Verdure does not surface reasoning today: the chat is a plain conversation
+    /// (knowledge/18), and a visible scratchpad is the jargon `design.md` exists to
+    /// delete. Revisit if we ever show a "thinking" affordance.
+    ChatMlNoThink,
     /// Gemma — `<start_of_turn>`/`<end_of_turn>`, leading BOS, no system role.
     Gemma,
 }
@@ -142,6 +156,75 @@ pub const GEMMA4_E2B: ModelInfo = ModelInfo {
     prompt_style: Some(PromptStyle::Gemma),
 };
 
+/// Qwen 3.5 2B (Alibaba, 2026, Apache 2.0) — the measured upgrade over the Qwen 2.5
+/// pair, and the first model in this registry whose numbers are MEASURED rather than
+/// computed (`repro_oq71_generates_from_a_real_model`, Intel Mac, 2026-09-10).
+///
+/// Why it earns a slot over Qwen 2.5 1.5B at the same footprint class:
+///  * **Conversation memory is 12× cheaper.** Qwen 3.5 is a hybrid — only 6 of its
+///    24 layers carry a KV cache (`full_attention_interval = 4`); the rest are Gated
+///    DeltaNet, whose recurrent state is a FIXED ~19 MB regardless of length. So the
+///    per-token cost is `2 × 6 × 2 kv_heads × 256 head_dim × 2 B` = 12 KB — the same
+///    as the 0.5B floor model, for a 1.88 B model. Since `context_for_budget`
+///    (`llm.rs`) divides the spare RAM by exactly this number, the window it can
+///    afford grows ~12× on the same machine. This is the direct answer to the beta
+///    report "it ran out of context" (knowledge/22).
+///  * Trained for 262 144 tokens, so `MAX_CONTEXT` is never the model's limit.
+///  * Apache 2.0 — no MAU cap, no custom terms (knowledge/09).
+///
+/// Verified on this machine: loads through our pinned llama-cpp-2 (0.1.154 vendors
+/// `LLM_ARCH_QWEN35` + `GGML_OP_GATED_DELTA_NET`), `graph splits = 1`, all CPU, and
+/// answers coherently. It is a REASONING model — see `PromptStyle::ChatMlNoThink`,
+/// without which it burns the whole reply budget thinking out loud.
+pub const QWEN35_2B: ModelInfo = ModelInfo {
+    id: "qwen3.5-2b-instruct",
+    name: "Chat model (Qwen3.5 2B)",
+    modality: "Chat",
+    file: "Qwen3.5-2B-Q4_K_M.gguf",
+    url: "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf",
+    // Real Content-Length: 1 280 835 840 bytes.
+    approx_mb: 1221,
+    // MEASURED peak at n_ctx 1024, not estimated: 1211 weights + 490 CPU_REPACK
+    // + 498 compute + 19 recurrent = ~2218 MiB, plus margin. The REPACK buffer is
+    // the one an estimate misses — llama.cpp re-lays the weights out for CPU SIMD
+    // and that copy is resident too. Undershooting here OOM-aborts the app, so the
+    // margin stays until a peak-RSS run across a full context says otherwise
+    // ([OQ-70]).
+    runtime_mb: 2500,
+    kv_kb_per_token: 12,
+    trained_ctx: 262144,
+    prompt_style: Some(PromptStyle::ChatMlNoThink),
+};
+
+/// Qwen 3.5 4B — the roomy-tier sibling of `QWEN35_2B` (Apache 2.0, same hybrid
+/// architecture: 8 of 32 layers carry a KV cache → 32 KB/token, vs 144 KB for the
+/// dense Qwen3 4B we ship today).
+///
+/// HELD OUT of the live pick behind `QWEN35_4B_VERIFIED` — same discipline as
+/// Gemma 4 E2B. The architecture is proven (its 2B sibling runs here), but the
+/// FOOTPRINT is not: scaling the 2B's measured buffers suggests ~4.2 GB resident,
+/// which no target device has free, and a wrong `runtime_mb` OOM-aborts the whole
+/// app ([OQ-58]). Measure before enabling — the 2B is the one that pays off now.
+pub const QWEN35_4B: ModelInfo = ModelInfo {
+    id: "qwen3.5-4b-instruct",
+    name: "Chat model (Qwen3.5 4B)",
+    modality: "Chat",
+    file: "Qwen3.5-4B-Q4_K_M.gguf",
+    url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
+    // Real Content-Length: 2 740 937 888 bytes.
+    approx_mb: 2613,
+    // PROVISIONAL — 2613 weights + repack/compute scaled from the 2B's measured
+    // buffers. Deliberately high; correct it DOWNWARD only against a real run.
+    runtime_mb: 4400,
+    kv_kb_per_token: 32,
+    trained_ctx: 262144,
+    prompt_style: Some(PromptStyle::ChatMlNoThink),
+};
+
+/// Whether Qwen 3.5 4B has been measured on-device. Until then the 4B stays out of
+/// the pick and only the (verified) 2B ships. [OQ-82]
+const QWEN35_4B_VERIFIED: bool = false;
+
 /// Whether Gemma 4 E2B has been verified on-device — that our pinned llama.cpp
 /// actually loads it AND does the PLE offload that delivers its advertised active
 /// footprint. Until this is `true`, the picker never auto-selects it, so we never
@@ -203,12 +286,19 @@ pub fn chat_model_for_available(available_mb: u64) -> Option<&'static ModelInfo>
 /// so every caller — the RAM picker AND the strict/preferred pick — shares one order.
 fn chat_candidates() -> Vec<&'static ModelInfo> {
     let mut candidates: Vec<&'static ModelInfo> = Vec::new();
-    if USE_BYTESHAPE_QWEN3_4B {
-        candidates.push(&BYTESHAPE_QWEN3_4B); // the base chat model when it fits ([OQ-64])
+    if QWEN35_4B_VERIFIED {
+        candidates.push(&QWEN35_4B); // roomy tier, only once measured ([OQ-82])
     }
     if GEMMA4_E2B_VERIFIED {
         candidates.push(&GEMMA4_E2B); // roomy tier, only once verified ([OQ-61])
     }
+    if USE_BYTESHAPE_QWEN3_4B {
+        candidates.push(&BYTESHAPE_QWEN3_4B); // the incumbent 4B when it fits ([OQ-64])
+    }
+    // Below the 4B by footprint, but a newer generation with 12× cheaper context —
+    // so it is the fallback that a tight machine actually WANTS, not a consolation
+    // prize. Ordered by what fits, which is what the RAM gate below consumes.
+    candidates.push(&QWEN35_2B);
     candidates.push(&QWEN_CHAT);
     candidates.push(&QWEN_CHAT_SMALL);
     candidates
@@ -274,7 +364,8 @@ pub fn choose_chat_model(
 /// `chat_candidates` (the internal auto-picker). All three are proven small
 /// footprints so any of them is a safe pick on a modern device. Friendly tier
 /// names + copy live in the UI (design.md — the words belong with the surface).
-pub const CHAT_MODEL_CHOICES: &[&ModelInfo] = &[&QWEN_CHAT_SMALL, &QWEN_CHAT, &BYTESHAPE_QWEN3_4B];
+pub const CHAT_MODEL_CHOICES: &[&ModelInfo] =
+    &[&QWEN_CHAT_SMALL, &QWEN35_2B, &BYTESHAPE_QWEN3_4B];
 
 /// One chat model as the picker needs it: what it is, how big the download is, and
 /// whether it fits THIS device right now (memory + disk). Honest space up front
@@ -348,8 +439,15 @@ pub fn chat_model_choice(
 /// Every model Verdure can download today. Gemma 4 E2B is listed so the Storage
 /// screen can show + manage it uniformly, but the chat picker won't auto-select it
 /// until it's verified (see `chat_model_for_available`).
-pub const MODELS: &[ModelInfo] =
-    &[WHISPER_BASE_EN, BYTESHAPE_QWEN3_4B, QWEN_CHAT_SMALL, QWEN_CHAT, GEMMA4_E2B];
+pub const MODELS: &[ModelInfo] = &[
+    WHISPER_BASE_EN,
+    BYTESHAPE_QWEN3_4B,
+    QWEN35_2B,
+    QWEN35_4B,
+    QWEN_CHAT_SMALL,
+    QWEN_CHAT,
+    GEMMA4_E2B,
+];
 
 /// Look up a model by id.
 pub fn find(id: &str) -> Option<&'static ModelInfo> {
@@ -757,6 +855,59 @@ mod tests {
         // Qwen3 uses ChatML, so the existing framing applies — no new plumbing.
         assert_eq!(BYTESHAPE_QWEN3_4B.prompt_style, Some(PromptStyle::ChatMl));
         assert_eq!(find("qwen3-4b-instruct-2507-byteshape").unwrap().modality, "Chat");
+    }
+
+    #[test]
+    fn unverified_qwen35_4b_stays_out_of_the_live_pick() {
+        // Same discipline as Gemma: its architecture is proven (the 2B sibling runs
+        // here) but its FOOTPRINT is not, and an under-estimated `runtime_mb`
+        // OOM-aborts the app. Abundant memory must not smuggle it in ([OQ-82]).
+        if !QWEN35_4B_VERIFIED {
+            let pick = chat_model_for_available(64_000).unwrap();
+            assert_ne!(pick.id, QWEN35_4B.id);
+        }
+    }
+
+    #[test]
+    fn reasoning_models_disable_thinking() {
+        // Qwen 3.5 is a reasoning model: framed as plain ChatML it spends the whole
+        // reply budget narrating and the user never sees an answer (measured
+        // 2026-09-10). The off-switch travels with the model, so assert it does —
+        // a copy-paste of the wrong style is exactly how this regresses.
+        assert_eq!(QWEN35_2B.prompt_style, Some(PromptStyle::ChatMlNoThink));
+        assert_eq!(QWEN35_4B.prompt_style, Some(PromptStyle::ChatMlNoThink));
+    }
+
+    #[test]
+    fn qwen35_context_is_far_cheaper_than_the_dense_4b() {
+        // The reason the 2B earns its slot: a hybrid carries a KV cache on only a
+        // quarter of its layers, so conversation memory costs ~12× less per token
+        // than the dense 4B. `llm.rs::context_for_budget` divides spare RAM by this
+        // number, so the assertion guards the window the user actually gets
+        // (knowledge/22). Not a micro-optimisation — it is why "ran out of context"
+        // stops happening.
+        assert!(
+            QWEN35_2B.kv_kb_per_token * 10 < BYTESHAPE_QWEN3_4B.kv_kb_per_token,
+            "hybrid KV advantage lost: {} vs {}",
+            QWEN35_2B.kv_kb_per_token,
+            BYTESHAPE_QWEN3_4B.kv_kb_per_token
+        );
+        // And it is trained far beyond any window we would ever ask for, so
+        // `trained_ctx` never becomes the binding constraint.
+        assert!(QWEN35_2B.trained_ctx >= 32768);
+    }
+
+    #[test]
+    fn every_menu_choice_is_in_the_registry() {
+        // The menu offers a model; `find()` resolves it for download AND the
+        // Storage screen lists it for removal. A choice missing from MODELS is
+        // both undownloadable and unremovable ([OQ-73]).
+        for m in CHAT_MODEL_CHOICES {
+            assert!(find(m.id).is_some(), "menu choice {} is not in MODELS", m.id);
+        }
+        for m in chat_candidates() {
+            assert!(find(m.id).is_some(), "candidate {} is not in MODELS", m.id);
+        }
     }
 
     #[test]

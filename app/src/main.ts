@@ -70,7 +70,7 @@ const MODEL_CHOICE_KEY = "verdure.chat.modelId";
 // Order here is the display order (smallest → most capable).
 const MODEL_TIERS: { id: string; tier: string; blurb: string }[] = [
   { id: "qwen2.5-0.5b-instruct", tier: "Small", blurb: "Quick and light — runs on any device. Great for short questions." },
-  { id: "qwen2.5-1.5b-instruct", tier: "Balanced", blurb: "A capable all-rounder for everyday chat." },
+  { id: "qwen3.5-2b-instruct", tier: "Balanced", blurb: "A capable all-rounder, and it remembers much more of the conversation." },
   { id: "qwen3-4b-instruct-2507-byteshape", tier: "Powerful", blurb: "The most capable — richer answers, needs a little more room." },
 ];
 const tierName = (id: string): string =>

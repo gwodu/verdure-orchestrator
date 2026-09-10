@@ -69,13 +69,36 @@ The system model is closed-weight and fixed-size; for intents that exceed its qu
 
 ## The in-app chat registry — a deliberately separate stack (resolves [OQ-62])
 
-The shipping app picks its **chat** model through its own small registry (`app/src-tauri/src/model.rs`: ByteShape Qwen3 4B on top, Qwen2.5 0.5B/1.5B as floor/fallback, gated on **live available RAM** measured at the moment of use), not through this matrix. That is a decision, not drift — resolved 2026-08-10:
+The shipping app picks its **chat** model through its own small registry (`app/src-tauri/src/model.rs`: ByteShape Qwen3 4B on top, then Qwen 3.5 2B, with Qwen2.5 1.5B/0.5B as floor/fallback, gated on **live available RAM** measured at the moment of use), not through this matrix. That is a decision, not drift — resolved 2026-08-10:
 
 - **Different input.** This matrix maps a *static hardware tier* to a recommendation before anything is installed. The chat gate reads *available* memory at runtime — a number that changes minute to minute and only exists inside the running app (keying on available-not-total RAM is what fixed the 8 GB OOM crash).
 - **Different moment.** The matrix answers "what should this device download?"; the registry answers "what can this device load *right now*?" — including honestly declining when nothing fits.
 - **One caller.** Only the app has a live RAM reading. Folding a runtime axis into `@verdure/decider` would add an abstraction with a single consumer — the over-engineering the coding principles forbid. If the website ever needs runtime-aware picks, revisit then.
 
 The boundary: **this file owns which models are worth recommending and why** (the registry's candidates should be justifiable from the sections above — the 4B-over-0.5B bet is the speed/quality axis applied to the memory floor); **`model.rs` owns the runtime gate**. A model added to the registry without a rationale expressible here is the smell that this decision needs revisiting. The registry's code comments cross-reference this section.
+
+## Hybrid attention: the KV-cache axis (2026-09-10)
+
+The matrix keys on **total params** (fit) and **active params** (speed). A third axis now matters as much as either, and it is the one that decides how much of a *conversation* a device can hold: **how many layers carry a KV cache.**
+
+A classic transformer caches K and V on **every** layer, so conversation memory costs `2 × layers × kv_heads × head_dim × 2 B` per token — and that cost is what `llm.rs::context_for_budget` divides the spare RAM by. **Hybrid** models (Qwen 3.5, Qwen3-Next, Granite 4, Falcon-H1) interleave linear-recurrent layers — Gated DeltaNet, Mamba-2 — which carry a **fixed-size** recurrent state instead, and put full attention on only every *n*-th layer.
+
+Measured on our own build (Intel Mac, 2026-09-10):
+
+| | Qwen3 4B (dense) | Qwen3.5 2B (hybrid) |
+|---|---|---|
+| Layers with a KV cache | 36 of 36 | **6 of 24** |
+| KV cost per token | 144 KB | **12 KB** |
+| Recurrent state | — | 19 MB, fixed |
+| Trained context | 32K | 262K |
+
+**Why this is the most valuable axis for Verdure specifically.** Our devices are RAM-starved, and a beta tester's literal complaint was *"it ran out of context."* On the floor tier the KV cache — not the weights — is what caps the window: `MAX_CONTEXT` is 4096, and reaching it at 144 KB/token needs ~576 MB of spare RAM, versus ~48 MB at 12 KB/token. A hybrid buys back roughly a factor of ten of conversation memory **at the same footprint**, without a bigger download or a slower model. It is the cheapest quality-per-byte lever available to us, and it is arithmetic rather than a benchmark claim.
+
+**The catch — reasoning models.** Qwen 3.5 emits a `<think>` scratchpad by default; framed as plain ChatML it spends its whole reply budget narrating and the answer never arrives (measured: 256 tokens of reasoning, no answer). The documented off-switch is a **pre-filled empty thinking block** after the assistant marker, carried as `PromptStyle::ChatMlNoThink`. Any future reasoning model needs the same treatment — check before adopting, because the failure is invisible to a test that only asserts a non-empty reply.
+
+**Runtime footprint is bigger than the weights.** The same session found llama.cpp's `CPU_REPACK` buffer (weights re-laid-out for CPU SIMD) is a **second resident copy of a large fraction of the weights** — 490 MB on a 1211 MB model — on top of a ~500 MB compute buffer. Estimates built from file size alone understate peak resident by ~1 GB. This is why `runtime_mb` in the registry is deliberately pessimistic, and it retro-justifies the 4B's `2300` figure that `[OQ-64]` had flagged as over-cautious against a "measured 1.40 GB" that was weights-only.
+
+**Not adopted, with reasons:** MoE (LFM2-8B-A1B, Granite-4 H-Tiny, gpt-oss-20B) — sparsity cuts *compute*, never *resident memory*; all experts must be in RAM, so the smallest useful one (~5 GB) exceeds every tier below L2. Expert offload to flash is bandwidth-bound and collapses on phone storage. LFM2 also ships under a custom `lfm1.0` licence, not redistributable (`09`). **Meta Muse Glimmer** (Aug 2026, Apache 2.0, agentic) — 30B, smallest GGUF 16.8 GB, targets 24 GB VRAM, and our vendored llama.cpp has no architecture entry for it, so it would not load. Track for L3+ when tool-calling returns (`20`); not a candidate at any tier we serve.
 
 ## Model details
 
@@ -91,7 +114,11 @@ The boundary: **this file owns which models are worth recommending and why** (th
 
 **Phi-4-mini (3.8B)** — Microsoft. Reasoning-strong, MIT license, ideal for technical and code tasks.
 
-**Qwen 2.5 1.5B / 3B** — Alibaba. Strong multilingual support, Apache 2.0, no friction.
+**Qwen 2.5 1.5B / 3B** — Alibaba. Strong multilingual support, Apache 2.0, no friction. **Superseded** by Qwen 3.5 2B in the in-app registry (below); retained as the floor fallback.
+
+**Qwen 3.5 2B** — Alibaba, Apache 2.0. Hybrid (Gated DeltaNet + full attention every 4th layer), 262K trained context, ChatML template, **reasoning model — thinking must be disabled** (see the hybrid section above). Verified on our own build 2026-09-10: loads through the pinned `llama-cpp-2 0.1.154` (which vendors `LLM_ARCH_QWEN35` and `GGML_OP_GATED_DELTA_NET`), `graph splits = 1`, all CPU, coherent output. 1221 MB download, ~2218 MB measured peak resident. **12 KB/token** conversation memory — the same as the 0.5B floor model, for a 1.88 B model.
+
+**Qwen 3.5 4B** — the roomy-tier sibling: same architecture, 32 KB/token, 2613 MB download. Architecture proven via the 2B; **footprint not yet measured**, so it is held out of the live pick (`[OQ-82]`).
 
 **SmolLM 2 1.7B** — Hugging Face. Apache 2.0, designed for edge deployment. Strong candidate for on-device intent classification in Phase 1+.
 

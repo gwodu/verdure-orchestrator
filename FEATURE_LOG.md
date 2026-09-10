@@ -6,6 +6,26 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-09-10 — Qwen 3.5 2B: a hybrid model with 12× cheaper conversation memory
+
+**What:** added Qwen 3.5 2B (Apache 2.0) to the chat registry as the "Balanced" tier, replacing Qwen 2.5 1.5B. Added Qwen 3.5 4B as data, gated off pending a footprint measurement (`[OQ-82]`). New `PromptStyle::ChatMlNoThink`.
+
+**The problem it solves.** A beta tester reported *"it ran out of context."* The root cause is arithmetic, not a bug: a dense transformer caches K and V on **every** layer, so the 4B we ship costs **144 KB per token** of conversation, and `llm.rs::context_for_budget` divides the machine's spare RAM by exactly that. Reaching the 4096-token ceiling needs ~576 MB free — which our target devices do not have, so the window collapses and old turns get evicted.
+
+Qwen 3.5 is a **hybrid**: only 6 of its 24 layers carry a KV cache (the rest are Gated DeltaNet, whose recurrent state is a fixed 19 MB regardless of conversation length). That is **12 KB per token** — the same cost as the 0.5B floor model, for a 1.88 B model. Same footprint class, ~10× more conversation remembered.
+
+**What running it revealed that reading about it did not.**
+1. **It is a reasoning model.** Framed as plain ChatML it emitted 256 tokens of `<think>` scratchpad and the answer never arrived. The documented off-switch is a pre-filled *empty* thinking block after the assistant marker. This is invisible to any test that only asserts a non-empty reply, so it is now asserted directly (`no_think_style_prefills_an_empty_thinking_block`).
+2. **Peak RAM is ~1 GB above the file size.** The load log shows a `CPU_REPACK` buffer — llama.cpp re-laying-out weights for CPU SIMD, a second resident copy — at **490 MB on a 1211 MB model**, plus a ~500 MB compute buffer. Measured peak ~2218 MB. This retro-justifies the 4B's `runtime_mb: 2300`, which `[OQ-64]` had flagged as ~900 MB over-cautious against a "measured 1.40 GB" that was **weights-only**. The stale claim was corrected in three files before it could talk someone into lowering an OOM guard.
+
+**A hypothesis that did NOT survive.** Going in, the likeliest suspect for the "fake facts / stupider answers" reports was our aggressive **2.77 bpw** quantization of the 4B. Run head-to-head on the same probe through the same build, the incumbent answered well (one factual slip: it conflated aurora australis with borealis). One prompt is not an eval, so the quantization question is neither confirmed nor cleared — it is exactly what `[OQ-74]` exists to settle. **The KV-cache win, by contrast, is arithmetic and needs no eval.**
+
+**Rejected, with reasons:** MoE at every tier we serve (cuts compute, never resident memory — all experts stay in RAM; smallest useful one ~5 GB). **Meta Muse Glimmer** (30B, smallest GGUF 16.8 GB, wants 24 GB VRAM, and our vendored llama.cpp has no architecture entry for it — it would not load).
+
+**Did this make Verdure simpler for the user?** Yes, and without a new control: the same three-item picker, one rung better, and the machine remembers more of the conversation without anyone choosing anything. No context-length setting was added (`knowledge/22` — the jargon knob Verdure exists to delete).
+
+**Tests:** 60 Rust tests pass (was 54). Verified on-device via the `[OQ-71]` repro harness on the 2019 Intel Mac: loads through our pinned `llama-cpp-2 0.1.154`, `graph splits = 1`, all CPU (Metal fix holding), coherent output.
+
 ### 2026-08-21 — Chat works on Intel Macs (the Metal fix)
 
 **What:** chat now produces correct answers on the founder's 2019 Intel Mac. It never had — every reply was token salad or a single repeating character.
