@@ -4,6 +4,27 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-09-11 — Testing a build-time patch with no way to run the real generator
+
+**The constraint.** `app/scripts/patch-android-project.py` edits a project that only exists after `tauri android init`, and this Mac has no Android SDK (`~/Library/Android/sdk` holds only `licenses`). So the code under test could not be run against its real input here.
+
+**What was done instead of guessing.** The Gradle template was **extracted from the Tauri CLI binary itself** (`strings` over `cli.darwin-x64.node`, v2.11.2), giving the exact generated shape — `namespace` and `applicationId` on separate lines, both from `{{app.identifier}}`. A fixture was built from that verbatim text and the patch run against it.
+
+| Case | Expected | Result |
+|---|---|---|
+| Good template | `applicationId` → `ai.verdure.app`, `namespace` untouched | ✅ |
+| Re-run | no-op, exactly one `applicationId` | ✅ idempotent |
+| `namespace` changed by a future Tauri version | fail loudly, name the JNI symbol | ✅ fires |
+| Second `applicationId` appears (build flavors) | refuse rather than guess | ✅ fires |
+| Gradle file moves | fail with the expected path | ✅ fires |
+| Control after each failure case | still passes | ✅ |
+
+**Why the negative cases were run at all.** A guard that has never fired is indistinguishable from a guard that cannot fire. This is the `[OQ-80]` lesson — every check was green about the wrong object — and the `verify-release.py` precedent of proving the instrument works before trusting a pass.
+
+**The failure mode being guarded.** Not a crash. If the Java package and the JNI symbol diverge, Android's mic capture thread dies **silently** and the UI hangs on "preparing" until the watchdog. Nothing in a build log would say so. The assertion converts an invisible runtime failure into a loud build failure.
+
+**Stated plainly — not tested:** no real `tauri android init` run, no APK/AAB built, nothing installed on a device. CI is the first real execution, and an `android-build-N` tag should run before any `android-play-N` tag.
+
 ### 2026-09-10 — Testing a model swap: six tests, and the one that would have caught a shipping bug
 
 **Unit tests written (6 new, 54 → 60 passing).**

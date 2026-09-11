@@ -8,7 +8,27 @@ right after init, to apply the SAME two Android-only requirements for live
 dictation. Keeping it in one file means the mic wiring can't drift between the
 two build paths.
 
-Two things are applied (both idempotent):
+Three things are applied (all idempotent):
+
+0. The Play application ID ([OQ-60]). Google Play identifies an app by its
+   Gradle `applicationId`, which is PERMANENT from the first upload. Tauri has
+   no config option for it (`AndroidConfig` offers only minSdkVersion /
+   versionCode / autoIncrementVersionCode / debugApplicationIdSuffix), so it
+   generates BOTH `namespace` and `applicationId` from the one global
+   `identifier` in tauri.conf.json — which is also what macOS and iOS use.
+
+   Changing that global identifier would drag the desktop app along: Tauri
+   derives `app_data_dir()` from it, so the published, self-updating macOS build
+   would silently look in a NEW folder and re-download ~1.7 GB of models it
+   already has. It would also rename the Java package, and the JNI symbol in
+   lib.rs is spelled from that package — a mismatch there kills the microphone
+   SILENTLY (the capture thread dies; the UI hangs on "preparing").
+
+   Android separates these two by design: `applicationId` is the install/Play
+   identity, `namespace` is the Java package. So we patch ONLY `applicationId`.
+   macOS and iOS never move, the JNI symbol is untouched, and — usefully — the
+   eventual code-level rename becomes invisible to Play, since Play only ever
+   sees `applicationId`.
 
 1. RECORD_AUDIO in the manifest — Android needs it declared to record.
 2. MainActivity wiring:
@@ -25,8 +45,55 @@ Run from the repo root: `python3 app/scripts/patch-android-project.py`.
 """
 
 import pathlib
+import re
 
 root = pathlib.Path("app/src-tauri/gen/android")
+
+# The identifier Google Play will know this app by, FOREVER after the first
+# upload ([OQ-60], founder decision 2026-09-10). Deliberately not the legacy
+# "porter" name from before the 2026-06-18 pivot. See the module docstring for
+# why this is patched here rather than set in tauri.conf.json.
+PLAY_APPLICATION_ID = "ai.verdure.app"
+
+# 0. Gradle: the Play application ID (leave `namespace` alone — see docstring).
+gradle = root / "app" / "build.gradle.kts"
+assert gradle.is_file(), f"expected Tauri's generated Gradle file at {gradle}"
+g = gradle.read_text()
+
+# `namespace` must stay as Tauri generated it: the JNI symbol in lib.rs is
+# spelled from it. Assert we are not silently changing the Java package.
+ns = re.search(r'^\s*namespace\s*=\s*"([^"]+)"', g, re.M)
+assert ns, f"no `namespace` line in {gradle} — template shape changed:\n{g}"
+assert ns.group(1) == "ai.verdure.porter", (
+    f"namespace is {ns.group(1)!r}, expected 'ai.verdure.porter'. The JNI symbol "
+    "in lib.rs (Java_ai_verdure_porter_MainActivity_initAudioContext) is spelled "
+    "from this. Update both together or the mic dies silently."
+)
+
+app_ids = re.findall(r'^\s*applicationId\s*=\s*"([^"]+)"', g, re.M)
+assert len(app_ids) == 1, (
+    f"expected exactly one `applicationId` in {gradle}, found {len(app_ids)}: "
+    f"{app_ids}. Refusing to guess which one Play uses."
+)
+if app_ids[0] != PLAY_APPLICATION_ID:
+    g = re.sub(
+        r'^(\s*applicationId\s*=\s*)"[^"]+"',
+        lambda m: f'{m.group(1)}"{PLAY_APPLICATION_ID}"',
+        g,
+        count=1,
+        flags=re.M,
+    )
+    gradle.write_text(g)
+    print(f"patched {gradle}: applicationId -> {PLAY_APPLICATION_ID}")
+
+# Prove the patch did what it claims, rather than trusting the write.
+after = gradle.read_text()
+assert re.search(rf'^\s*applicationId\s*=\s*"{re.escape(PLAY_APPLICATION_ID)}"', after, re.M), (
+    f"applicationId is not {PLAY_APPLICATION_ID} after patching:\n{after}"
+)
+assert re.search(r'^\s*namespace\s*=\s*"ai\.verdure\.porter"', after, re.M), (
+    "namespace changed while patching applicationId — the JNI symbol would break."
+)
 
 # 1. Manifest: declare RECORD_AUDIO.
 manifest = next(p for p in root.rglob("AndroidManifest.xml") if "app/src/main" in str(p))

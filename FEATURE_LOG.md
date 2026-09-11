@@ -6,6 +6,24 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-09-11 — The Play identity (`ai.verdure.app`), without moving macOS or iOS
+
+**What:** Google Play will know Verdure as **`ai.verdure.app`** from its first upload. Applied by patching the generated Gradle project's `applicationId` in `app/scripts/patch-android-project.py`; `tauri.conf.json`'s `identifier` is untouched.
+
+**The problem it solves.** The Play `applicationId` is permanent after the first upload, and the legacy name `ai.verdure.porter` predates the 2026-06-18 pivot — freezing it forever would be a permanent artefact of a direction we abandoned.
+
+**Why it looked expensive and wasn't.** Tauri generates the Android package from the one global `identifier`, and offers no override (`AndroidConfig` has only `minSdkVersion`/`versionCode`/`autoIncrementVersionCode`/`debugApplicationIdSuffix` — checked against the CLI's own schema). Changing that identifier would have meant:
+- **macOS/iOS data loss.** `app_data_dir()` derives from it, so the published, self-updating desktop build would look in a new folder and re-download ~1.7 GB of models it already had.
+- **A silently dead microphone.** The JNI symbol `Java_ai_verdure_porter_MainActivity_initAudioContext` is spelled from the Java package. A mismatch doesn't error — the capture thread dies and the UI hangs on "preparing" until the watchdog. That is the bug root-caused in August.
+
+**The actual fix.** Android separates `applicationId` (install/Play identity) from `namespace` (Java package) by design; Tauri's template emits them on **two separate lines** (confirmed by extracting the template from the CLI binary). Patch only `applicationId`. macOS and iOS never move, the JNI symbol stays valid, no migration exists to get wrong.
+
+**A property worth keeping.** Play only ever sees `applicationId`. So the eventual code-level rename — `namespace`, crate, data dir — is now **invisible to Play** and can happen whenever, on its own merits, with the migration it needs. Decoupling made the expensive change optional instead of urgent.
+
+**Did this make Verdure simpler for the user?** Neutral for users today; it protects them from a silent 1.7 GB re-download and a dead mic. It made the *system* simpler: one platform's identity changed, on one line, instead of three platforms moving together.
+
+**Tests:** the patch script is exercised against a fixture built from Tauri's real template — correct rewrite, `namespace` untouched, idempotent on re-run — and all three guards verified to fire on bad input (changed `namespace`, duplicate `applicationId`, moved Gradle file), with a passing control. Not yet run through a real `tauri android init`; this machine has no Android SDK, so CI is the first real execution.
+
 ### 2026-09-10 — Qwen 3.5 2B: a hybrid model with 12× cheaper conversation memory
 
 **What:** added Qwen 3.5 2B (Apache 2.0) to the chat registry as the "Balanced" tier, replacing Qwen 2.5 1.5B. Added Qwen 3.5 4B as data, gated off pending a footprint measurement (`[OQ-82]`). New `PromptStyle::ChatMlNoThink`.
