@@ -23,6 +23,12 @@ name: Build Android for Play (.aab, signed)
 # Runs on Linux runners — 1/10 the per-minute cost of the macOS ones.
 on:
   workflow_dispatch:
+    inputs:
+      track:
+        description: "Play track (alpha = CLOSED testing, which is what counts toward production access)"
+        type: choice
+        default: alpha
+        options: [alpha, beta, internal, production]
   push:
     tags:
       - "android-play-*"
@@ -89,6 +95,10 @@ jobs:
         run: python3 app/scripts/install-icons.py
       - name: Patch the Android project (mic permission + audio-context init)
         # Shared with build-android.yml — one script, no drift.
+        env:
+          # Play rejects a repeated versionCode, and the template defaults to 1.
+          # run_number only ever increases. See patch-android-project.py.
+          VERDURE_ANDROID_VERSION_CODE: ${{ github.run_number }}
         run: python3 app/scripts/patch-android-project.py
       - name: Build the App Bundle (release, aarch64)
         # Single ABI (arm64-v8a) — covers modern phones; Play serves it to those
@@ -120,6 +130,36 @@ jobs:
           jarsigner -verify "$AAB"
           cp "$AAB" verdure-release.aab
           rm -f upload.keystore
+      - name: Publish to Google Play
+        # Restores the pipeline's "one tag -> three platforms" property for
+        # Android (KNOWLEDGE.md 2026-08-12): iOS already auto-uploads to
+        # TestFlight, and this is the Android equivalent.
+        #
+        # Talks to Google's API through our own script rather than a marketplace
+        # action, because this step holds a credential that can publish to the
+        # founder's Play account - see the header of publish-to-play.py.
+        #
+        # SKIPS (without failing) when the secret is absent, because the FIRST
+        # bundle of a new app must be uploaded by hand in Play Console - Google's
+        # API refuses it. The artifact step below is what that manual upload uses.
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          TRACK: ${{ github.event.inputs.track || 'alpha' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::notice::PLAY_SERVICE_ACCOUNT_JSON not set - skipping the automated upload."
+            echo "::notice::Download the verdure-android-play artifact and upload it in Play Console."
+            echo "::notice::Required for the FIRST upload of a new app; set the secret to automate the rest."
+            exit 0
+          fi
+          python3 -m pip install --quiet --disable-pip-version-check google-auth requests
+          # Prove the script and its inputs are sane before opening an edit on Play.
+          python3 app/scripts/publish-to-play.py \
+            --aab verdure-release.aab --package ai.verdure.app --track "$TRACK" --dry-run
+          python3 app/scripts/publish-to-play.py \
+            --aab verdure-release.aab --package ai.verdure.app --track "$TRACK"
+
       - name: Upload the signed App Bundle
         uses: actions/upload-artifact@v4
         with:

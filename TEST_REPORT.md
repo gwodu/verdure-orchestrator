@@ -4,6 +4,29 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-09-11 (later) — Verifying a publish path that cannot yet be run
+
+**The constraint again.** `publish-to-play.py` cannot be executed end-to-end: no service account exists, and Google refuses an API upload for a new app's first bundle regardless. So everything testable was tested, and the untestable part was written down rather than assumed green (`[OQ-83]`).
+
+| Case | Expected | Result |
+|---|---|---|
+| Missing `.aab` | refuse before opening a Play edit | ✅ |
+| 2 KB `.aab` (truncated build) | refuse — "not a real app bundle" | ✅ |
+| Implausible package name | refuse | ✅ |
+| Invalid track (`closed`) | argparse rejects; valid set named | ✅ |
+| Valid input | passes, defaults to `alpha` = **closed** track | ✅ |
+| versionCode unset (local build) | `tauri.properties` untouched | ✅ |
+| versionCode 42 → 43 | replaced, not appended (exactly one line) | ✅ |
+| versionCode non-numeric / > 2.1e9 | refuse with the limit stated | ✅ |
+
+**Why validation runs before the first network call.** The API's `edits` flow opens a transaction; aborting mid-way leaves a dangling edit and an opaque server-side error. Every predictable mistake is caught locally first, and the workflow runs `--dry-run` immediately before the real invocation.
+
+**Track correctness was verified, not assumed.** Google's docs confirm the 12-testers/14-day requirement counts **closed** testing only — internal testing does not qualify. Defaulting to the wrong track would have cost two weeks of dwell time with nothing to show. That is why `alpha` is the default and `internal` is not.
+
+**Artifact-level verification of the earlier change.** `android-build-10` (green) was not trusted on its log. The APK was downloaded and its *binary* manifest decoded — and the first attempt at that returned zero hits, because `strings` defaults to ASCII while Android stores manifest strings as UTF-16. **The positive control caught a broken instrument rather than a broken build.** Re-done correctly: `ai.verdure.app` and `ai.verdure.app.fileprovider` present, `ai.verdure.porter.MainActivity` intact.
+
+**Not tested, stated plainly:** no call has ever been made to Google's API — auth, edit lifecycle, bundle upload, track assignment and commit are all unexercised (`[OQ-83]`). No `.aab` has been built by the Play workflow. Nothing installed on an Android device from this build.
+
 ### 2026-09-11 — Testing a build-time patch with no way to run the real generator
 
 **The constraint.** `app/scripts/patch-android-project.py` edits a project that only exists after `tauri android init`, and this Mac has no Android SDK (`~/Library/Android/sdk` holds only `licenses`). So the code under test could not be run against its real input here.

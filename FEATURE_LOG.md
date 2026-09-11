@@ -6,6 +6,20 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-09-11 (later) — Play uploads automated, without handing the key to a stranger
+
+**What:** `android-play-N` now builds, signs, **and uploads** to Google Play's closed track — the Android equivalent of what `release-N` already does for TestFlight, restoring the pipeline's "one tag → three platforms" property.
+
+**Why it isn't a marketplace action.** The obvious implementation is `r0adkll/upload-google-play`. That step receives a credential which can publish to the founder's Play account on every run, and one compromised release of that action would be enough. `app/scripts/publish-to-play.py` talks to Google's API directly — about 100 lines, no supply-chain surface beyond Google's own auth library, credential never leaving code we own. This is the "we don't win on code, we win on trust" line applied to a build step.
+
+**What it deliberately cannot do.** The **first** bundle of a brand-new app must be uploaded by hand in Play Console; Google's API refuses it. The step therefore *skips without failing* when `PLAY_SERVICE_ACCOUNT_JSON` is absent, printing what to do instead, and the artifact upload remains as the manual path.
+
+**A bug caught before it could bite.** Play rejects a repeated `versionCode`, and Tauri's template hardcodes a default of `1`. Tauri's own `autoIncrementVersionCode` would not have helped — `gen/` is regenerated every CI run, so there is no state to increment, and it would emit `1` forever. Upload #1 would have succeeded and upload #2 failed: **the automation breaking the first time it was actually used.** Fixed by feeding `github.run_number` into the patch script.
+
+**Also this session:** the Play identity was verified in the shipped artifact rather than the build log — `android-build-10` is green, and the APK's own binary manifest contains `ai.verdure.app` (plus `ai.verdure.app.fileprovider`) alongside `ai.verdure.porter.MainActivity`, confirming both halves: Play sees the new name, the JNI symbol keeps the old package.
+
+**Did this make Verdure simpler for the user?** It makes shipping simpler, which is upstream of everything users get. No user-facing surface changed.
+
 ### 2026-09-11 — The Play identity (`ai.verdure.app`), without moving macOS or iOS
 
 **What:** Google Play will know Verdure as **`ai.verdure.app`** from its first upload. Applied by patching the generated Gradle project's `applicationId` in `app/scripts/patch-android-project.py`; `tauri.conf.json`'s `identifier` is untouched.

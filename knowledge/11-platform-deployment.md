@@ -41,6 +41,24 @@ This file documents the practical realities of shipping Verdure on each platform
 
 **Update (2026-07-28): the Android build in flight is the app, not the daemon.** The bullets above describe the pre-pivot daemon idea — superseded. What's actually being built is an **Android port of the Tauri test-vehicle app** (same one interface as macOS/iOS, `[OQ-65]`'s sibling): llama.cpp + whisper.cpp cross-compiled for `aarch64-linux-android` via the NDK — **not MediaPipe** (a second runtime + different model formats would abandon the shared Rust core for no gain). Same-branch `cfg(target_os = "android")` gating, `build-android.yml` on Linux runners, distribution via Play Console testing tracks (founder has the developer account). Tracked as `[OQ-66]`; the daemon/system-service questions (`[OQ-25]`) stay open and separate.
 
+### Publishing to Play — the pipeline (2026-09-11)
+
+**Identity.** Play knows the app as **`ai.verdure.app`** (`[OQ-60]`), set by patching the generated Gradle `applicationId` in `app/scripts/patch-android-project.py` — *not* by changing `tauri.conf.json`'s `identifier`, which macOS and iOS also use and from which `app_data_dir()` is derived. The Java package stays `ai.verdure.porter` so the JNI symbol keeps working. Full reasoning in `[OQ-60]`.
+
+**Signing.** An upload keystore (RSA 2048, valid to 2054) held as four GitHub secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Modern keystores are PKCS12, which **does not support a key password distinct from the store password** — keytool silently discards one, so the two password secrets hold the same value. Google holds the real *app signing* key via Play App Signing; ours is only the *upload* key, and an upload key can be reset through support if lost. Back up the keystore **as a file attachment or as base64 text** — `pbcopy` of a binary keystore is silently lossy (2648 bytes came back as 4153).
+
+**Upload.** `app/scripts/publish-to-play.py` talks to the Google Play Developer API directly from `build-android-play.yml`, restoring the "one tag → three platforms" property that iOS/TestFlight already has. Deliberately **not** a marketplace action: the step holds a credential that can publish to the founder's Play account, and a third-party action would receive it on every run. Skips gracefully (no failure) when `PLAY_SERVICE_ACCOUNT_JSON` is absent, falling back to the artifact.
+
+**Founder-side setup, once:**
+1. Google Cloud console → project → enable the **Google Play Android Developer API**.
+2. Create a service account, then a JSON key for it.
+3. Play Console → **Users and permissions** → invite the service account's email → grant *Release to testing tracks* for this app.
+4. Add the JSON file as the GitHub secret **`PLAY_SERVICE_ACCOUNT_JSON`**.
+
+**The one step that cannot be automated:** the **first** bundle of a brand-new app must be uploaded by hand in Play Console — Google's API refuses it. Every upload after that is automated.
+
+**Track matters.** Default is `alpha`, which is Play's **closed** track. Internal testing does **not** count toward the 12-testers/14-day production requirement; closed testing does (`[OQ-66]`).
+
 ## iOS
 
 **[OQ-26] is resolved: the daemon model is not feasible on iOS — and no longer needs to be.** Background execution restrictions and the app sandbox rule out a Verdure system service. But as of iOS 27 (WWDC 2026), the OS itself ships the shared inference service Verdure would have had to build: a resident ~3B system model behind Apple's Foundation Models framework, accessible to every app via the public `LanguageModel` protocol.
