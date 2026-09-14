@@ -50,7 +50,7 @@ TRACKS = ("internal", "alpha", "beta", "production")
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--aab", required=True, help="path to the signed .aab")
+    p.add_argument("--aab", default="", help="path to the signed .aab (not needed with --verify)")
     p.add_argument("--package", required=True, help="applicationId, e.g. ai.verdure.app")
     p.add_argument("--track", default="alpha", choices=TRACKS)
     p.add_argument(
@@ -64,6 +64,15 @@ def parse_args(argv=None):
         action="store_true",
         help="validate inputs and exit without touching Play",
     )
+    p.add_argument(
+        "--verify",
+        action="store_true",
+        help=(
+            "check the credential works, then change nothing: authenticate, open "
+            "an edit, delete it. Proves the service account can reach THIS app "
+            "before a real release depends on it."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -74,6 +83,10 @@ def validate(args):
     and a 0-byte .aab produces an opaque server-side error rather than a clear
     local one.
     """
+    if args.verify:
+        # A credential check needs no bundle; requiring one would mean building
+        # the app just to answer "did the secret work?".
+        return 0
     if not os.path.isfile(args.aab):
         raise SystemExit(f"no such .aab: {args.aab}")
     size = os.path.getsize(args.aab)
@@ -90,8 +103,13 @@ def validate(args):
 def main(argv=None):
     args = parse_args(argv)
     size = validate(args)
-    print(f"bundle: {args.aab} ({size / 1_048_576:.1f} MiB)")
-    print(f"package: {args.package}  track: {args.track}  status: {args.status}")
+    if args.verify:
+        print(f"verifying credential against {args.package} - nothing will change")
+    else:
+        if not args.aab:
+            raise SystemExit("--aab is required unless --verify is given")
+        print(f"bundle: {args.aab} ({size / 1_048_576:.1f} MiB)")
+        print(f"package: {args.package}  track: {args.track}  status: {args.status}")
 
     if args.dry_run:
         print("dry run - not contacting Play")
@@ -119,6 +137,18 @@ def main(argv=None):
     edit = check(http.post(f"{base}/edits"), "opening an edit")
     eid = edit["id"]
     print(f"edit: {eid}")
+
+    if args.verify:
+        # An edit is a transaction: opening one proves the service account
+        # authenticated AND has permission on this specific package, which is the
+        # part that actually goes wrong (the key is fine, but nobody invited it in
+        # Play Console). Deleting it leaves no trace - nothing is committed.
+        check(http.delete(f"{base}/edits/{eid}"), "discarding the edit")
+        print(
+            f"OK: the service account can open an edit on {args.package}. "
+            "Credential and permissions are good; nothing was changed."
+        )
+        return 0
 
     with open(args.aab, "rb") as fh:
         up = check(
