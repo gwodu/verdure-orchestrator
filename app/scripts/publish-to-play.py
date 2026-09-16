@@ -57,7 +57,10 @@ def parse_args(argv=None):
         "--status",
         default="completed",
         choices=("draft", "inProgress", "halted", "completed"),
-        help="release status on the track",
+        help=(
+            "release status on the track. Use 'draft' until the app has been "
+            "published once - Play refuses any other status on a draft app."
+        ),
     )
     p.add_argument(
         "--dry-run",
@@ -131,7 +134,20 @@ def main(argv=None):
 
     def check(r, what):
         if not r.ok:
-            raise SystemExit(f"{what} failed: HTTP {r.status_code}\n{r.text}")
+            hint = ""
+            # Measured against Play on 2026-09-16. The wording is obscure: it does
+            # NOT mean the bundle was rejected - the upload and track assignment
+            # both succeeded, and only the commit failed. An app that has never
+            # been published is a "draft app", and it can only receive draft
+            # releases.
+            if "draft app" in r.text:
+                hint = (
+                    "\n\nThis means the APP is still a draft (never published), not that "
+                    "the bundle is bad - the upload itself succeeded. Re-run with "
+                    "--status draft, then roll the release out from Play Console. "
+                    "Once the app has been published once, --status completed works."
+                )
+            raise SystemExit(f"{what} failed: HTTP {r.status_code}\n{r.text}{hint}")
         return r.json() if r.content else {}
 
     edit = check(http.post(f"{base}/edits"), "opening an edit")

@@ -166,6 +166,13 @@ jobs:
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           TRACK: ${{ github.event.inputs.track || 'alpha' }}
+          # Play refuses anything but `draft` while the app itself is a draft
+          # (never published): "Only releases with status draft may be created on
+          # draft app" - measured 2026-09-16, and it does NOT mean the bundle was
+          # rejected. The release lands in Play Console for a human to roll out.
+          # Flip to `completed` once Verdure has been published once, at which
+          # point the pipeline becomes fully hands-off.
+          STATUS: draft
         run: |
           set -euo pipefail
           if [ -z "${PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
@@ -177,6 +184,6 @@ jobs:
           python3 -m pip install --quiet --disable-pip-version-check google-auth requests
           # Prove the script and its inputs are sane before opening an edit on Play.
           python3 app/scripts/publish-to-play.py \
-            --aab verdure-release.aab --package ai.verdure.app --track "$TRACK" --dry-run
+            --aab verdure-release.aab --package ai.verdure.app --track "$TRACK" --status "$STATUS" --dry-run
           python3 app/scripts/publish-to-play.py \
-            --aab verdure-release.aab --package ai.verdure.app --track "$TRACK"
+            --aab verdure-release.aab --package ai.verdure.app --track "$TRACK" --status "$STATUS"
