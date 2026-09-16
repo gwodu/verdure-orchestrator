@@ -1,0 +1,1 @@
+Personal AI that runs on your phone. Works offline, nothing leaves your device.

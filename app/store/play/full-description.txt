@@ -1,0 +1,28 @@
+Verdure is a personal AI that runs on your phone — not in someone else's data centre.
+
+Ask it questions, work through an idea, or dictate with your voice. The AI model lives on your device, so your conversations stay there too.
+
+HOW IT WORKS
+
+Choose a model when you first open the app and Verdure downloads it once. After that it runs entirely on your phone — on a plane, underground, or with mobile data switched off. There is no account to create and nothing to subscribe to.
+
+WHAT YOU CAN DO
+
+• Chat with an AI that remembers the conversation
+• Dictate with your voice — speech becomes text on your device
+• Choose a model that suits your phone, and see exactly what it needs before you download it
+• Remove models whenever you like, and get the space straight back
+
+PRIVACY IS THE POINT, NOT A FEATURE
+
+Nothing you type or say is uploaded. Verdure collects no analytics, no crash reports and no advertising identifiers. There is no mechanism by which we could see what you ask it, because none was built.
+
+Downloading a model is the only time the app uses the internet. Everything after that happens on your device.
+
+HONEST ABOUT WHAT IT IS
+
+A model small enough to run on a phone is not as capable as the very large ones running in data centres. Verdure will sometimes be wrong. It is written to say "I'm not sure" rather than invent an answer, but it can still make mistakes — particularly with dates, numbers and names.
+
+It is good for everyday questions, drafting, explaining things and thinking out loud. It is not the right tool for anything where being wrong would matter.
+
+Verdure is early software and under active development. If something breaks or an answer looks strange, please tell us — we would much rather hear about it.
