@@ -6,6 +6,36 @@ This file documents the practical realities of shipping Verdure on each platform
 
 > **Decision content behind the `Transport` / shell layer** (`14-architecture.md`) — signing, packaging, and per-OS IPC. Structure (the `Transport` trait, the shell's job) lives there; the per-platform packaging realities live here.
 
+## The build and release pipelines at a glance
+
+*Added 2026-09-16 — the three platforms build differently enough that the differences were only discoverable by reading five workflow files. This is the map.*
+
+**Nothing runs on `git push`.** CI triggers on **pull requests and manual dispatch only**; release workflows trigger on **tags**. A plain push to a branch runs nothing at all, which is why `CLAUDE.md` insists on verifying locally before pushing — there is no safety net behind you.
+
+| | macOS | iOS | Android (test) | Android (Play) |
+|---|---|---|---|---|
+| Workflow | `build-app.yml` | `build-testflight.yml` | `build-android.yml` | `build-android-play.yml` |
+| Tags | `app-build-*`, `release-*` | `testflight-*`, `release-*` | `android-build-*`, `release-*` | `android-play-*` |
+| Runner | `macos-latest` (**10× cost**) | `macos-latest` (**10× cost**) | `ubuntu-latest` | `ubuntu-latest` |
+| Timeout | 60 min | 60 min | 45 min | 45 min |
+| Output | universal `.dmg` | `.ipa` | `.apk` (arm64) | `.aab` (arm64) |
+| Signed with | Developer ID cert | Apple distribution cert | **throwaway CI key** | **upload keystore** (founder-held) |
+| Reaches users by | notarized `.dmg` on GitHub Releases + self-updater | **auto-uploaded to TestFlight** | artifact → sideload | **auto-published to Play closed track** |
+| Identity | `ai.verdure.porter` | `ai.verdure.porter.898PY37K5S` | `ai.verdure.app` | `ai.verdure.app` |
+
+**`release-*` fans out to three platforms** — macOS, TestFlight and the Android test APK — which is the "one change → three platforms" property (`KNOWLEDGE.md`, 2026-08-12). The per-platform tags exist for iterating on one platform without paying for the other two.
+
+**Play is deliberately NOT on `release-*`.** A Play release is a distinct, consequential act — it reaches strangers, and a bad one is visible publicly — so it needs its own tag rather than riding along with a routine desktop build.
+
+**Why three different identities.** Tauri derives the app identifier from one config field, but each store wants something different, so two of the three are overridden at build time rather than by changing that field (which would move `app_data_dir()` and orphan installed models — see `[OQ-60]`):
+- **macOS** uses `tauri.conf.json`'s `identifier` as-is.
+- **iOS** overrides `PRODUCT_BUNDLE_IDENTIFIER` at archive time to match an App Store Connect record created by a tool.
+- **Android** patches the Gradle `applicationId` after project generation, leaving the Java `namespace` alone so the JNI symbol keeps resolving.
+
+**What CI actually checks** (`ci.yml`, PRs only): a `paths-filter` job decides what changed, then the decider/website suites on Linux, the porter Rust suite plus an `aarch64-apple-ios` `cargo check` on macOS, and an `aarch64-linux-android` `cargo check` on Linux. Model-download URLs are verified by extracting them from `model.rs` (not a hand-kept copy).
+
+**Cost shape.** macOS runners bill at **10× per minute**, which is why Android moved to Linux and why the macOS CI job is off the per-push path entirely. A three-file docs commit once triggered 7.6 minutes of Android compilation before `paths-filter` was fixed to diff the push rather than the whole branch.
+
 ## macOS
 
 - Notarization required for distribution outside the App Store

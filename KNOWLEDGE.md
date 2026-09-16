@@ -48,7 +48,7 @@ For perspective — *who Claude is while working on this project* — see `CLAUD
 - Designing or modifying the Phase 0 website → `05` + `06`
 - Writing Rust binary code → `07` + `08`
 - License or distribution questions → `09` + `10`
-- Platform-specific deployment → `11`
+- Platform-specific deployment, **or how each platform is built and released (the pipeline map)** → `11`
 - How the binary is structured / adding a device or engine / the one-click pipeline → `14`
 - Which existing tool to port for a use case (the local-tool database) → `15` (+ `13` demand, `09` licensing)
 - Growth lens / where to seed supply / why we reject the data moat → `16`
