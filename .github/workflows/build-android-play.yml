@@ -130,6 +130,23 @@ jobs:
           jarsigner -verify "$AAB"
           cp "$AAB" verdure-release.aab
           rm -f upload.keystore
+      - name: Upload the signed App Bundle
+        # BEFORE the Play upload, and `always()`, deliberately. This artifact is
+        # the manual fallback, and Google refuses the FIRST automated upload of a
+        # new app - so if publishing runs first and fails, this step is skipped and
+        # there is no .aab to upload by hand. The fallback cannot be contingent on
+        # the thing it is a fallback for.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verdure-android-play
+          path: verdure-release.aab
+          if-no-files-found: error
+          # 14 days, not the 90-day default: this is a PRIVATE repo, so artifact
+          # storage bills as GB-months. These builds are installed within a day
+          # or two and are always reproducible from the tag.
+          retention-days: 14
+
       - name: Publish to Google Play
         # Restores the pipeline's "one tag -> three platforms" property for
         # Android (KNOWLEDGE.md 2026-08-12): iOS already auto-uploads to
@@ -159,14 +176,3 @@ jobs:
             --aab verdure-release.aab --package ai.verdure.app --track "$TRACK" --dry-run
           python3 app/scripts/publish-to-play.py \
             --aab verdure-release.aab --package ai.verdure.app --track "$TRACK"
-
-      - name: Upload the signed App Bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: verdure-android-play
-          path: verdure-release.aab
-          if-no-files-found: error
-          # 14 days, not the 90-day default: this is a PRIVATE repo, so artifact
-          # storage bills as GB-months. These builds are installed within a day
-          # or two and are always reproducible from the tag.
-          retention-days: 14
