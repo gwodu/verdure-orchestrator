@@ -8,7 +8,7 @@ right after init, to apply the SAME two Android-only requirements for live
 dictation. Keeping it in one file means the mic wiring can't drift between the
 two build paths.
 
-Three things are applied (all idempotent):
+Two things are applied (both idempotent), plus the Play application ID:
 
 0. The Play application ID ([OQ-60]). Google Play identifies an app by its
    Gradle `applicationId`, which is PERMANENT from the first upload. Tauri has
@@ -44,7 +44,6 @@ Three things are applied (all idempotent):
 Run from the repo root: `python3 app/scripts/patch-android-project.py`.
 """
 
-import os
 import pathlib
 import re
 
@@ -95,39 +94,6 @@ assert re.search(rf'^\s*applicationId\s*=\s*"{re.escape(PLAY_APPLICATION_ID)}"',
 assert re.search(r'^\s*namespace\s*=\s*"ai\.verdure\.porter"', after, re.M), (
     "namespace changed while patching applicationId — the JNI symbol would break."
 )
-
-# 0b. Gradle: a monotonically increasing versionCode.
-#
-# Play REJECTS a bundle whose versionCode has been used before, and Tauri's
-# template defaults it to 1 (`tauri.android.versionCode`, read from
-# tauri.properties). gen/ is regenerated from scratch on every CI run, so
-# Tauri's own `autoIncrementVersionCode` has no state to increment and would
-# also produce 1 every time. The first upload would succeed and every upload
-# after it would fail — the automation breaking the first time it matters.
-#
-# So CI passes a number that only ever goes up (the workflow run number). Left
-# unset — a local build — the file is untouched and Tauri's default stands.
-version_code = os.environ.get("VERDURE_ANDROID_VERSION_CODE")
-if version_code:
-    assert version_code.isdigit() and 0 < int(version_code) < 2_100_000_000, (
-        f"VERDURE_ANDROID_VERSION_CODE must be a positive int below 2100000000, "
-        f"got {version_code!r}"
-    )
-    props = root / "tauri.properties"
-    assert props.is_file(), f"expected Tauri's properties file at {props}"
-    text = props.read_text()
-    key = "tauri.android.versionCode"
-    if re.search(rf"^{re.escape(key)}=", text, re.M):
-        text = re.sub(rf"^{re.escape(key)}=.*$", f"{key}={version_code}", text, count=1, flags=re.M)
-    else:
-        text = text.rstrip("\n") + f"\n{key}={version_code}\n"
-    props.write_text(text)
-    # Confirm the write rather than trusting it — a versionCode that silently
-    # stayed at 1 fails much later, in Play, with an opaque message.
-    assert re.search(rf"^{re.escape(key)}={version_code}$", props.read_text(), re.M), (
-        f"versionCode did not take:\n{props.read_text()}"
-    )
-    print(f"patched {props}: {key}={version_code}")
 
 # 1. Manifest: declare RECORD_AUDIO.
 manifest = next(p for p in root.rglob("AndroidManifest.xml") if "app/src/main" in str(p))

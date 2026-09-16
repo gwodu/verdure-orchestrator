@@ -95,11 +95,16 @@ jobs:
         run: python3 app/scripts/install-icons.py
       - name: Patch the Android project (mic permission + audio-context init)
         # Shared with build-android.yml — one script, no drift.
-        env:
-          # Play rejects a repeated versionCode, and the template defaults to 1.
-          # run_number only ever increases. See patch-android-project.py.
-          VERDURE_ANDROID_VERSION_CODE: ${{ github.run_number }}
         run: python3 app/scripts/patch-android-project.py
+      - name: Set the Android versionCode
+        # Play refuses a versionCode it has seen before, so every upload needs a
+        # higher one. run_number only ever increases, and points back at the run
+        # that produced a given bundle. Must run BEFORE the build, which reads
+        # tauri.conf.json. See app/scripts/set-android-version-code.py.
+        env:
+          VERDURE_ANDROID_VERSION_CODE: ${{ github.run_number }}
+        run: python3 app/scripts/set-android-version-code.py
+
       - name: Build the App Bundle (release, aarch64)
         # Single ABI (arm64-v8a) — covers modern phones; Play serves it to those
         # devices. Add armeabi-v7a / x86_64 targets here later for wider reach.
@@ -136,7 +141,6 @@ jobs:
         # new app - so if publishing runs first and fails, this step is skipped and
         # there is no .aab to upload by hand. The fallback cannot be contingent on
         # the thing it is a fallback for.
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: verdure-android-play
