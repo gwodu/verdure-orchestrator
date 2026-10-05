@@ -11,3 +11,10 @@ node_modules/
 # Local env / secrets
 .env
 .env.local
+
+# Android build artifacts
+*.apk
+*.aab
+app/src-tauri/gen/android/app/build/
+app/src-tauri/gen/android/.gradle/
+app/src-tauri/gen/android/build/
