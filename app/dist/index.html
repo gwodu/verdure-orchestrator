@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verdure - Your Local AI Conductor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            text-align: center;
+            max-width: 600px;
+        }
+        
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .tagline {
+            font-size: 1.25rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+        
+        .description {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 15px;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        
+        .feature {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 1.5rem;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .feature h3 {
+            margin-bottom: 0.5rem;
+            font-size: 1.2rem;
+        }
+        
+        .status {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .tagline {
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌿 Verdure</h1>
+        <p class="tagline">Your Local AI Conductor</p>
+        
+        <div class="description">
+            <p>Verdure helps you discover, install, and run the right open-source AI tools on your own device. No cloud required. Your data stays with you.</p>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <h3>🎯 Smart Recommendations</h3>
+                <p>Tell us what you want to do, and we'll recommend the best local AI tool for the job.</p>
+            </div>
+            
+            <div class="feature">
+                <h3>⚡ One-Click Install</h3>
+                <p>No complex setup. We handle the installation and configuration automatically.</p>
+            </div>
+            
+            <div class="feature">
+                <h3>🔒 Privacy First</h3>
+                <p>Everything runs locally on your device. Your data never leaves your machine.</p>
+            </div>
+            
+            <div class="feature">
+                <h3>🆓 Free & Open Source</h3>
+                <p>We only recommend and port free, open-source tools. No lock-in, no subscriptions.</p>
+            </div>
+        </div>
+        
+        <div class="status">
+            <strong>MVP Version</strong> - Currently in development<br>
+            Building the future of local AI, one tool at a time.
+        </div>
+    </div>
+</body>
+</html>
