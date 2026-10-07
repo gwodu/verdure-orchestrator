@@ -35,8 +35,19 @@ jobs:
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0 ndk;27.0.12077973'
           log-accepted-android-sdk-licenses: false
       
+      - name: Cache Tauri CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri
+          key: ${{ runner.os }}-tauri-cli-2
+      
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --version '^2.0.0' --locked
+        run: |
+          if ! command -v cargo-tauri &> /dev/null; then
+            cargo install tauri-cli --version '^2.0.0' --locked
+          else
+            echo "Tauri CLI already installed"
+          fi
       
       - name: Initialize Android project
         working-directory: ./app
