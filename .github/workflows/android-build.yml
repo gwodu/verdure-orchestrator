@@ -31,10 +31,9 @@ jobs:
       
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-      
-      - name: Install Android SDK components
-        run: |
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;27.0.12077973"
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0 ndk;27.0.12077973'
+          log-accepted-android-sdk-licenses: false
       
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version '^2.0.0' --locked
