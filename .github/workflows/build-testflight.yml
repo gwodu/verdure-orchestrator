@@ -5,13 +5,23 @@ name: TestFlight (signed, upload to App Store Connect)
 # 7-day sideload expiry). It replaced the unsigned sideload workflow
 # (build-ipad.yml, retired 2026-08-12 — in git history if ever needed).
 #
-# BOUNDARY: this workflow never contains any credentials. It reads four GitHub
+# BOUNDARY: this workflow never contains any credentials. It reads six GitHub
 # repository SECRETS the founder creates once (Settings → Secrets and variables →
 # Actions). Claude never sees their values.
-#   ASC_API_KEY_P8      — contents of the App Store Connect API key .p8 file
-#   ASC_API_KEY_ID      — that key's Key ID
-#   ASC_API_ISSUER_ID   — the App Store Connect API Issuer ID
-#   APPLE_TEAM_ID       — the 10-char Apple Developer Team ID
+#   ASC_API_KEY_P8          — contents of the App Store Connect API key .p8 file
+#   ASC_API_KEY_ID          — that key's Key ID
+#   ASC_API_ISSUER_ID       — the App Store Connect API Issuer ID
+#   APPLE_TEAM_ID           — the 10-char Apple Developer Team ID
+#   IOS_DIST_CERT_P12       — base64 of ONE "Apple Distribution" certificate
+#                             exported as .p12 (with its private key)
+#   IOS_DIST_CERT_PASSWORD  — the password chosen when exporting that .p12
+#
+# SIGNING (2026-10-08): every build signs with that SAME certificate. Automatic
+# signing used to mint a new certificate per run — a runner's keychain is empty,
+# so Xcode could never reuse one — until Apple refused at the account limit
+# (release-14). Now nothing here can create a certificate; ios-signing.py only
+# replaces one App Store profile named "Verdure CI App Store". The certificate
+# expires after a year: export a fresh .p12 and update the two secrets then.
 #
 # One-time account setup (see knowledge/11 + the session hand-off):
 #   1. App Store Connect → register the Bundle ID `ai.verdure.porter` (explicit).
@@ -47,6 +57,54 @@ jobs:
     timeout-minutes: 60 # a hung macOS job would otherwise bill 6h at 10x
     steps:
       - uses: actions/checkout@v4
+      # Signing first: a missing secret, revoked cert or API refusal then fails
+      # in about a minute, before the Rust build bills 10x minutes for nothing.
+      - name: Stage the App Store Connect API key
+        # Write the .p8 secret to the location xcodebuild + altool look for it.
+        # Never printed; lives only on the ephemeral runner for this job.
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys ~/private_keys
+          printf '%s' "$ASC_API_KEY_P8" > ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8
+          cp ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8 ~/private_keys/
+      - name: Import the ONE distribution certificate into a temporary keychain
+        # The same certificate every run, so no build ever creates one. The keychain
+        # password is random per run and never leaves this job.
+        env:
+          IOS_DIST_CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+        run: |
+          test -n "$IOS_DIST_CERT_P12" || { echo "::error::IOS_DIST_CERT_P12 secret is not set — see the header of this workflow"; exit 1; }
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KC_PASS=$(openssl rand -hex 24)
+          printf '%s' "$IOS_DIST_CERT_P12" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security create-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/dist.p12" -P "$IOS_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KC_PASS" "$KEYCHAIN" > /dev/null
+          security list-keychain -d user -s "$KEYCHAIN" $(security list-keychains -d user | xargs)
+          rm -f "$RUNNER_TEMP/dist.p12"
+          # The public half, so ios-signing.py can find this cert's id on the account.
+          security find-certificate -c "Apple Distribution" -p "$KEYCHAIN" > "$RUNNER_TEMP/dist-cert.pem"
+          test -s "$RUNNER_TEMP/dist-cert.pem" || { echo "::error::the .p12 holds no 'Apple Distribution' certificate"; exit 1; }
+          security find-identity -v -p codesigning "$KEYCHAIN"
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+      - name: Fetch the App Store profile for that certificate
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: |
+          export ASC_API_KEY_P8_PATH=~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8
+          PROFILE=$(python3 app/scripts/ios-signing.py \
+            --bundle-id "$BUNDLE_ID" \
+            --cert-pem "$RUNNER_TEMP/dist-cert.pem" \
+            --capability INCREASED_MEMORY_LIMIT \
+            --capability EXTENDED_VIRTUAL_ADDRESSING)
+          echo "profile: $PROFILE"
+          echo "PROFILE_NAME=$PROFILE" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -139,11 +197,9 @@ jobs:
         # Without this, iPadOS kills the app (jetsam) well below physical RAM, and
         # the 27B's ~10 GB can't load even on a 16 GB iPad ([OQ-84]). The first
         # key raises the per-app memory limit; the second lets llama.cpp map an
-        # 8.8 GB file into the address space. Automatic signing with
-        # -allowProvisioningUpdates should add both capabilities to the App ID; if
-        # the archive fails on a profile/entitlement mismatch, enable "Increased
-        # Memory Limit" + "Extended Virtual Addressing" for ai.verdure.porter in
-        # the Apple Developer portal once. Remove this step to end the experiment.
+        # 8.8 GB file into the address space. ios-signing.py enables both on the
+        # App ID before fetching the profile (the --capability flags below). Remove
+        # this step AND those flags to end the experiment.
         run: |
           ENTS=$(find app/src-tauri/gen/apple -maxdepth 2 -name "*.entitlements")
           test -n "$ENTS" # tauri ios init must have generated one; fail loudly if not
@@ -154,24 +210,13 @@ jobs:
                 || /usr/libexec/PlistBuddy -c "Set :$key true" "$e"
             done
           done
-      - name: Stage the App Store Connect API key
-        # Write the .p8 secret to the location xcodebuild + altool look for it.
-        # Never printed; lives only on the ephemeral runner for this job.
-        env:
-          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
-          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
-        run: |
-          mkdir -p ~/.appstoreconnect/private_keys ~/private_keys
-          printf '%s' "$ASC_API_KEY_P8" > ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8
-          cp ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8 ~/private_keys/
-      - name: Archive (Xcode-managed automatic signing via the API key)
-        # -allowProvisioningUpdates + the API key let Xcode create/fetch the
-        # distribution cert + App Store profile for BUNDLE_ID automatically — no
-        # cert wrangling. The prebuilt-lib link settings match the unsigned build.
+      - name: Archive (manual signing with the stored certificate)
+        # Manual, not Automatic: automatic signing archives with a DEVELOPMENT
+        # identity, which on a fresh runner means minting a new certificate. The
+        # sdk-conditional identity is set too, so a template default for iphoneos
+        # can't win. The prebuilt-lib link settings match the unsigned build.
         working-directory: app
         env:
-          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
-          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           PROJ=$(ls -d src-tauri/gen/apple/*.xcodeproj | head -1)
@@ -184,12 +229,12 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -archivePath build-ios/Verdure.xcarchive \
-            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8 \
-            -authenticationKeyID "$ASC_API_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID" \
-            -allowProvisioningUpdates \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            "CODE_SIGN_IDENTITY[sdk=iphoneos*]=Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $SIGNING_KEYCHAIN" \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             LIBRARY_SEARCH_PATHS='$(inherited) '"$PWD/src-tauri/target/aarch64-apple-ios/release" \
             OTHER_LDFLAGS='$(inherited) -framework AudioToolbox -framework CoreAudio -framework AVFoundation -framework Accelerate' \
@@ -197,8 +242,6 @@ jobs:
       - name: Export a signed App Store .ipa
         working-directory: app
         env:
-          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
-          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           cat > ExportOptions.plist <<PLIST
@@ -207,18 +250,18 @@ jobs:
           <plist version="1.0"><dict>
             <key>method</key><string>app-store-connect</string>
             <key>teamID</key><string>${APPLE_TEAM_ID}</string>
-            <key>signingStyle</key><string>automatic</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key><dict>
+              <key>${BUNDLE_ID}</key><string>${PROFILE_NAME}</string>
+            </dict>
             <key>destination</key><string>export</string>
           </dict></plist>
           PLIST
           xcodebuild -exportArchive \
             -archivePath build-ios/Verdure.xcarchive \
             -exportPath build-ios/export \
-            -exportOptionsPlist ExportOptions.plist \
-            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8 \
-            -authenticationKeyID "$ASC_API_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID" \
-            -allowProvisioningUpdates
+            -exportOptionsPlist ExportOptions.plist
       - name: Upload to TestFlight
         working-directory: app
         env:

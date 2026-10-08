@@ -17,7 +17,7 @@
 
 **Then the standing debt:** the `porter` rename before the first Play upload (`[OQ-60]`, permanent once published), the evals harness (`[OQ-74]`), and `[OQ-78]` (the update check exposes an IP).
 
-**iOS is behind.** `release-14`'s TestFlight job failed on an Apple *account* limit — *"Your account has reached the maximum number of certificates"*. Founder-side: developer.apple.com → Certificates → revoke an unused one, then re-tag. Pre-existing, unrelated to any change here.
+**iOS signing fixed at the root (2026-10-08).** `release-14`'s TestFlight job failed on Apple's certificate limit because automatic signing minted a new certificate every CI run. The founder revoked one, and the workflow now reuses a single stored distribution certificate (`knowledge/11`, iOS). It needs the `IOS_DIST_CERT_P12` + `IOS_DIST_CERT_PASSWORD` secrets; the first `testflight-N` after that is the live test.
 
 **Local loop:** everything verifies free on this machine, and **CI no longer runs on push** — see "How to build / ship" below.
 - `cd app/src-tauri && cargo test` — 51 tests, seconds.

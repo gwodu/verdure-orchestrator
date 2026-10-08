@@ -6,6 +6,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-10-08 — iOS builds reuse one certificate instead of minting one per run
+
+**What:** `build-testflight.yml` now signs manually with one stored Apple Distribution certificate (`IOS_DIST_CERT_P12` / `IOS_DIST_CERT_PASSWORD`), imported into a throwaway keychain. A new script, `app/scripts/ios-signing.py`, fetches the App Store profile for that certificate from the App Store Connect API (replacing one fixed-name profile each run) and turns on the App ID capabilities the entitlements need. It uses only Python's standard library plus `openssl`, with no third-party action, so the API key stays in code we own. The signing steps now run first.
+
+**Why:** Automatic signing on an empty runner keychain made a new certificate every build, until Apple's per-account limit stopped `release-14`. Now no build can create a certificate.
+
+**Cost:** A bad or missing secret fails in about a minute instead of after the Rust build. Builds no longer contact Apple to set up signing, apart from one profile request.
+
+**Simpler or more complex for the user?** Invisible to app users. For the founder: two more secrets once, and renewal once a year, in exchange for builds that stop failing on a limit nobody can see coming.
+
 ### 2026-10-08 — iPad experiment: Qwen3.8 27B in the Powerful slot
 
 **What:** On iOS builds only, the picker's Powerful choice is now ByteShape's Qwen3.8 27B (`IQ2_XXS`, 8.8 GB download, ~10 GB estimated to run) instead of the Qwen3 4B. Mac, Android and Windows are unchanged. The TestFlight workflow now asks iPadOS for the increased memory limit and extended virtual addressing; without them, iPadOS kills the app long before a 10 GB model fits. The picker now draws only the models the backend offers, so each platform shows exactly three cards.

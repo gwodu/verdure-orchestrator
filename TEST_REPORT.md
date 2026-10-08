@@ -4,6 +4,16 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-08 — `ios-signing.py` (one certificate for every iOS build)
+
+`python3 -m unittest app/scripts/test_ios_signing.py`: **11/11 pass.**
+- **JWT signed for real:** a throwaway P-256 key, signed by `openssl`, converted from DER to raw `r||s`, then verified back with `openssl dgst -verify`. Also checked by hand with a PKCS#8 key (`BEGIN PRIVATE KEY`, the format Apple's `.p8` uses).
+- **DER edge cases:** handles a sign-padded 33-byte integer and a short 30-byte one; rejects garbage.
+- **Exact matching:** the App ID filter is a prefix match, so a longer identifier is ignored. The certificate is matched on its exact DER bytes, not its name.
+- **Capabilities:** only missing ones are added. A 403 stops with instructions for enabling it in the portal.
+- **Profile:** the previous `Verdure CI App Store` profile is deleted and other profiles are left alone. The new one names only our certificate and is installed to both Xcode profile folders.
+- **Not run:** the live App Store Connect API, the keychain import, and the manual-signing archive. These need the real secrets and a macOS runner; the first `testflight-N` is the test. One unverified assumption: that the App Manager API key may enable App ID capabilities. If it may not, the script stops with what to click.
+
 ### 2026-10-08 — Qwen3.8 27B iPad experiment
 
 - `qwen38_27b_is_opt_in_only`: the auto-pick never hands out the 27B, even with 64 GB free. It's in `MODELS`, so it can be downloaded and removed. Its `runtime_mb` is above an 8 GB iPad's jetsam headroom (so the memory check refuses it there) and above its own weights. It disables thinking.
