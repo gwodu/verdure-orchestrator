@@ -13,8 +13,11 @@ number of certificates" (release-14, 2026-08-22).
 Now the build reuses one Apple Distribution certificate, stored once as a GitHub
 secret, and signs manually. This script does the part automatic signing used to
 do: ask App Store Connect for an App Store profile that names THAT certificate.
-It also makes sure the App ID carries the capabilities the app's entitlements
-request, because a profile missing one fails the archive.
+It also checks the new profile grants every entitlement the app requests, so a
+capability missing from the App ID fails here in a minute rather than at the
+archive step, after the 10x-billed build. (It cannot ENABLE them: Apple's API
+does not accept kernel capabilities such as Increased Memory Limit — HTTP 409 on
+testflight-10 — so those are ticked once in the developer portal.)
 
 It creates no certificates, ever. It never sees the certificate's private key —
 only the public certificate, to find its id on the account.
@@ -28,7 +31,7 @@ Usage (all secrets come from the environment, never argv):
   python3 app/scripts/ios-signing.py \\
       --bundle-id ai.verdure.porter.898PY37K5S \\
       --cert-pem /path/to/distribution-cert.pem \\
-      --capability INCREASED_MEMORY_LIMIT --capability EXTENDED_VIRTUAL_ADDRESSING
+      --require-entitlement com.apple.developer.kernel.increased-memory-limit
 
 Prints the profile's NAME on stdout (for PROVISIONING_PROFILE_SPECIFIER) and
 installs it where Xcode looks.
@@ -158,38 +161,11 @@ def find_bundle_id(asc: Asc, identifier: str) -> str:
     raise SystemExit(f"No App ID '{identifier}' on this account.")
 
 
-def ensure_capabilities(asc: Asc, bundle_id: str, wanted: list[str]) -> list[str]:
-    """Enable each capability on the App ID if it isn't already. Returns the ones added."""
-    # No `limit` here: this relationship endpoint rejects it with HTTP 400 (seen
-    # live on testflight-9). An App ID has a handful of capabilities, one page.
-    _, data = asc.call("GET", f"/v1/bundleIds/{bundle_id}/bundleIdCapabilities")
-    have = {c["attributes"]["capabilityType"] for c in data.get("data", [])}
-    added = []
-    for cap in wanted:
-        if cap in have:
-            continue
-        try:
-            asc.call(
-                "POST",
-                "/v1/bundleIdCapabilities",
-                {
-                    "data": {
-                        "type": "bundleIdCapabilities",
-                        "attributes": {"capabilityType": cap},
-                        "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}},
-                    }
-                },
-            )
-        except AscError as e:
-            if e.status == 403:
-                raise SystemExit(
-                    f"The API key may not change App ID capabilities ({e}). Enable "
-                    f"'{cap}' once by hand: developer.apple.com -> Identifiers -> this "
-                    f"App ID -> Capabilities, then re-run."
-                )
-            raise
-        added.append(cap)
-    return added
+def missing_entitlements(profile: bytes, keys: list[str]) -> list[str]:
+    """Entitlement keys the profile does NOT grant. A .mobileprovision is a CMS
+    envelope whose payload is a plain (unencrypted) XML plist, so the granted
+    entitlements are readable as bytes without unwrapping the signature."""
+    return [k for k in keys if f"<key>{k}</key>".encode() not in profile]
 
 
 def find_certificate_id(asc: Asc, cert_der: bytes) -> str:
@@ -256,7 +232,8 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--bundle-id", required=True)
     p.add_argument("--cert-pem", required=True, help="the distribution certificate (public part, PEM)")
-    p.add_argument("--capability", action="append", default=[], help="ASC capabilityType to ensure on the App ID")
+    p.add_argument("--require-entitlement", action="append", default=[],
+                   help="entitlement key the profile must grant (else stop with what to enable)")
     a = p.parse_args(argv)
 
     env = {k: os.environ.get(k, "") for k in ("ASC_API_KEY_P8_PATH", "ASC_API_KEY_ID", "ASC_API_ISSUER_ID")}
@@ -267,11 +244,16 @@ def main(argv=None) -> int:
     cert_der = pem_to_der(pathlib.Path(a.cert_pem).read_text())
     asc = Asc(make_jwt(env["ASC_API_KEY_ID"], env["ASC_API_ISSUER_ID"], env["ASC_API_KEY_P8_PATH"]))
     bundle = find_bundle_id(asc, a.bundle_id)
-    added = ensure_capabilities(asc, bundle, a.capability)
-    if added:
-        print(f"enabled on the App ID: {', '.join(added)}", file=sys.stderr)
     cert = find_certificate_id(asc, cert_der)
     attrs = replace_profile(asc, bundle, cert)
+    missing = missing_entitlements(base64.b64decode(attrs["profileContent"]), a.require_entitlement)
+    if missing:
+        raise SystemExit(
+            f"The new profile does not grant: {', '.join(missing)}. Enable the matching "
+            f"capability once: developer.apple.com -> Identifiers -> {a.bundle_id} -> "
+            f"Capabilities (e.g. 'Increased Memory Limit', 'Extended Virtual "
+            f"Addressing') -> Save, then re-run."
+        )
     for f in install_profile(attrs):
         print(f"installed {f}", file=sys.stderr)
     print(attrs["name"])

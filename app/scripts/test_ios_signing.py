@@ -95,30 +95,19 @@ class AscFlowTests(unittest.TestCase):
         ]})})
         self.assertEqual(sig.find_bundle_id(sig.Asc("t", fake), "ai.verdure.porter.898PY37K5S"), "B")
 
-    def test_capabilities_only_adds_missing_ones(self):
-        fake = FakeAsc({
-            ("GET", "/v1/bundleIds/B/bundleIdCapabilities"): (200, {"data": [
-                {"attributes": {"capabilityType": "INCREASED_MEMORY_LIMIT"}}]}),
-            ("POST", "/v1/bundleIdCapabilities"): (201, {}),
-        })
-        added = sig.ensure_capabilities(sig.Asc("t", fake), "B",
-                                        ["INCREASED_MEMORY_LIMIT", "EXTENDED_VIRTUAL_ADDRESSING"])
-        self.assertEqual(added, ["EXTENDED_VIRTUAL_ADDRESSING"])
-        # Apple rejects `limit` on this relationship endpoint (HTTP 400, testflight-9).
-        gets = [c[1] for c in fake.calls if c[0] == "GET"]
-        self.assertEqual(gets, ["/v1/bundleIds/B/bundleIdCapabilities"])
-        posts = [c for c in fake.calls if c[0] == "POST"]
-        self.assertEqual(len(posts), 1)
-        self.assertEqual(posts[0][2]["data"]["relationships"]["bundleId"]["data"]["id"], "B")
-
-    def test_capability_forbidden_says_what_to_click(self):
-        fake = FakeAsc({
-            ("GET", "/v1/bundleIds/B/bundleIdCapabilities"): (200, {"data": []}),
-            ("POST", "/v1/bundleIdCapabilities"): (403, {"errors": [{"title": "Forbidden", "detail": "no"}]}),
-        })
-        with self.assertRaises(SystemExit) as e:
-            sig.ensure_capabilities(sig.Asc("t", fake), "B", ["INCREASED_MEMORY_LIMIT"])
-        self.assertIn("Capabilities", str(e.exception))
+    def test_profile_entitlement_check(self):
+        # A .mobileprovision's payload is a plain XML plist inside a CMS envelope.
+        profile = (b"\x30\x80cms-header<?xml version=\"1.0\"?><plist><dict><key>Entitlements</key><dict>"
+                   b"<key>com.apple.developer.kernel.increased-memory-limit</key><true/>"
+                   b"</dict></dict></plist>cms-signature")
+        self.assertEqual(sig.missing_entitlements(profile, [
+            "com.apple.developer.kernel.increased-memory-limit",
+            "com.apple.developer.kernel.extended-virtual-addressing",
+        ]), ["com.apple.developer.kernel.extended-virtual-addressing"])
+        self.assertEqual(sig.missing_entitlements(profile, []), [])
+        # A key that is merely a PREFIX of a granted one must not count as granted.
+        self.assertEqual(sig.missing_entitlements(profile, ["com.apple.developer.kernel"]),
+                         ["com.apple.developer.kernel"])
 
     def test_certificate_matched_on_exact_bytes(self):
         ours, other = b"\x30\x82our-cert", b"\x30\x82other-cert"

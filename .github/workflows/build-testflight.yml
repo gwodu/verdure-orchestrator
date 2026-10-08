@@ -101,8 +101,8 @@ jobs:
           PROFILE=$(python3 app/scripts/ios-signing.py \
             --bundle-id "$BUNDLE_ID" \
             --cert-pem "$RUNNER_TEMP/dist-cert.pem" \
-            --capability INCREASED_MEMORY_LIMIT \
-            --capability EXTENDED_VIRTUAL_ADDRESSING)
+            --require-entitlement com.apple.developer.kernel.increased-memory-limit \
+            --require-entitlement com.apple.developer.kernel.extended-virtual-addressing)
           echo "profile: $PROFILE"
           echo "PROFILE_NAME=$PROFILE" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
@@ -197,9 +197,10 @@ jobs:
         # Without this, iPadOS kills the app (jetsam) well below physical RAM, and
         # the 27B's ~10 GB can't load even on a 16 GB iPad ([OQ-84]). The first
         # key raises the per-app memory limit; the second lets llama.cpp map an
-        # 8.8 GB file into the address space. ios-signing.py enables both on the
-        # App ID before fetching the profile (the --capability flags below). Remove
-        # this step AND those flags to end the experiment.
+        # 8.8 GB file into the address space. Both are ticked once on the App ID in
+        # the developer portal (Apple's API can't enable them); ios-signing.py's
+        # --require-entitlement flags above stop the build early if the profile
+        # lacks them. Remove this step AND those flags to end the experiment.
         run: |
           ENTS=$(find app/src-tauri/gen/apple -maxdepth 2 -name "*.entitlements")
           test -n "$ENTS" # tauri ios init must have generated one; fail loudly if not

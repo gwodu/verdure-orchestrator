@@ -8,7 +8,7 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 ### 2026-10-08 — iOS builds reuse one certificate instead of minting one per run
 
-**What:** `build-testflight.yml` now signs manually with one stored Apple Distribution certificate (`IOS_DIST_CERT_P12` / `IOS_DIST_CERT_PASSWORD`), imported into a throwaway keychain. A new script, `app/scripts/ios-signing.py`, fetches the App Store profile for that certificate from the App Store Connect API (replacing one fixed-name profile each run) and turns on the App ID capabilities the entitlements need. It uses only Python's standard library plus `openssl`, with no third-party action, so the API key stays in code we own. The signing steps now run first.
+**What:** `build-testflight.yml` now signs manually with one stored Apple Distribution certificate (`IOS_DIST_CERT_P12` / `IOS_DIST_CERT_PASSWORD`), imported into a throwaway keychain. A new script, `app/scripts/ios-signing.py`, fetches the App Store profile for that certificate from the App Store Connect API (replacing one fixed-name profile each run) and checks that the profile grants the entitlements the build requests. The API cannot enable kernel capabilities such as Increased Memory Limit (HTTP 409), so those are ticked once in the portal. It uses only Python's standard library plus `openssl`, with no third-party action, so the API key stays in code we own. The signing steps now run first.
 
 **Why:** Automatic signing on an empty runner keychain made a new certificate every build, until Apple's per-account limit stopped `release-14`. Now no build can create a certificate.
 
