@@ -160,7 +160,9 @@ def find_bundle_id(asc: Asc, identifier: str) -> str:
 
 def ensure_capabilities(asc: Asc, bundle_id: str, wanted: list[str]) -> list[str]:
     """Enable each capability on the App ID if it isn't already. Returns the ones added."""
-    _, data = asc.call("GET", f"/v1/bundleIds/{bundle_id}/bundleIdCapabilities?limit=200")
+    # No `limit` here: this relationship endpoint rejects it with HTTP 400 (seen
+    # live on testflight-9). An App ID has a handful of capabilities, one page.
+    _, data = asc.call("GET", f"/v1/bundleIds/{bundle_id}/bundleIdCapabilities")
     have = {c["attributes"]["capabilityType"] for c in data.get("data", [])}
     added = []
     for cap in wanted:

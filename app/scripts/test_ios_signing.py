@@ -104,6 +104,9 @@ class AscFlowTests(unittest.TestCase):
         added = sig.ensure_capabilities(sig.Asc("t", fake), "B",
                                         ["INCREASED_MEMORY_LIMIT", "EXTENDED_VIRTUAL_ADDRESSING"])
         self.assertEqual(added, ["EXTENDED_VIRTUAL_ADDRESSING"])
+        # Apple rejects `limit` on this relationship endpoint (HTTP 400, testflight-9).
+        gets = [c[1] for c in fake.calls if c[0] == "GET"]
+        self.assertEqual(gets, ["/v1/bundleIds/B/bundleIdCapabilities"])
         posts = [c for c in fake.calls if c[0] == "POST"]
         self.assertEqual(len(posts), 1)
         self.assertEqual(posts[0][2]["data"]["relationships"]["bundleId"]["data"]["id"], "B")
