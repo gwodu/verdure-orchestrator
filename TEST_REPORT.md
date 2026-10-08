@@ -13,7 +13,7 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 - **Entitlement check:** reports exactly the keys a profile doesn't grant. A key that's only a prefix of a granted one doesn't count as granted. (Replaced the capability-enabling tests: Apple's API rejects kernel capabilities, so that code was removed.)
 - **Profile:** the previous `Verdure CI App Store` profile is deleted and other profiles are left alone. The new one names only our certificate and is installed to both Xcode profile folders.
 - **Live runs found two bugs the fakes couldn't:** `testflight-9` failed because `limit` is rejected on the App ID capabilities endpoint (HTTP 400). `testflight-10` failed because the API's `capabilityType` doesn't include the kernel capabilities (HTTP 409). Both failed in the first minute, before the build. Both runs confirmed the JWT authenticates, the App ID resolves, and the `.p12` imports with its password.
-- **Not run yet:** finding the certificate, creating the profile, and the manual-signing archive. That's the next tag.
+- **`testflight-11`:** the certificate was found on the account and the profile was created, and the profile grants both kernel entitlements, all confirmed live. The archive then failed on a workflow bug: `xcodebuild` splits `CODE_SIGN_IDENTITY[sdk=iphoneos*]=…` at its first `=`, so it looked for an identity named `iphoneos*]=Apple Distribution`. Removed; the plain command-line `CODE_SIGN_IDENTITY` already outranks the project. It failed after ~3 min because the Rust build was cached.
 
 ### 2026-10-08 — Qwen3.8 27B iPad experiment
 
