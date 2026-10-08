@@ -6,6 +6,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-10-08 — iPad experiment: Qwen3.8 27B in the Powerful slot
+
+**What:** On iOS builds only, the picker's Powerful choice is now ByteShape's Qwen3.8 27B (`IQ2_XXS`, 8.8 GB download, ~10 GB estimated to run) instead of the Qwen3 4B. Mac, Android and Windows are unchanged. The TestFlight workflow now asks iPadOS for the increased memory limit and extended virtual addressing; without them, iPadOS kills the app long before a 10 GB model fits. The picker now draws only the models the backend offers, so each platform shows exactly three cards.
+
+**Why:** The founder wants to find the iPad's ceiling. This is explicitly temporary: `[OQ-84]` lists what the first run settles and how to revert.
+
+**Simpler or more complex for the user?** Unchanged for everyone off the iPad. On the iPad, the Powerful card now costs a much bigger download, and its description says it needs a 16 GB iPad. The memory check still refuses the model honestly on a device that can't hold it.
+
+**Tests:** 63/63 Rust (2 new), TS type-check clean, 5/5 vitest. The iOS branch of the `cfg` was not compiled locally (no iOS target on this Mac); CI compiles iOS on a PR.
+
 ### 2026-09-11 (later) — Play uploads automated, without handing the key to a stranger
 
 **What:** `android-play-N` now builds, signs, **and uploads** to Google Play's closed track — the Android equivalent of what `release-N` already does for TestFlight, restoring the pipeline's "one tag → three platforms" property.

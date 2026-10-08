@@ -4,6 +4,14 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-08 — Qwen3.8 27B iPad experiment
+
+- `qwen38_27b_is_opt_in_only`: the auto-pick never hands out the 27B, even with 64 GB free. It's in `MODELS`, so it can be downloaded and removed. Its `runtime_mb` is above an 8 GB iPad's jetsam headroom (so the memory check refuses it there) and above its own weights. It disables thinking.
+- `powerful_slot_is_the_4b_off_ios`: guards the swap to iOS only; the 4B stays everywhere else, and the Powerful slot is the last menu entry.
+- `chat_options_report_fit_against_the_device` now checks whichever model fills the Powerful slot, not a hardcoded 4B id.
+- **Caught before shipping:** the picker drew every entry in its UI list, whether or not the backend offered it. Adding the 27B's description would have shown two Powerful cards on the Mac. Fixed: once the backend's menu loads, only the models it offers are drawn.
+- **Not run:** the 27B has never been loaded. The real file is 8.8 GB and this Mac has ~11 GB free disk and 8 GB RAM. The iPad run is the test (`[OQ-84]`).
+
 ### 2026-09-11 (later) — Verifying a publish path that cannot yet be run
 
 **The constraint again.** `publish-to-play.py` cannot be executed end-to-end: no service account exists, and Google refuses an API upload for a new app's first bundle regardless. So everything testable was tested, and the untestable part was written down rather than assumed green (`[OQ-83]`).

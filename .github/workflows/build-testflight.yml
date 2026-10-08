@@ -135,6 +135,25 @@ jobs:
             /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$plist" \
               || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$plist"
           done
+      - name: Patch entitlements — raise the memory ceiling (Qwen3.8 27B experiment)
+        # Without this, iPadOS kills the app (jetsam) well below physical RAM, and
+        # the 27B's ~10 GB can't load even on a 16 GB iPad ([OQ-84]). The first
+        # key raises the per-app memory limit; the second lets llama.cpp map an
+        # 8.8 GB file into the address space. Automatic signing with
+        # -allowProvisioningUpdates should add both capabilities to the App ID; if
+        # the archive fails on a profile/entitlement mismatch, enable "Increased
+        # Memory Limit" + "Extended Virtual Addressing" for ai.verdure.porter in
+        # the Apple Developer portal once. Remove this step to end the experiment.
+        run: |
+          ENTS=$(find app/src-tauri/gen/apple -maxdepth 2 -name "*.entitlements")
+          test -n "$ENTS" # tauri ios init must have generated one; fail loudly if not
+          for e in $ENTS; do
+            echo "patching $e"
+            for key in com.apple.developer.kernel.increased-memory-limit com.apple.developer.kernel.extended-virtual-addressing; do
+              /usr/libexec/PlistBuddy -c "Add :$key bool true" "$e" \
+                || /usr/libexec/PlistBuddy -c "Set :$key true" "$e"
+            done
+          done
       - name: Stage the App Store Connect API key
         # Write the .p8 secret to the location xcodebuild + altool look for it.
         # Never printed; lives only on the ephemeral runner for this job.

@@ -260,6 +260,41 @@ pub const BYTESHAPE_QWEN3_4B: ModelInfo = ModelInfo {
     prompt_style: Some(PromptStyle::ChatMl),
 };
 
+/// ByteShape's ShapeLearn quant of **Qwen3.8 27B** (Apache 2.0) — an iPad-only
+/// EXPERIMENT, not a tier we'd ship to users ([OQ-84]). The founder asked to push
+/// the iPad as far as it goes, so on iOS it takes the "Powerful" slot in the menu
+/// (`POWERFUL_CHAT_MODEL`); every other platform keeps the 4B above.
+///
+/// The smallest file in the repo (`IQ2_XXS`, 2.56 bpw). Same `qwen35` hybrid
+/// architecture as `QWEN35_2B`, which our pinned llama.cpp already runs; the GGUF
+/// also carries an MTP draft head, which that llama.cpp knows (`n_layer_nextn`)
+/// and which only loads when speculative decoding asks for it — we don't.
+///
+/// Only a 16 GB iPad can hold it, and only because the iOS build requests the
+/// `increased-memory-limit` entitlement (`build-testflight.yml`). It is never in
+/// `chat_candidates`, so nothing auto-selects it: the user must pick it, and the
+/// RAM gate (`os_proc_available_memory`, i.e. the real jetsam headroom) still
+/// refuses it honestly on a device that can't hold it.
+pub const BYTESHAPE_QWEN38_27B: ModelInfo = ModelInfo {
+    id: "qwen3.8-27b-byteshape",
+    name: "Chat model (Qwen3.8 27B)",
+    modality: "Chat",
+    file: "Qwen3.8-27B-IQ2_XXS-2.56bpw.gguf",
+    url: "https://huggingface.co/byteshape/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-IQ2_XXS-2.56bpw.gguf",
+    // Real size (HF tree API, 2026-10-08): 8 843 953 536 bytes.
+    approx_mb: 8434,
+    // PROVISIONAL — 8434 weights + ~1 GB compute (the 2B measured ~0.5 GB; the
+    // 27B's wider hidden state and 248k-vocab logits cost more) + 256 MB KV at the
+    // 4096 ceiling + ~150 MB recurrent state. No CPU_REPACK: on iOS the weights go
+    // to Metal. Undershooting OOM-kills the app, so it errs high until measured.
+    runtime_mb: 10000,
+    // 2 × 16 full-attention layers (of 64; interval 4) × 4 kv_heads × 256 × 2 B.
+    kv_kb_per_token: 64,
+    trained_ctx: 262144,
+    // Thinking is ON by default in its template — same `<think>` switch as 3.5.
+    prompt_style: Some(PromptStyle::ChatMlNoThink),
+};
+
 /// Use the ByteShape Qwen3 4B as the base chat model. Enabled for the on-device
 /// trial: it leads the pick when it fits, with the Qwen models as automatic
 /// RAM-gated fallback, so enabling it can't strand a machine that's too tight — it
@@ -365,7 +400,14 @@ pub fn choose_chat_model(
 /// footprints so any of them is a safe pick on a modern device. Friendly tier
 /// names + copy live in the UI (design.md — the words belong with the surface).
 pub const CHAT_MODEL_CHOICES: &[&ModelInfo] =
-    &[&QWEN_CHAT_SMALL, &QWEN35_2B, &BYTESHAPE_QWEN3_4B];
+    &[&QWEN_CHAT_SMALL, &QWEN35_2B, POWERFUL_CHAT_MODEL];
+
+/// The "Powerful" slot. On iOS it's the Qwen3.8 27B experiment ([OQ-84]); the
+/// 4B everywhere else. Revert the iOS line to drop the experiment.
+#[cfg(not(target_os = "ios"))]
+pub const POWERFUL_CHAT_MODEL: &ModelInfo = &BYTESHAPE_QWEN3_4B;
+#[cfg(target_os = "ios")]
+pub const POWERFUL_CHAT_MODEL: &ModelInfo = &BYTESHAPE_QWEN38_27B;
 
 /// One chat model as the picker needs it: what it is, how big the download is, and
 /// whether it fits THIS device right now (memory + disk). Honest space up front
@@ -442,6 +484,7 @@ pub fn chat_model_choice(
 pub const MODELS: &[ModelInfo] = &[
     WHISPER_BASE_EN,
     BYTESHAPE_QWEN3_4B,
+    BYTESHAPE_QWEN38_27B,
     QWEN35_2B,
     QWEN35_4B,
     QWEN_CHAT_SMALL,
@@ -842,10 +885,10 @@ mod tests {
         let opts = chat_model_options(Path::new("/tmp/verdure-none-xyz"), 64_000, 64_000);
         assert_eq!(opts.len(), CHAT_MODEL_CHOICES.len());
         assert!(opts.iter().all(|o| o.fits_memory && o.fits_disk && !o.installed));
-        // Tiny free memory → the Powerful (4B) no longer fits; the Small one still does.
+        // Tiny free memory → the Powerful one no longer fits; the Small one still does.
         let tight = chat_model_options(Path::new("/tmp/verdure-none-xyz"), 1200, 64_000);
         let small = tight.iter().find(|o| o.id == QWEN_CHAT_SMALL.id).unwrap();
-        let powerful = tight.iter().find(|o| o.id == BYTESHAPE_QWEN3_4B.id).unwrap();
+        let powerful = tight.iter().find(|o| o.id == POWERFUL_CHAT_MODEL.id).unwrap();
         assert!(small.fits_memory);
         assert!(!powerful.fits_memory);
     }
@@ -855,6 +898,32 @@ mod tests {
         // Qwen3 uses ChatML, so the existing framing applies — no new plumbing.
         assert_eq!(BYTESHAPE_QWEN3_4B.prompt_style, Some(PromptStyle::ChatMl));
         assert_eq!(find("qwen3-4b-instruct-2507-byteshape").unwrap().modality, "Chat");
+    }
+
+    #[test]
+    fn qwen38_27b_is_opt_in_only() {
+        // The 27B is an iPad experiment ([OQ-84]): a user must pick it. Even with
+        // abundant memory the auto-pick never hands it out, and it is downloadable
+        // + removable like any other model.
+        let pick = chat_model_for_available(64_000).unwrap();
+        assert_ne!(pick.id, BYTESHAPE_QWEN38_27B.id);
+        assert!(!chat_candidates().iter().any(|m| m.id == BYTESHAPE_QWEN38_27B.id));
+        assert!(find(BYTESHAPE_QWEN38_27B.id).is_some());
+        // An 8 GB iPad's jetsam headroom (~5–6 GB) must be refused by the gate.
+        assert!(BYTESHAPE_QWEN38_27B.runtime_mb as u64 > 6_000);
+        // Runtime can never be below the weights it has to hold.
+        assert!(BYTESHAPE_QWEN38_27B.runtime_mb > BYTESHAPE_QWEN38_27B.approx_mb);
+        assert_eq!(BYTESHAPE_QWEN38_27B.prompt_style, Some(PromptStyle::ChatMlNoThink));
+    }
+
+    #[test]
+    fn powerful_slot_is_the_4b_off_ios() {
+        // The 27B swap is iOS-only; Mac/Android/Windows keep the proven 4B.
+        #[cfg(not(target_os = "ios"))]
+        assert_eq!(POWERFUL_CHAT_MODEL.id, BYTESHAPE_QWEN3_4B.id);
+        #[cfg(target_os = "ios")]
+        assert_eq!(POWERFUL_CHAT_MODEL.id, BYTESHAPE_QWEN38_27B.id);
+        assert_eq!(CHAT_MODEL_CHOICES.last().unwrap().id, POWERFUL_CHAT_MODEL.id);
     }
 
     #[test]

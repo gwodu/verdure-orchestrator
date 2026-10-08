@@ -72,6 +72,9 @@ const MODEL_TIERS: { id: string; tier: string; blurb: string }[] = [
   { id: "qwen2.5-0.5b-instruct", tier: "Small", blurb: "Quick and light — runs on any device. Great for short questions." },
   { id: "qwen3.5-2b-instruct", tier: "Balanced", blurb: "A capable all-rounder, and it remembers much more of the conversation." },
   { id: "qwen3-4b-instruct-2507-byteshape", tier: "Powerful", blurb: "The most capable — richer answers, needs a little more room." },
+  // iPad-only experiment ([OQ-84]); the backend offers it instead of the 4B on iOS.
+  // Only the options the backend returns are drawn, so other platforms never see it.
+  { id: "qwen3.8-27b-byteshape", tier: "Powerful", blurb: "Our biggest model yet. Needs a 16 GB iPad and takes a while to download." },
 ];
 const tierName = (id: string): string =>
   MODEL_TIERS.find((t) => t.id === id)?.tier ?? "Chat model";
@@ -427,6 +430,10 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
     // Show in tier order (small → powerful), pairing tier copy with device facts.
     for (const t of MODEL_TIERS) {
       const opt = options.find((o) => o.id === t.id);
+      // The backend's menu is per-platform (the iPad's Powerful slot differs), so
+      // once it has answered, draw only what it offers. Before that (or in a
+      // browser preview) there are no options and every tier shows.
+      if (options.length > 0 && !opt) continue;
       const card = el("div", "pick" + (selected === t.id ? " selected" : ""));
 
       const main = document.createElement("button");
