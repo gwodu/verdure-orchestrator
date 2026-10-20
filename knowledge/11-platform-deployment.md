@@ -10,6 +10,8 @@ This file documents the practical realities of shipping Verdure on each platform
 
 *Added 2026-09-16 — the three platforms build differently enough that the differences were only discoverable by reading five workflow files. This is the map.*
 
+**One branch: `main` (since 2026-10-20).** The long-running `mvp-porter-buzz` branch was merged and retired; triggers come from the YAML **of the ref being pushed**, which is how `main` kept a stale push-triggered CI for months while the branch had already dropped it. **Every push to `main` also deploys the website to production** (Vercel's production branch), so there is no preview gate.
+
 **Nothing runs on `git push`.** CI triggers on **pull requests and manual dispatch only**; release workflows trigger on **tags**. A plain push to a branch runs nothing at all, which is why `CLAUDE.md` insists on verifying locally before pushing — there is no safety net behind you.
 
 | | macOS | iOS | Android (test) | Android (Play) |

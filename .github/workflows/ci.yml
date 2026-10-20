@@ -72,9 +72,9 @@ jobs:
         with:
           # Left unset deliberately, which is correct for both remaining events:
           #   * pull_request — diffs against the base branch (what the PR changes).
-          #   * workflow_dispatch — diffs the branch against the default branch, so
-          #     on mvp-porter-buzz everything matches and a manual run checks
-          #     everything. That is what you want from "run CI now."
+          #   * workflow_dispatch — on `main` (the only branch since 2026-10-20)
+          #     there is no diff to make, so every job below ALSO runs whenever
+          #     the event is workflow_dispatch: "run CI now" means check everything.
           # The old push-only `base: github.event.before` is gone with the push
           # trigger. It existed because this branch carries months of unmerged
           # work, so without it every filter matched on every push and a
@@ -102,7 +102,7 @@ jobs:
   decider-web:
     name: Decider + website
     needs: changes
-    if: ${{ needs.changes.outputs.decider_web == 'true' }}
+    if: ${{ needs.changes.outputs.decider_web == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -122,7 +122,7 @@ jobs:
   app-checks:
     name: App frontend + release scripts + workflow lint (Linux)
     needs: changes
-    if: ${{ needs.changes.outputs.app_checks == 'true' }}
+    if: ${{ needs.changes.outputs.app_checks == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -157,7 +157,7 @@ jobs:
     # iOS break surfaces here rather than inside a signed TestFlight build.
     # (The push gate that used to live here is gone — push no longer triggers
     # this workflow at all; see the header.)
-    if: ${{ needs.changes.outputs.porter == 'true' }}
+    if: ${{ needs.changes.outputs.porter == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: macos-latest
     timeout-minutes: 30
     # Deployment target (10.15, for whisper.cpp's std::filesystem) is forced in
@@ -239,7 +239,7 @@ jobs:
     # whisper/llama C++ with the NDK clang, but nothing is linked or packaged.
     # Linux runner: 1/10 the macOS per-minute cost.
     needs: changes
-    if: ${{ needs.changes.outputs.porter == 'true' }}
+    if: ${{ needs.changes.outputs.porter == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
