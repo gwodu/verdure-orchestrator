@@ -4,6 +4,12 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-20 — `verify-release.py` can no longer pass by checking nothing
+
+- New `test_verify_release.py` (6), the script's first committed tests. `dmg_name` follows the manifest version (and strips `v`); no version is an error, not a guess. `find_latest_json` uses an explicit path outside the bundle (where CI writes it), returns None when the path is missing, finds one nested in the bundle, and returns None when there is nothing, which the caller now treats as a **failed** check rather than a skip.
+- **Run for real:** `verify-release.py --url https://verdureai.com/updates` gave **25/25** against the live release. The `.dmg` name now comes from `latest.json` instead of the hard-coded `0.1.0`.
+- Script tests: 10 → 16. The `--dir` path with `--latest-json` first runs in CI on the next `app-build-N`.
+
 ### 2026-10-20 — CI runs the tests that already existed
 
 - New `ci.yml` job `app-checks` (Linux): `npm test --workspace @verdure/porter-app` (vitest 5), `python3 -B -m unittest discover -s app/scripts` (10), and `actionlint` v1.7.7 with `-shellcheck=`.

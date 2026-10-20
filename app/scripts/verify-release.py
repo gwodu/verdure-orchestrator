@@ -208,6 +208,26 @@ def verify_latest_json(path: Path, sig: Path | None) -> None:
         )
 
 
+def dmg_name(latest: dict) -> str:
+    """The published disk image's file name, derived from the manifest's version
+    rather than hard-coded: a hard-coded `0.1.0` would download the OLD release
+    after a version bump and verify the wrong bytes with a clean pass."""
+    version = str(latest.get("version", "")).lstrip("v")
+    if not version:
+        raise ValueError("latest.json has no version")
+    return f"Verdure_{version}_universal.dmg"
+
+
+def find_latest_json(root: Path, explicit: Path | None) -> Path | None:
+    """The updater manifest to verify. CI writes it OUTSIDE the bundle dir, so a
+    search of `--dir` alone found nothing and the check was silently skipped;
+    an explicit path wins, and the caller treats None as a FAILED check."""
+    if explicit is not None:
+        return explicit if explicit.is_file() else None
+    found = sorted(root.rglob("latest.json"))
+    return found[0] if found else None
+
+
 def fetch(url: str, dest: Path) -> bool:
     try:
         with urllib.request.urlopen(url, timeout=180) as r, dest.open("wb") as f:
@@ -223,6 +243,7 @@ def main() -> int:
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--dir", type=Path, help="a local bundle dir (CI, before upload)")
     g.add_argument("--url", help="base URL of a published release (after publishing)")
+    ap.add_argument("--latest-json", type=Path, help="with --dir: the updater manifest, if it lives outside the bundle dir")
     args = ap.parse_args()
 
     if sys.platform != "darwin":
@@ -240,22 +261,27 @@ def main() -> int:
             dmg = tmp / "Verdure.dmg"
             lj = tmp / "latest.json"
             sig = tmp / "Verdure.app.tar.gz.sig"
-            ok = fetch(f"{base}/Verdure_0.1.0_universal.dmg", dmg)
-            fetch(f"{base}/latest.json", lj)
-            fetch(f"{base}/Verdure.app.tar.gz.sig", sig)
-            if ok:
-                verify_dmg(dmg, tmp)
-            if lj.is_file() and lj.stat().st_size:
-                verify_latest_json(lj, sig if sig.is_file() and sig.stat().st_size else None)
+            # The manifest first: it names the version, and so the .dmg to fetch.
+            if check("latest.json was published", fetch(f"{base}/latest.json", lj) and lj.stat().st_size > 0):
+                verify_latest_json(lj, None)
+                try:
+                    name = dmg_name(json.loads(lj.read_text()))
+                except (ValueError, json.JSONDecodeError) as e:
+                    check("latest.json names a version", False, str(e))
+                    name = None
+                if name and fetch(f"{base}/{name}", dmg):
+                    verify_dmg(dmg, tmp)
+                if fetch(f"{base}/Verdure.app.tar.gz.sig", sig) and sig.stat().st_size:
+                    verify_latest_json(lj, sig)
         else:
             root = args.dir
             dmgs = list(root.rglob("*.dmg"))
             if check("a .dmg was produced", bool(dmgs)):
                 verify_dmg(dmgs[0], tmp)
-            ljs = list(root.rglob("latest.json"))
+            lj = find_latest_json(root, args.latest_json)
             sigs = list(root.rglob("*.app.tar.gz.sig"))
-            if ljs:
-                verify_latest_json(ljs[0], sigs[0] if sigs else None)
+            if check("latest.json was produced", lj is not None, str(args.latest_json or root)):
+                verify_latest_json(lj, sigs[0] if sigs else None)
 
     print(f"\n{CHECKS - len(FAILURES)}/{CHECKS} checks passed")
     if FAILURES:
