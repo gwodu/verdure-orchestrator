@@ -28,10 +28,11 @@ This table is the canonical routing. `../CLAUDE.md`'s Skills section summarizes 
 - **Something behaves impossibly / a regression appeared → `debugging`** (+ `testing` once the cause is known)
 - Code review / cleanup pass → `refactoring` + `testing` (shortcut: `/cleanup`)
 - Auditing architecture/principles, or pre-redesign alignment check → `inspection` (shortcut: `/inspect`)
+- Editing CI workflows, build/release scripts (`app/scripts/`), signing or store publishing → `testing` ("CI cost discipline", "Verifying artifacts, not intentions") + `knowledge/11` (the pipeline map, its costs, and the runbooks)
 
 ## Slash-command shortcuts
 
-Two of the rows above have a Claude Code command in `../.claude/commands/`, so the
+Two of the rows above (cleanup, inspection) have a Claude Code command in `../.claude/commands/`, so the
 routing runs on demand instead of relying on a session remembering to load the
 skill. The command **inlines the skill's full text** (`@skills/…`) rather than
 copying it — the skill file stays the single source of truth, and editing it

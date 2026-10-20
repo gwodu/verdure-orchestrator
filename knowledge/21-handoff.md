@@ -22,7 +22,7 @@
 - `cd app/src-tauri && cargo test` — the Rust suite, seconds.
 - `cd app && npm run build` — frontend typecheck + build.
 - `npm test --workspace @verdure/decider` — the decider suite.
-- `python3 -B -m unittest discover -s app/scripts` — release-script tests (`-B`: write no `__pycache__`). **No CI job runs these** (cleanup queue).
+- `python3 -B -m unittest discover -s app/scripts` — release-script tests (`-B`: write no `__pycache__`). CI's `app-checks` job runs these on a PR.
 - `cd app && npm run tauri build` — the whole macOS app (~8 min cold).
 
 The `#[ignore]`d `repro_oq71_generates_from_a_real_model` needs a `.gguf` to point at; its own doc comment says how to get one (the 469 MB copy was deleted 2026-08-22 to reclaim disk).
@@ -86,7 +86,7 @@ Ordered (structural and misleading items first):
 1. ~~**27B scope**~~ — **done 2026-10-20** (`chat_model_menu`, stored-choice fallback in the picker). Needs a `testflight-N` to reach testers.
 2. ~~**Stale CI/verify instructions in procedures**~~ — **done 2026-10-20.** `11` owns tags, triggers and measured costs; `testing.md` and this file link to it; `/cleanup` verifies locally; `debugging.md` says 14-day artifacts.
 3. ~~**Memory accounting: one model**~~ — **done 2026-10-20.** The window is sized from `available − runtime_mb`, the gate's own number (`22`).
-4. **Run the tests we have in CI** — one cheap Linux job: `python3 -m unittest discover -s app/scripts`, `npm test` for `app/`, `actionlint`. Route release and script work in `skills/README.md` (15 of the last 20 commits had no skill row).
+4. ~~**Run the tests we have in CI**~~ — **done 2026-10-20.** `ci.yml` job `app-checks` (Linux): vitest, script unittests, pinned `actionlint`. Release work is routed (`skills/README.md`). First real run: the next PR or dispatch.
 5. **`verify-release.py` blind spots** — `latest.json` is written outside `--dir` and silently skipped; the `0.1.0` dmg name is hard-coded (`build-app.yml:145,218`, `verify-release.py:242,254`). The next `app-build-N` is the first run of the notarize-dmg and verify steps.
 6. **Verify the shipped iOS/Android artifacts** — `codesign -d --entitlements` on the `.ipa`; `aapt2`/`bundletool` on the APK/AAB; `jarsigner -verify -strict` (`build-android-play.yml:135`). Add `concurrency` groups to the release workflows (two TestFlight runs would delete each other's profile, `ios-signing.py:187`).
 7. **Make `main.ts`'s pure logic testable** — `void boot()` on import blocks tests (`main.ts:1398`). Extract `renderMarkdown` (the model-output safety boundary), `friendlyError`, the progress parser and one `fmtSize`, then add vitest cases. Fix the preview mock ids (`bridge.ts:74-76`).

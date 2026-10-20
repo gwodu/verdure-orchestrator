@@ -57,8 +57,9 @@ Routing:
 - Something behaves impossibly, or a regression appeared → `skills/debugging.md` (+ `skills/testing.md` once the cause is known)
 - Code review / cleanup pass → `skills/refactoring.md` + `skills/testing.md` (shortcut: `/cleanup`)
 - Auditing architecture/principles, or a pre-redesign alignment check → `skills/inspection.md` (shortcut: `/inspect`)
+- Editing CI workflows, build/release scripts, signing or store publishing → `skills/testing.md` + `knowledge/11-platform-deployment.md`
 
-The last two rows have Claude Code commands in `.claude/commands/` that inline the skill and run the routing on demand; see `skills/README.md` for what each produces.
+The cleanup and inspection rows have Claude Code commands in `.claude/commands/` that inline the skill and run the routing on demand; see `skills/README.md` for what each produces.
 
 `skills/README.md` holds the canonical routing table and the index; the rows above mirror it for always-loaded context. Skills work in concert with the propositional knowledge base in `knowledge/`; check the relevant knowledge files for the *what*, and the skill files for the *how*.
 

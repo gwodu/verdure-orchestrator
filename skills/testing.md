@@ -69,6 +69,7 @@ Verdure is a monorepo over one brain (the shared decider, `packages/decider`), s
 
 - **Decider + website** (Linux): the decider tests (the single source of truth), the website tests, and the website production build. Triggers on `packages/decider/**` or `website/**`.
 - **Desktop porter** (macOS runner, PR/manual only): its remaining reason to exist is the **iOS** cross-compile check, which this Mac cannot do. It also runs the frontend build, `cargo test`, the x86_64 check, and the model-URL reachability check — all of which now duplicate free local work. Triggers on `app/**` or `packages/decider/**`.
+- **App checks** (Linux, ~2 billable min): the app's frontend tests (vitest), the release-script tests (`python3 -B -m unittest discover -s app/scripts`; Python stdlib `unittest`, files named `test_*.py` next to the script they test), and `actionlint` over every workflow. Triggers on `app/src/**`, `app/scripts/**` or `.github/workflows/**`.
 - **Android compile check** (Linux): `cargo check --target aarch64-linux-android`, so an Android-only `cfg` branch can't break silently. Triggers on `app/**`.
 - The long-term Rust core (`src/`/`tests/`) has **no job yet** — it's a scaffold with a malformed manifest; it gets one when it becomes real.
 

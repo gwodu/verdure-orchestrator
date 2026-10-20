@@ -35,6 +35,11 @@ concurrency:
 #
 #   - changes:     detect which areas changed (cheap, always runs)
 #   - decider-web: the shared decider + the website (Linux)
+#   - app-checks:  the cheap Linux checks that need no Rust: the app's frontend
+#                  tests (vitest), the release-script tests (Python unittest),
+#                  and actionlint over every workflow. Before 2026-10-20 these
+#                  ran only by hand, so release-script bugs were found by paying
+#                  for tags (testflight-9…11).
 #   - porter:      the MVP desktop app on a macOS runner — builds the frontend,
 #                  compiles the Tauri Rust backend (cargo test), cross-checks the
 #                  x86_64 (Intel) build, and verifies the model-download URLs
@@ -54,6 +59,7 @@ jobs:
     outputs:
       decider_web: ${{ steps.filter.outputs.decider_web }}
       porter: ${{ steps.filter.outputs.porter }}
+      app_checks: ${{ steps.filter.outputs.app_checks }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -86,6 +92,12 @@ jobs:
               - *common
               - 'packages/decider/**'
               - 'app/**'
+            app_checks:
+              - *common
+              - 'app/src/**'
+              - 'app/scripts/**'
+              - 'app/package.json'
+              - '.github/workflows/**'
 
   decider-web:
     name: Decider + website
@@ -106,6 +118,33 @@ jobs:
         run: npm test --workspace nextjs
       - name: Website production build
         run: npm run build --workspace nextjs
+
+  app-checks:
+    name: App frontend + release scripts + workflow lint (Linux)
+    needs: changes
+    if: ${{ needs.changes.outputs.app_checks == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install workspaces
+        run: npm ci
+      - name: App frontend tests (vitest)
+        run: npm test --workspace @verdure/porter-app
+      - name: Release-script tests (Python unittest)
+        # -B: no __pycache__. The JWT test signs with the runner's openssl.
+        run: python3 -B -m unittest discover -s app/scripts -v
+      - name: Lint every workflow (actionlint, pinned)
+        # Structure, expressions and contexts only (-shellcheck=): shellcheck's
+        # style warnings on long-standing scripts would fail every run for no
+        # gain. Pinned to a release tarball, not a moving install script.
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/al.tgz" https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          tar -xzf "$RUNNER_TEMP/al.tgz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -shellcheck=
 
   porter:
     name: Desktop porter (macOS)

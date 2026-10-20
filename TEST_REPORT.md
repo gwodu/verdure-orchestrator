@@ -4,6 +4,12 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-20 — CI runs the tests that already existed
+
+- New `ci.yml` job `app-checks` (Linux): `npm test --workspace @verdure/porter-app` (vitest 5), `python3 -B -m unittest discover -s app/scripts` (10), and `actionlint` v1.7.7 with `-shellcheck=`.
+- **actionlint checked locally first, with a positive control:** a clean pass on all six workflows (exit 0), and a deliberately broken file is flagged (`property "nope" is not defined`). Without the control, a clean pass could mean a broken linter.
+- **Not run yet in CI:** the job's first run is the next PR or `workflow_dispatch` (Linux, ~2 billable min).
+
 ### 2026-10-20 — One memory model for the gate and the window
 
 - `a_model_admitted_at_the_gate_edge_gets_no_extra_window`: the 4B with `available == runtime_mb` gets 0 spare and `MIN_CONTEXT`. Before the fix it got ~264 MB of "spare" (~1900 tokens of KV), past the gate that admitted it.
