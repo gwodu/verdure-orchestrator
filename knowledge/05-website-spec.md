@@ -1,6 +1,6 @@
 # 05 — Website Spec (Phase 0)
 
-**Status:** 🟡 Provisional (strategy locked; implementation details TBD)
+**Status:** 🟡 Largely superseded by the 2026-06-18 pivot (`18`): this specifies the Phase 0 *recommend-other-apps* funnel. What the site should do now that Verdure ships its own app is open in `[OQ-87]` — read this as the spec of what is live, not as direction.
 
 This file specifies the Phase 0 recommendation website at verdureai.com. The website is the orchestration brain exposed publicly — the propositional knowledge base operationalized as a recommender. No binary, no installation, no model downloads through Verdure. Just intent-and-device → recommendation → install path.
 

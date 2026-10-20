@@ -28,6 +28,7 @@ Every knowledge file opens with one of:
 - `**Status:** ✅ Settled` — researched, decided, unlikely to change
 - `**Status:** 🟡 Provisional` — current best understanding, may revise as we learn
 - `**Status:** 🔴 Open` — actively unresolved, blocking decisions downstream
+- `**Status:** 🟢 Current` — a living file describing the present state (the handoff, the pivot and north-star files); overwritten as things change rather than settled once
 
 When the status changes (e.g., a Provisional file becomes Settled after validation), update the marker in the same change.
 

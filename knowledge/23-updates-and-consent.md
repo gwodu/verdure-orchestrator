@@ -1,5 +1,7 @@
 # 23 — Updates, and the consent that governs them
 
+**Status:** ✅ Settled (opt-in update checks, shipped 2026-08-28; residual `[OQ-78]`)
+
 *Role: the **decision + rationale** for how Verdure updates itself, and why the update check is the one network request that needed a user's permission. Written 2026-08-28, when the desktop updater was built.*
 
 ## The problem
