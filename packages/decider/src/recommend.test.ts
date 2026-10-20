@@ -29,7 +29,7 @@ describe('recommend — text (model picks preserved from the original matrix)', 
 
   it('L3 / L3+ pick 7B+ models', () => {
     for (const t of ['L3', 'L3+'] as Tier[]) {
-      expect(recommend(t, text('general')).model?.name).toBe('Mistral Small');
+      expect(recommend(t, text('general')).model?.name).toBe('Qwen3 8B');
       expect(recommend(t, text('code')).model?.name).toBe('Llama 3.1 8B');
     }
   });

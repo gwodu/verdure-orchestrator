@@ -19,7 +19,7 @@ All footprints assume Q4_K_M quantization (the default — see `04-quantization.
 | L1 / P1 | 4 GB | 1B params | Gemma 3 1B | ~0.7–1.0 GB |
 | L2-low / P2 | 6–8 GB | 1.5B–3B params | Qwen 2.5 1.5B, Llama 3.2 3B | ~1.0–2.2 GB |
 | L2-high / P3 | 8 GB | 3B–4B params | Phi-4-mini 3.8B, Gemma 3 4B | ~2.2–2.9 GB |
-| L3 | 16 GB+ | 7B+ params | Mistral Small, Llama 3.1 8B | ~4.5–5.5 GB |
+| L3 | 16 GB+ | 7B–8B params | Qwen3 8B, Llama 3.1 8B | ~4.9–5.2 GB |
 | L3 (Apple Intelligence devices) | 8 GB+ unified | Resident system model (~3B) | Apple Foundation Model | **0 GB — pre-installed by OS** |
 
 ## Expected throughput
@@ -124,7 +124,9 @@ Measured on our own build (Intel Mac, 2026-09-10):
 
 **SmolLM 2 1.7B** — Hugging Face. Apache 2.0, designed for edge deployment. Strong candidate for on-device intent classification in Phase 1+.
 
-**Mistral Small** — Mistral. 7B class, Apache 2.0.
+**Qwen3 8B** — Alibaba, Apache 2.0. The L3 general pick since 2026-10-20: a real 8B, 5.23 GB as `qwen3:8b` (Ollama registry, measured), and an Apache licence, which `09` says to lead with (Llama's licence carries a usage cap).
+
+**Mistral Small — corrected 2026-10-20, no longer recommended at L3.** This file called it "7B class"; it is a 22–24B model, and `ollama run mistral-small` downloads **14.33 GB** (registry, measured). It was the L3 *default*, so every "newer Mac" visitor was told it had "excellent all-round performance" on a machine that often can't hold it (`[OQ-86]`). For the record, the real 7B is `mistral:7b`, 4.37 GB. Lesson: check a size at the source before it becomes a recommendation.
 
 ## Open questions
 

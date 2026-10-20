@@ -6,6 +6,10 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-10-20 — Website: "newer Mac" visitors get a model that fits
+
+**What:** The default text recommendation for a newer Mac (L3) is now **Qwen3 8B** (5.2 GB), replacing **Mistral Small**. `knowledge/03` had listed Mistral Small as a ~5 GB 7B model; it is a 22–24B model and a **14.3 GB** download (measured from the Ollama registry), on machines that often have 8 GB. **Why Qwen3 8B:** a real 8B in the size the page promises, under Apache 2.0 (`09`: lead with Apache/MIT). Llama 3.1 8B stays as the coding pick. **Tests:** decider 83 with fixtures updated. Reaches verdureai.com once `[OQ-81]` is fixed.
+
 ### 2026-10-20 — Website: the recommended app can actually run the recommended model
 
 **What:** For image generation on Windows/Linux graphics cards, the website now recommends **SDXL** with Fooocus (the friendly app) and lists **FLUX.1 schnell** as the higher-quality alternative that needs ComfyUI. Image editing there offers ComfyUI only. **Why:** Fooocus runs SDXL only, so a user who followed the friendly path got a different model than the one named, or for editing, an app that can't do it. **Knowledge first:** `12` corrected, then the matrix and copy. **Tests:** decider 83 (+1 invariant, with a positive control). Website-only; it reaches verdureai.com once `[OQ-81]` is fixed.

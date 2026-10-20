@@ -81,7 +81,7 @@ const TEXT_INFO: Record<string, string> = {
   'Phi-4-mini': 'https://huggingface.co/microsoft/Phi-4-mini-instruct',
   'Qwen 2.5 1.5B': 'https://qwenlm.github.io/',
   'Qwen 2.5 3B': 'https://qwenlm.github.io/',
-  'Mistral Small': 'https://mistral.ai/news/mistral-small/',
+  'Qwen3 8B': 'https://huggingface.co/Qwen/Qwen3-8B',
 };
 
 const OLLAMA_TAGS: Record<string, string> = {
@@ -92,7 +92,7 @@ const OLLAMA_TAGS: Record<string, string> = {
   'Phi-4-mini': 'phi4-mini',
   'Qwen 2.5 1.5B': 'qwen2.5:1.5b',
   'Qwen 2.5 3B': 'qwen2.5:3b',
-  'Mistral Small': 'mistral-small',
+  'Qwen3 8B': 'qwen3:8b',
 };
 
 // The three text install paths, ranked easiest → most technical. The Verdure
@@ -201,13 +201,13 @@ function textCopy(tier: Tier, task: TextTask): TextCopy {
         return {
           headline: 'Get powerful coding help on your computer.',
           body: 'Strong reasoning for code and technical questions.',
-          alternatives: [{ name: 'Mistral Small', reason: 'Comparable quality for general tasks.' }],
+          alternatives: [{ name: 'Qwen3 8B', reason: 'Comparable quality for general tasks.' }],
         };
       }
       return {
         headline: 'Get a powerful AI assistant on your computer.',
         body: 'Excellent all-round performance on capable machines.',
-        alternatives: [{ name: 'Llama 3.1 8B', reason: 'A little larger — strong for technical work.' }],
+        alternatives: [{ name: 'Llama 3.1 8B', reason: 'A similar size — especially strong for technical work.' }],
       };
   }
 }

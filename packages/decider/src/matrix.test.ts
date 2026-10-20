@@ -23,7 +23,7 @@ export const FIXTURES: Fixture[] = [
   { tier: 'L2-high', c: t('text', 'code'), expect: { feasibility: 'recommended', model: 'Phi-4-mini' } },
   { tier: 'L2-high', c: t('text', 'multilingual'), expect: { feasibility: 'recommended', model: 'Qwen 2.5 3B' } },
   { tier: 'L2-high', c: t('text', 'general'), expect: { feasibility: 'recommended', model: 'Llama 3.2 3B' } },
-  { tier: 'L3', c: t('text', 'general'), expect: { feasibility: 'recommended', model: 'Mistral Small' } },
+  { tier: 'L3', c: t('text', 'general'), expect: { feasibility: 'recommended', model: 'Qwen3 8B' } },
   { tier: 'L3', c: t('text', 'code'), expect: { feasibility: 'recommended', model: 'Llama 3.1 8B' } },
   { tier: 'L3+', c: t('text', 'code'), expect: { feasibility: 'recommended', model: 'Llama 3.1 8B' } },
 

@@ -64,7 +64,7 @@ function decideText(tier: Tier, task: TextTask): string {
       return 'Llama 3.2 3B';
     case 'L3':
     case 'L3+':
-      return task === 'code' ? 'Llama 3.1 8B' : 'Mistral Small';
+      return task === 'code' ? 'Llama 3.1 8B' : 'Qwen3 8B';
   }
 }
 
