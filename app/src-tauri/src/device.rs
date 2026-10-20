@@ -144,9 +144,11 @@ mod ios {
     /// Free space on the volume holding `path`, via statvfs (there is no `df`).
     pub(crate) fn free_disk_bytes(path: &std::path::Path) -> Option<u64> {
         let c = std::ffi::CString::new(path.to_str()?).ok()?;
+        // SAFETY (both blocks): `statvfs` is a plain C struct of integers, so
+        // all-zero is a valid value to start from. statvfs then fills the struct
+        // we own on the stack; `c` outlives the call; nothing is allocated across
+        // the boundary.
         let mut sv: libc::statvfs = unsafe { std::mem::zeroed() };
-        // SAFETY: statvfs fills the struct we own on the stack; `c` outlives the
-        // call; nothing is allocated across the boundary.
         let rc = unsafe { libc::statvfs(c.as_ptr(), &mut sv) };
         (rc == 0).then(|| sv.f_bavail as u64 * sv.f_frsize as u64)
     }
@@ -189,9 +191,10 @@ pub(crate) fn system_resources(data_dir: &Path) -> SystemResources {
 mod android {
     /// Total physical RAM via the sysinfo(2) syscall.
     pub(crate) fn total_ram_bytes() -> Option<u64> {
+        // SAFETY (both blocks): `sysinfo` is a plain C struct of integers, so
+        // all-zero is a valid starting value. sysinfo fills the struct we own on
+        // the stack; nothing is allocated across the boundary.
         let mut info: libc::sysinfo = unsafe { std::mem::zeroed() };
-        // SAFETY: sysinfo fills the struct we own on the stack; nothing is
-        // allocated across the boundary, so there is nothing to free.
         let rc = unsafe { libc::sysinfo(&mut info) };
         (rc == 0).then(|| (info.totalram as u64) * (info.mem_unit as u64))
     }
@@ -206,9 +209,11 @@ mod android {
     /// Free space on the volume holding `path`, via statvfs (same call as iOS).
     pub(crate) fn free_disk_bytes(path: &std::path::Path) -> Option<u64> {
         let c = std::ffi::CString::new(path.to_str()?).ok()?;
+        // SAFETY (both blocks): `statvfs` is a plain C struct of integers, so
+        // all-zero is a valid value to start from. statvfs then fills the struct
+        // we own on the stack; `c` outlives the call; nothing is allocated across
+        // the boundary.
         let mut sv: libc::statvfs = unsafe { std::mem::zeroed() };
-        // SAFETY: statvfs fills the struct we own on the stack; `c` outlives the
-        // call; nothing is allocated across the boundary.
         let rc = unsafe { libc::statvfs(c.as_ptr(), &mut sv) };
         (rc == 0).then(|| sv.f_bavail as u64 * sv.f_frsize as u64)
     }

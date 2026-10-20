@@ -127,6 +127,8 @@ When a question is resolved:
 
 ## Defer — Month 2 and later
 
+- [ ] **[OQ-89]** **Model downloads aren't integrity-checked, and macOS shows no download progress.** `testing.md` calls download integrity (SHA256, resume) a critical path, but `model.rs` only checks the file is at least 70% of the expected size; a corrupt or tampered file reaches llama.cpp, where a bad GGUF can `abort()` the app (`[OQ-58]`). Hugging Face publishes each file's SHA256 as its LFS oid (the tree API), so `ModelInfo` can carry it and `ensure` can verify after download. Separately, the macOS path (`curl`) ignores the progress callback, so the published platform shows no progress bar during a 1.3 GB download; the `ureq` path the mobile builds use already reports it. Neither download implementation has a test; extract the resume/truncate decision as a pure function first. (From `/inspect` 2026-10-20.)
+
 - [ ] **[OQ-78]** The update check reveals an IP address (`23`). Verdure's update check is opt-in and carries no personal data, but any request to our endpoint exposes the caller's IP and, per-launch, a rough usage rhythm. At a handful of testers this does not matter; at scale it is a log we promised not to keep. **Honest options when it does matter:** (a) check on a long random interval rather than every launch, so the ping is not a usage signal; (b) serve `latest.json` from a CDN that does not retain request logs, and say which; (c) accept it and document it plainly on the download page. **Not solved, and the product should not imply it is** — `23` states the exposure rather than glossing it. (From `23-updates-and-consent.md`.)
 
 - [ ] **[OQ-16]** `burn` current state and applicability to LLM inference. (From `08-rust-ecosystem.md`.)

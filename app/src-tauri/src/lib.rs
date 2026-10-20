@@ -362,6 +362,10 @@ pub extern "system" fn Java_ai_verdure_porter_MainActivity_initAudioContext(
         // every mic open. Leaked deliberately — the Application context lives for
         // the whole process anyway, so there's nothing to release.
         let Ok(ctx) = env.new_global_ref(&context) else { return };
+        // SAFETY: both pointers come from live JNI handles: the JavaVM of this
+        // process and a GLOBAL ref (valid on any thread until deleted, and we
+        // never delete it: see `forget` below). `Once` guarantees the
+        // process-global ndk_context is initialised exactly once.
         unsafe {
             ndk_context::initialize_android_context(
                 vm.get_java_vm_pointer() as *mut _,
@@ -384,11 +388,14 @@ fn android_free_up_space(data_dir: &std::path::Path, bytes: u64) -> Result<(), S
     let friendly = "Android couldn't clear enough space automatically. \
                     Freeing space in Settings → Storage will do it.";
     let ctx = ndk_context::android_context();
+    // SAFETY: `ctx.vm()` is the process's JavaVM pointer, stored by
+    // initAudioContext at launch and valid for the life of the process.
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
         .map_err(|_| friendly.to_string())?;
     let mut env = vm.attach_current_thread().map_err(|_| friendly.to_string())?;
-    // The Application context stored by initAudioContext — alive for the whole
-    // process, so borrowing it as a local JObject here is sound.
+    // SAFETY: the Application context stored by initAudioContext is a global
+    // ref, alive for the whole process, so borrowing it as a JObject is sound.
+    // We never delete it through this handle.
     let context = unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
 
     match try_allocate(&mut env, &context, data_dir, bytes) {

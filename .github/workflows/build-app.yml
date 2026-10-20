@@ -125,9 +125,13 @@ jobs:
         # `createUpdaterArtifacts` is config; the signing key is a secret. Config
         # without key = a release that silently cannot be updated, discoverable
         # only much later on a user's machine. Fail loudly here instead.
+        # Only WHETHER a key exists reaches the script (a boolean), never the key
+        # itself: a secret pasted into a script lands in the runner's script file.
+        env:
+          HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         run: |
           B=app/src-tauri/target/universal-apple-darwin/release/bundle/macos
-          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+          if [ "$HAS_UPDATER_KEY" = "true" ]; then
             test -f "$B"/*.app.tar.gz || { echo "::error::no .app.tar.gz — updates would be impossible for this release"; exit 1; }
             test -f "$B"/*.app.tar.gz.sig || { echo "::error::updater artifact is unsigned; the app will reject it"; exit 1; }
             echo "updater artifacts present and signed ✓"
