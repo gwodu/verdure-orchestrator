@@ -36,17 +36,17 @@ import {
   openThirdPartyNotices,
 } from "./bridge";
 
+import {
+  escapeHtml,
+  fmtBytes,
+  fmtSize,
+  friendlyError,
+  looksInterrupted,
+  parseProgress,
+  renderMarkdown,
+} from "./format";
+
 const WHISPER_MODEL_ID = "whisper-base-en";
-const fmtMb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1_048_576))} MB`;
-// Backend errors arrive as human-written sentences (llm.rs/model.rs phrase them
-// for the user: "couldn't load the chat model: …"). Anything else — a thrown
-// object, an empty string — would surface as "[object Object]" or a blank; show
-// a calm fallback instead of leaking it (the truck-driver test).
-const friendlyError = (err: unknown): string => {
-  const msg =
-    typeof err === "string" ? err : err instanceof Error ? err.message : "";
-  return msg.trim() ? msg : "Something went wrong. Please try again.";
-};
 import {
   checkForUpdate,
   checkOnLaunch,
@@ -224,7 +224,6 @@ function renderStorage(): void {
   panel.appendChild(sysBox);
   const fillSys = async () => {
     const r = await systemResources();
-    const gb = (mb: number) => `${(mb / 1024).toFixed(1)} GB`;
     sysBox.innerHTML = "";
     sysBox.appendChild(el("span", "sysbox-title", "Your computer"));
     const grid = el("div", "sysbox-grid");
@@ -234,8 +233,8 @@ function renderStorage(): void {
       r.appendChild(el("span", "sysbox-value", value));
       grid.appendChild(r);
     };
-    row("Memory free now", `${gb(r.availableRamMb)} of ${gb(r.totalRamMb)}`);
-    row("Disk free", gb(r.freeDiskMb));
+    row("Memory free now", `${fmtSize(r.availableRamMb)} of ${fmtSize(r.totalRamMb)}`);
+    row("Disk free", fmtSize(r.freeDiskMb));
     // arch is "apple-silicon" | "intel" | "arm" (Android) — name it honestly.
     const archName =
       r.arch === "apple-silicon" ? "Apple Silicon" : r.arch === "intel" ? "Intel" : "ARM";
@@ -298,15 +297,15 @@ function renderStorage(): void {
     };
 
     for (const m of downloaded)
-      listEl.appendChild(modelRow(m, `${m.modality} · ${fmtMb(m.sizeBytes)}`));
+      listEl.appendChild(modelRow(m, `${m.modality} · ${fmtBytes(m.sizeBytes)}`));
     // A paused download resumes where it left off if kept — say so, so removing
     // it is an informed choice, not a surprise restart later.
     for (const m of partials)
       listEl.appendChild(
-        modelRow(m, `Unfinished download · ${fmtMb(m.partialBytes)} so far — resumes if kept`),
+        modelRow(m, `Unfinished download · ${fmtBytes(m.partialBytes)} so far — resumes if kept`),
       );
 
-    const totalEl = el("p", "model-total", `Total on this computer: ${fmtMb(total)}`);
+    const totalEl = el("p", "model-total", `Total on this computer: ${fmtBytes(total)}`);
     panel.appendChild(totalEl);
   };
 
@@ -411,7 +410,6 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
   // be drawn as nothing at all. Fall back to its first offer.
   if (options.length > 0 && !options.some((o) => o.id === selected)) selected = options[0].id;
 
-  const gb = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);
   // Which OS this is decides the honest way to help when a model doesn't fit the
   // disk ([OQ-67]): Android can clear cached junk on request, the Mac has its own
   // storage screen, the iPhone only has instructions. Learned async; re-render
@@ -423,7 +421,7 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
     try {
       const r = await systemResources();
       os = r.os;
-      freeEl.textContent = `${gb(r.freeDiskMb)} free space · ${gb(r.availableRamMb)} memory free`;
+      freeEl.textContent = `${fmtSize(r.freeDiskMb)} free space · ${fmtSize(r.availableRamMb)} memory free`;
     } catch {
       freeEl.textContent = "";
     }
@@ -445,7 +443,7 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
       main.type = "button";
       const fitsMem = !opt || opt.fitsMemory; // unknown (preview) → assume fine
       const fitsDisk = !opt || opt.fitsDisk;
-      const sizeText = opt ? (opt.installed ? "Downloaded" : `${gb(opt.downloadMb)} download`) : "";
+      const sizeText = opt ? (opt.installed ? "Downloaded" : `${fmtSize(opt.downloadMb)} download`) : "";
       let warn = "";
       // Memory is a LIVE condition, not a blocker: downloading depends on disk,
       // running depends on how much memory is free at that moment. Selecting is
@@ -455,9 +453,9 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
       // line saying "7.0 GB free space", which looked like a contradiction
       // unless you already knew "memory" meant RAM.
       if (!fitsMem)
-        warn = `You'll need to close some apps to use this one — it wants about ${gb(opt!.runtimeMb)} of free memory.`;
+        warn = `You'll need to close some apps to use this one — it wants about ${fmtSize(opt!.runtimeMb)} of free memory.`;
       else if (!fitsDisk) {
-        warn = `Not enough free space to download (needs ${gb(opt!.downloadMb)}). Remove a model to make room.`;
+        warn = `Not enough free space to download (needs ${fmtSize(opt!.downloadMb)}). Remove a model to make room.`;
         // iPhone/iPad: no API and no deep link — honest instructions are the help.
         if (os === "ios")
           warn +=
@@ -574,20 +572,19 @@ function renderFreeOldModel(old: ChatModelOption): void {
   root.innerHTML = "";
   root.appendChild(brandBar());
 
-  const gb = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);
   const panel = el("section", "panel");
   panel.appendChild(el("h1", "title", "Free up space?"));
   panel.appendChild(
     el(
       "p",
       "subtitle",
-      `The ${tierName(old.id)} model you were using is still on your device, taking ${gb(old.downloadMb)}. ` +
+      `The ${tierName(old.id)} model you were using is still on your device, taking ${fmtSize(old.downloadMb)}. ` +
         "Remove it? If you ever switch back, it simply downloads again.",
     ),
   );
 
   const status = el("p", "status");
-  const removeLabel = `Remove it — free ${gb(old.downloadMb)}`;
+  const removeLabel = `Remove it — free ${fmtSize(old.downloadMb)}`;
   const remove = document.createElement("button");
   remove.className = "primary";
   remove.type = "button";
@@ -898,13 +895,11 @@ function renderChat(): void {
     const downloading = !!(chosen && !chosen.installed);
     let card: ReturnType<typeof makeInstallCard> | null = null;
     if (downloading) {
-      const mb = chosen!.downloadMb;
-      const size = mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
-      card = makeInstallCard(`Setting up your ${tierName(chosen!.id)} model — one-time ${size} download.`);
+      card = makeInstallCard(`Setting up your ${tierName(chosen!.id)} model — one-time ${fmtSize(chosen!.downloadMb)} download.`);
     }
     const onProgress = (msg: string) => {
-      const m = /^PROGRESS (\d+) (\d+)$/.exec(msg);
-      if (m && card) card.update(+m[1], +m[2]);
+      const p = parseProgress(msg);
+      if (p && card) card.update(p.done, p.total);
       else status.textContent = msg;
     };
     status.textContent = "Thinking…";
@@ -927,7 +922,7 @@ function renderChat(): void {
       // A download that was interrupted (screen off / app left) keeps its progress
       // on disk — offer a friendly one-tap resume instead of a raw OS error.
       const msg = friendlyError(err);
-      if (downloading && /interrupt|abort|connection|os error|timed? ?out|network/i.test(msg)) {
+      if (downloading && looksInterrupted(msg)) {
         addActionMsg(
           "Download paused — your progress is saved. Tap to pick up where it left off. (If it keeps pausing, check your connection or allow background data for Verdure in Settings.)",
           "Resume download →",
@@ -1125,72 +1120,6 @@ function el(tag: string, className: string, text?: string): HTMLElement {
   return node;
 }
 
-/**
- * Render the small slice of Markdown local models actually emit.
- *
- * Chat models are trained on Markdown and produce it unprompted — asking them
- * not to costs quality. So we render it instead. Before this, a list came out as
- * literal `**1 item **` on screen (reported from the iPad, 2026-08-16).
- *
- * SAFETY: the model's text is HTML-escaped FIRST, then only the tags we choose
- * are reintroduced. Nothing the model emits can inject markup — which matters
- * because a local model's output is still untrusted input.
- *
- * Deliberately not a Markdown library: this is ~40 lines against a dependency
- * the floor user would pay for in download size, for syntax we don't need
- * (tables, footnotes, HTML passthrough).
- */
-function renderMarkdown(src: string): string {
-  const inline = (s: string): string =>
-    escapeHtml(s)
-      // Code first, so ** inside a code span isn't treated as bold.
-      .replace(/`([^`]+)`/g, "<code>$1</code>")
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/(^|[\s(])[*_]([^*_\s][^*_]*)[*_](?=[\s.,!?)]|$)/g, "$1<em>$2</em>");
-
-  const out: string[] = [];
-  let list: "ul" | "ol" | null = null;
-  const closeList = () => {
-    if (list) {
-      out.push(`</${list}>`);
-      list = null;
-    }
-  };
-
-  for (const raw of src.split("\n")) {
-    const line = raw.trimEnd();
-    const bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
-    const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
-    if (bullet || numbered) {
-      const want = bullet ? "ul" : "ol";
-      if (list !== want) {
-        closeList();
-        out.push(`<${want}>`);
-        list = want;
-      }
-      out.push(`<li>${inline((bullet ?? numbered)![1])}</li>`);
-      continue;
-    }
-    closeList();
-    if (!line.trim()) continue; // blank line — the gap comes from CSS spacing
-    const heading = /^\s*#{1,6}\s+(.*)$/.exec(line);
-    out.push(heading ? `<strong>${inline(heading[1])}</strong>` : `<p>${inline(line)}</p>`);
-  }
-  closeList();
-  return out.join("");
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (ch) => {
-    switch (ch) {
-      case "&": return "&amp;";
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case '"': return "&quot;";
-      default: return "&#39;";
-    }
-  });
-}
 
 // Which build is this? Stamped into the corner so the answer is never a guess —
 // on 2026-08-22 a stale copy of the app was tested for several minutes because

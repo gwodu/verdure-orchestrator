@@ -71,9 +71,9 @@ export async function chatModelOptions(): Promise<ChatModelOption[]> {
   if (!inTauri) {
     // Browser preview: plausible options so the picker is reviewable.
     return [
-      { id: "qwen2.5-0.5b-instruct", name: "Chat model (Qwen2.5 0.5B)", downloadMb: 400, runtimeMb: 1100, installed: false, fitsMemory: true, fitsDisk: true },
-      { id: "qwen2.5-1.5b-instruct", name: "Chat model (Qwen2.5 1.5B)", downloadMb: 1100, runtimeMb: 2400, installed: false, fitsMemory: true, fitsDisk: true },
-      { id: "qwen3-4b-instruct-2507-byteshape", name: "Chat model (Qwen3 4B)", downloadMb: 1400, runtimeMb: 2300, installed: false, fitsMemory: true, fitsDisk: true },
+      { id: "qwen2.5-0.5b-instruct", name: "Chat model (Qwen2.5 0.5B)", downloadMb: 469, runtimeMb: 1100, installed: false, fitsMemory: true, fitsDisk: true },
+      { id: "qwen3.5-2b-instruct", name: "Chat model (Qwen3.5 2B)", downloadMb: 1221, runtimeMb: 2500, installed: false, fitsMemory: true, fitsDisk: true },
+      { id: "qwen3-4b-instruct-2507-byteshape", name: "Chat model (Qwen3 4B)", downloadMb: 1336, runtimeMb: 2300, installed: false, fitsMemory: true, fitsDisk: true },
     ];
   }
   const { invoke } = await import("@tauri-apps/api/core");
