@@ -4,6 +4,12 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-20 — Install paths can run the model they're offered for
+
+- New invariant `never offers Fooocus for a model it cannot run`: every tier × image task. Wherever Fooocus is offered, the model must be Stable Diffusion. **Positive control:** run against the old code it fails with "L3+ image generate: expected 'FLUX.1 schnell' to match /Stable Diffusion/"; it passes on the fix.
+- Matrix fixture updated deliberately with the knowledge change: L3+ image generate is SDXL.
+- decider 83, website 9.
+
 ### 2026-10-20 — The intent classifier matches whole words
 
 - **Negative fixtures (7), from the inspection's probe:** "immune system", "ecosystems", "go to the store", "fix my resume", "photosynthesis", "function of the liver", "a TV program". Each used to land on a wrong specialist (stem separation, code, image generation) and now falls through to general text.

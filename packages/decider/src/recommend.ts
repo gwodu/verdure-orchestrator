@@ -384,7 +384,8 @@ function recommendImage(dc: DeviceClass, task: string, label: string, decision: 
         infoUrl: 'https://huggingface.co/Qwen',
         note: 'Free, including for commercial use.',
       },
-      installOptions: onMac ? [drawThings()] : [fooocus(), COMFYUI],
+      // Not Fooocus: it runs SDXL only and can't do instruction editing.
+      installOptions: onMac ? [drawThings()] : [COMFYUI],
       alternatives: [],
     };
   }
@@ -399,11 +400,11 @@ function recommendImage(dc: DeviceClass, task: string, label: string, decision: 
       : 'Type what you want to see and get a picture back in seconds.',
     model: onMac
       ? { name: model!, infoUrl: 'https://drawthings.ai/', note: 'Free. Built into the Draw Things app.' }
-      : { name: model!, infoUrl: 'https://huggingface.co/black-forest-labs/FLUX.1-schnell', note: 'Free, including for commercial use.' },
+      : { name: model!, infoUrl: 'https://github.com/lllyasviel/Fooocus', note: 'Free. Built into the Fooocus app.' },
     installOptions: onMac ? [drawThings()] : [fooocus(), COMFYUI],
     alternatives: onMac
       ? []
-      : [{ name: 'Stable Diffusion XL', reason: 'A well-established option with the easiest app (Fooocus).' }],
+      : [{ name: 'FLUX.1 schnell', reason: 'Higher-quality pictures, free for commercial use. Needs ComfyUI, the more technical app.' }],
   };
 }
 

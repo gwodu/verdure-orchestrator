@@ -37,7 +37,7 @@ Every non-text recommendation resolves to one of three feasibility verdicts. The
 | **Audio — stem separation** | ⚠️ | ✅ | ✅ | Demucs | Ultimate Vocal Remover (GUI) |
 | **Audio — music generation** | ❌ | ⚠️ | ✅ | Stable Audio Open | ComfyUI (technical) |
 | **Image — upscaling** | ✅ | ✅ | ✅ | Real-ESRGAN | Upscayl (GUI) |
-| **Image — generation** | ❌ | ✅ | ✅ | Draw Things' SD/SDXL (Mac); FLUX.1 schnell (GPU) | Draw Things (Mac), Fooocus (Win/Linux) |
+| **Image — generation** | ❌ | ✅ | ✅ | Draw Things' SD/SDXL (Mac); SDXL (GPU; alt: FLUX.1 schnell) | Draw Things (Mac), Fooocus (Win/Linux, SDXL); FLUX via ComfyUI (technical) |
 | **Image — editing** | ❌ | ✅ | ✅ | Qwen-Image-Edit | Draw Things (Mac), ComfyUI |
 | **Video — generation** | ❌ | ❌ | ⚠️ | LTX-2 (alt: Wan 2.2) | ComfyUI (technical) |
 | **Video — enhancement** | ⚠️ | ✅ | ✅ | Real-ESRGAN + RIFE | REAL Video Enhancer |
@@ -68,6 +68,8 @@ All licenses below are friction-free to *recommend* (Phase 0 only refers users; 
 - **"AI video editing" is not a single local model** — it's frame interpolation (**RIFE**) + upscaling (**Real-ESRGAN**), wrapped in tools like **REAL Video Enhancer** / Flowframes, plus pro software (DaVinci Resolve). Verdure recommends the enhancement tools as the genuinely-local path; actual editing is out of scope as a "model."
 
 ## Relationship to the install-path philosophy
+
+**The model and its install path must match (corrected 2026-10-20).** This table used to pair FLUX.1 schnell (GPU) with Fooocus, but Fooocus runs SDXL only, so a user who followed the friendly path got a different model than the one recommended. Applying the rule below (lead with the friendly GUI), GPU machines are recommended **SDXL through Fooocus**, and FLUX.1 schnell is the higher-quality alternative for those comfortable with ComfyUI. Likewise, image **editing** on Windows/Linux routes to ComfyUI only: Fooocus can't run Qwen-Image-Edit.
 
 Phase 0 refers users to existing tools rather than hosting models (`05-website-spec.md`, `10-distribution.md`). The twist for multimodal: **install paths are modality-specific**. Ollama / LM Studio / Jan run *text* models only. Audio routes to MacWhisper / Buzz / UVR; image to Draw Things / Fooocus / Upscayl; video to REAL Video Enhancer / ComfyUI. Wherever a friendly GUI exists, Verdure leads with it; raw commands appear only where the audience is necessarily technical (ComfyUI for image/video generation).
 

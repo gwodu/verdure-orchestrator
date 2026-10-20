@@ -40,7 +40,7 @@ export const FIXTURES: Fixture[] = [
   { tier: 'L1', c: t('image', 'upscale'), expect: { feasibility: 'recommended', model: 'Upscayl' } },
   { tier: 'L2-high', c: t('image', 'generate'), expect: { feasibility: 'not-local-yet', model: null } },
   { tier: 'L3', c: t('image', 'generate'), expect: { feasibility: 'recommended', model: 'Stable Diffusion' } },
-  { tier: 'L3+', c: t('image', 'generate'), expect: { feasibility: 'recommended', model: 'FLUX.1 schnell' } },
+  { tier: 'L3+', c: t('image', 'generate'), expect: { feasibility: 'recommended', model: 'Stable Diffusion XL' } },
   { tier: 'L2-high', c: t('image', 'edit'), expect: { feasibility: 'not-local-yet', model: null } },
   { tier: 'L3', c: t('image', 'edit'), expect: { feasibility: 'recommended', model: 'Qwen-Image-Edit' } },
 

@@ -86,7 +86,9 @@ function decideImage(dc: DeviceClass, task: ImageTask): Decision {
   if (task === 'upscale') return recommended('Upscayl');
   if (dc === 'cpu-laptop') return notLocal; // generate + edit both need graphics power
   if (task === 'edit') return recommended('Qwen-Image-Edit');
-  return recommended(dc === 'apple-silicon' ? 'Stable Diffusion' : 'FLUX.1 schnell');
+  // GPU: SDXL, because the friendly app (Fooocus) runs SDXL only; FLUX.1
+  // schnell is the ComfyUI alternative (knowledge/12, corrected 2026-10-20).
+  return recommended(dc === 'apple-silicon' ? 'Stable Diffusion' : 'Stable Diffusion XL');
 }
 
 function decideVideo(dc: DeviceClass, task: VideoTask): Decision {

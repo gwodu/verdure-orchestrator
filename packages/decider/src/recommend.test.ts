@@ -144,4 +144,17 @@ describe('recommend — invariants across the whole matrix', () => {
       }
     }
   });
+
+  // knowledge/12 (corrected 2026-10-20): the friendly install path must be able
+  // to run the model it is offered for. Fooocus runs SDXL only.
+  it('never offers Fooocus for a model it cannot run', () => {
+    for (const tier of ['L1', 'L2-low', 'L2-high', 'L3', 'L3+'] as const) {
+      for (const task of ['generate', 'edit', 'upscale'] as const) {
+        const rec = recommend(tier, { modality: 'image', task });
+        if (rec.installOptions?.some((o) => o.name === 'Fooocus')) {
+          expect(rec.model?.name, `${tier} image ${task}`).toMatch(/Stable Diffusion/);
+        }
+      }
+    }
+  });
 });
