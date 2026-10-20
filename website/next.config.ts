@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // @verdure/decider ships TypeScript source (the single source of truth shared
-  // with the desktop porter), so Next must transpile it rather than expect a
-  // pre-built dist. See knowledge/17-build-plan.md.
+  // @verdure/decider ships TypeScript source (the single source of truth for
+  // recommendations), so Next must transpile it rather than expect a pre-built
+  // dist.
   transpilePackages: ["@verdure/decider"],
 
   // The desktop updater's endpoint (knowledge/23).
@@ -19,6 +19,9 @@ const nextConfig: NextConfig = {
   // files whenever we like. A redirect (not a rewrite) so GitHub serves the
   // bytes and we don't pay for the bandwidth; `permanent: false` because the
   // whole point is that the destination is expected to change.
+  //
+  // Verdure v0.1.0 is already published with this endpoint baked in, so this
+  // route must keep working for as long as anyone runs that build.
   async redirects() {
     return [
       {
