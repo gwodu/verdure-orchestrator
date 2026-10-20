@@ -4,6 +4,13 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-20 — The intent classifier matches whole words
+
+- **Negative fixtures (7), from the inspection's probe:** "immune system", "ecosystems", "go to the store", "fix my resume", "photosynthesis", "function of the liver", "a TV program". Each used to land on a wrong specialist (stem separation, code, image generation) and now falls through to general text.
+- **Positive guards (5):** plurals ("images", "recordings"), symbols ("c++"), phrases ("speech to text"), and a real code request without the dropped words ("fix this python bug").
+- **Caught by an existing test:** the card lock `classifyIntent(card.example) === card.classification` failed on "create images…", because whole-word matching lost plurals. Fixed with an optional trailing "s" on every keyword, not a per-word patch.
+- decider 74 → 82; website 9; decider typecheck clean.
+
 ### 2026-10-20 — Characters split across tokens no longer vanish
 
 - `one_decoder_per_reply_keeps_characters_split_across_tokens`: "é" fed as two one-byte halves through one persistent decoder gives "é"; through fresh decoders per half (the deprecated `token_to_str`'s behaviour) it doesn't. It exercises the same `decode_to_string` call `token_to_piece` uses.

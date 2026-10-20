@@ -42,7 +42,7 @@ const RULES: readonly Rule[] = [
   },
   {
     when: [
-      'stem', 'stems', 'isolate vocals', 'separate vocals', 'remove vocals',
+      'stems', 'isolate vocals', 'separate vocals', 'remove vocals',
       'karaoke', 'acapella', 'a cappella', 'instrumental track', 'split the song',
     ],
     then: { modality: 'audio', task: 'separation' },
@@ -104,7 +104,7 @@ const RULES: readonly Rule[] = [
   //     always "I want the words out of this" — transcription is the most
   //     useful and most device-feasible default. ---
   {
-    when: ['audio', 'recording', 'record ', 'podcast', 'interview', 'lecture'],
+    when: ['audio', 'recording', 'record', 'podcast', 'interview', 'lecture'],
     then: { modality: 'audio', task: 'transcription' },
   },
 
@@ -112,10 +112,14 @@ const RULES: readonly Rule[] = [
   {
     when: [
       'code', 'coding', 'coder', 'codebase',
-      'debug', 'debugging', 'bug', 'bugs', 'fix',
-      'programming', 'program', 'script', 'developer', 'engineer',
-      'rust', 'python', 'javascript', 'typescript', 'java', 'c++', 'go ',
-      'sql', 'html', 'css', 'react', 'function',
+      // Not here, deliberately: 'go', 'fix', 'program', 'function'. Each is an
+      // everyday English word ("what should I go buy", "fix my resume", "a TV
+      // program", "the function of the liver"), and matched whole they still
+      // misfire. A real code request almost always says code/debug/a language.
+      'debug', 'debugging', 'bug', 'bugs',
+      'programming', 'script', 'developer', 'engineer',
+      'rust', 'python', 'javascript', 'typescript', 'java', 'c++', 'golang',
+      'sql', 'html', 'css', 'react',
     ],
     then: { modality: 'text', task: 'code' },
   },
@@ -141,10 +145,26 @@ const RULES: readonly Rule[] = [
 
 const DEFAULT: Classification = { modality: 'text', task: 'general' };
 
+// Keywords match WHOLE words (or whole phrases), never inside another word.
+// Substring matching read "eco-system" as stem separation and "photo-synthesis"
+// as image generation. A keyword may contain spaces or symbols ("c++", "speech
+// to text"), so the boundary is "not a letter or digit" on each side, not \b.
+const matchers = new Map<string, RegExp>();
+function matchesWhole(text: string, keyword: string): boolean {
+  let re = matchers.get(keyword);
+  if (!re) {
+    const escaped = keyword.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // An optional trailing "s" keeps simple plurals ("images", "recordings").
+    re = new RegExp(`(?<![a-z0-9])${escaped}s?(?![a-z0-9])`);
+    matchers.set(keyword, re);
+  }
+  return re.test(text);
+}
+
 export function classifyIntent(text: string): Classification {
   const lower = text.toLowerCase();
   for (const rule of RULES) {
-    if (rule.when.some((kw) => lower.includes(kw))) {
+    if (rule.when.some((kw) => matchesWhole(lower, kw))) {
       return rule.then;
     }
   }

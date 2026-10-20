@@ -79,4 +79,26 @@ describe('classifyIntent — video', () => {
   it('detects enhancement', () => {
     expect(classifyIntent('make my video smoother with slow motion')).toEqual({ modality: 'video', task: 'enhance' });
   });
+
+  // Substring matching misread these (2026-10-20 inspection probe). Each now
+  // falls through to the general text default instead of a wrong specialist.
+  it.each([
+    ['explain how the immune system works'],
+    ['learn about ecosystems'],
+    ['what should I go to the store for'],
+    ['fix my resume'],
+    ['photosynthesis homework'],
+    ['what is the function of the liver'],
+    ['a good TV program to watch'],
+  ])('does not misread %j', (text) => {
+    expect(classifyIntent(text)).toEqual({ modality: 'text', task: 'general' });
+  });
+
+  it('still matches whole words, phrases, plurals and symbols', () => {
+    expect(classifyIntent('create images from a description')).toEqual({ modality: 'image', task: 'generate' });
+    expect(classifyIntent('turn my recordings into text')).toEqual({ modality: 'audio', task: 'transcription' });
+    expect(classifyIntent('help me with c++ templates')).toEqual({ modality: 'text', task: 'code' });
+    expect(classifyIntent('fix this python bug')).toEqual({ modality: 'text', task: 'code' });
+    expect(classifyIntent('speech to text for lectures')).toEqual({ modality: 'audio', task: 'transcription' });
+  });
 });
