@@ -37,6 +37,9 @@
       "minimumSystemVersion": "10.15",
       "entitlements": "Entitlements.plist"
     },
+    "iOS": {
+      "frameworks": ["SystemConfiguration"]
+    },
     "createUpdaterArtifacts": true,
     "resources": [
       "THIRD-PARTY-NOTICES.md"

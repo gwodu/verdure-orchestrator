@@ -14,6 +14,7 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 - **Route, exercised on `next dev`:** GET → 405; POST without a key → 503 "Web search isn't set up on the server yet." (checked before the body, so a bad body also gets 503 until the key exists). **Not exercised:** a live Brave call — the key isn't on this machine; `[OQ-90]`.
 - **Visual review (Playwright, 390×844):** offer card (first time, disclosure open), answer with `[1]`/`[2]` markers and the sources footer, second offer with the collapsed toggle, Storage's Web search section. First attempt's `text=Check the web` selector hit the paragraph, not the button — script bug, scoped to `button:has-text`.
 - Rust 67 passed + 1 ignored, zero warnings; app vitest 50; website 25; tsc clean on both.
+- **`testflight-13` failed at Xcode's link step** (~3.5 min wall, ≈35 billable): `_SCNetworkReachabilityCreateWithName` / `_SCNetworkReachabilityGetFlags` undefined for arm64. The crate's build script emits `cargo:rustc-link-lib=framework=SystemConfiguration`, which only reaches cargo's own link line; on iOS Tauri hands Xcode a static library, so the framework must be declared in `tauri.conf.json` (`bundle.iOS.frameworks`) to land in the generated project.yml. Neither `cargo test` here nor `ci.yml`'s iOS `cargo check` links an iOS binary, so nothing local or in CI could have caught it. Fixed; the real-context integration test still builds with the new key (Rust 67).
 
 ### 2026-10-20 — Install paths can run the model they're offered for
 
