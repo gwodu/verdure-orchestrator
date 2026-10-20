@@ -10,7 +10,7 @@
 
 1. **Ship the 27B scope fix to TestFlight (`[OQ-84]`).** Fixed in code 2026-10-20 (the 4B is back everywhere; the 27B is an extra "Experimental" choice on 16 GB iOS devices only), but TestFlight testers still have `testflight-12`'s iOS-wide swap until the next `testflight-N` (~55 billable).
 2. **Run the 27B on the founder's iPad (`[OQ-84]`).** `testflight-12` delivered it. Record whether it loads, its real footprint (`runtime_mb = 10000` is an estimate), and the time to the first reply.
-3. **Work the cleanup queue below** (`/cleanup` takes the top item). The top three items correct things that mislead the next session.
+3. ~~**Work the cleanup queue below**~~ — **done 2026-10-20** (all 13 items; what was deliberately left is listed per item). Next inspection: before the next large feature.
 4. **Website: make the monorepo build on Vercel (`[OQ-81]`).** Until it's fixed, verdureai.com runs a *copied* decider from `main`, so a decider change on this branch can't reach the site. `main` has also gained `app/privacy/page.tsx` since `[OQ-81]` was written, so merge `main` into the branch before deploying. `[OQ-87]` (what the site is for after the pivot) is the next website item; `[OQ-86]`'s fix is committed and waiting on this deploy.
 5. **Play: the manual first upload, then `[OQ-83]`'s confirming test.** The Android rename is done (`ai.verdure.app`) and the upload is automated. Play's rule for an unpublished app is draft-only releases, and the 12-testers / 14-days requirement counts **closed** testing.
 6. **`[OQ-58]` process isolation**, the P0 before a *public* link. It matters more now: the 27B experiment is the most likely thing yet to trigger a ggml `abort()`.
@@ -50,7 +50,7 @@ Verified on-device (founder's 2019 Intel Mac 8 GB, iPad via TestFlight, Pixel 8a
 - **macOS signing + notarization** ✅ (2026-08-17) — `build-app.yml` signs with the founder's Developer ID cert, notarizes via Apple, and staples; verified in CI by `codesign` + `spctl` (`accepted / source=Notarized Developer ID`) + `stapler validate`. **No more `xattr -cr`** — the .dmg opens with a double-click. Notarization reuses the existing App Store Connect key; only the signing certificate was new. `Entitlements.plist` grants microphone + outgoing network (the hardened runtime would otherwise break dictation).
 - **Distribution** — macOS Intel .dmg via `app-build-N` tags; **iOS via TestFlight** (signed, no expiry, `testflight-N` tags); **Android test APK** via `android-build-N` tags; **Play open-testing workflow ready** (`build-android-play.yml`, signed .aab) but ungated founder-side steps remain — see Next steps.
 
-Green locally (2026-10-20): Rust 62 passed + 1 ignored, decider 74, ios-signing 10. **CI runs only on a pull request or a manual dispatch — never on push** (`ci.yml`); nothing verifies a commit except running the suites locally before pushing. Triggers, tags and costs are owned by `11` (pipeline map).
+Green locally (2026-10-20, after `/cleanup`): Rust 53 passed + 1 ignored with **zero warnings**, app vitest 36, decider 83, website 9, script tests 16, actionlint clean. **CI runs only on a pull request or a manual dispatch — never on push** (`ci.yml`); nothing verifies a commit except running the suites locally before pushing. Triggers, tags and costs are owned by `11` (pipeline map).
 
 ## Doctrine (current — supersedes the pre-pivot files)
 
