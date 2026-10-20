@@ -107,3 +107,17 @@ export function renderMarkdown(src: string): string {
   closeList();
   return out.join("");
 }
+
+/** Where to grant microphone access, in the words of THIS device's settings app.
+ *  One Android-only path used to be shown on every OS. */
+export function micPermissionHelp(os: string): string {
+  const where =
+    os === "macos"
+      ? "System Settings › Privacy & Security › Microphone, and turn on Verdure"
+      : os === "ios"
+        ? "Settings › Verdure, and turn on Microphone"
+        : os === "android"
+          ? "Settings › Apps › Verdure › Permissions › Microphone"
+          : "your device's settings";
+  return `Couldn't reach the microphone. Please allow microphone access in ${where} — then tap the mic again.`;
+}

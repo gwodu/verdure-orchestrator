@@ -42,9 +42,11 @@ import {
   fmtSize,
   friendlyError,
   looksInterrupted,
+  micPermissionHelp,
   parseProgress,
   renderMarkdown,
 } from "./format";
+import { recommendedChoice } from "./picker";
 
 const WHISPER_MODEL_ID = "whisper-base-en";
 import {
@@ -275,7 +277,9 @@ function renderStorage(): void {
     const modelRow = (m: { id: string; name: string }, meta: string) => {
       const row = el("div", "model-row");
       const info = el("div", "model-info");
-      info.appendChild(el("span", "model-name", m.name));
+      // Chat models by the picker's tier name, not the internal one (jargon).
+      const tier = MODEL_TIERS.find((t) => t.id === m.id)?.tier;
+      info.appendChild(el("span", "model-name", tier ? `${tier} chat model` : m.name));
       info.appendChild(el("span", "model-meta", meta));
       row.appendChild(info);
 
@@ -409,6 +413,11 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
   // The backend's menu differs per device, so a selection it doesn't offer would
   // be drawn as nothing at all. Fall back to its first offer.
   if (options.length > 0 && !options.some((o) => o.id === selected)) selected = options[0].id;
+  // First run: pre-select the most capable standard model that fits, and say
+  // so, so the first screen is one obvious tap (design.md: zero configuration).
+  const STANDARD_IDS = MODEL_TIERS.filter((t) => t.tier !== "Experimental").map((t) => t.id);
+  const recommended = recommendedChoice(options, STANDARD_IDS);
+  if (!stored && recommended) selected = recommended;
 
   // Which OS this is decides the honest way to help when a model doesn't fit the
   // disk ([OQ-67]): Android can clear cached junk on request, the Mac has its own
@@ -468,6 +477,7 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
             <span class="pick-tier">${t.tier}</span>
             <span class="pick-size">${escapeHtml(sizeText)}</span>
           </span>
+          ${t.id === recommended ? `<span class="pick-rec">Recommended for this device</span>` : ""}
           <span class="pick-blurb">${escapeHtml(t.blurb)}</span>
           ${warn ? `<span class="pick-warn">${escapeHtml(warn)}</span>` : ""}
         </span>`;
@@ -637,7 +647,7 @@ function renderChat(): void {
     el(
       "p",
       "subtitle",
-      "Type to chat, or tap the microphone to turn speech into text. Everything runs on your device — private, no account. The first message downloads a chat model (about 0.4–1.4 GB).",
+      "Type to chat, or tap the microphone to turn speech into text. Everything runs on your device — private, no account. The first message downloads the chat model you picked.",
     ),
   );
 
@@ -722,8 +732,11 @@ function renderChat(): void {
       void stopLiveTranscription();
       releaseListeners();
       setRecording(false);
-      status.textContent =
-        "Couldn't reach the microphone. Please allow microphone access — Settings › Apps › Verdure › Permissions › Microphone — then tap the mic again.";
+      status.textContent = micPermissionHelp("");
+      // Name THIS device's settings path once we know which OS this is.
+      void systemResources()
+        .then((r) => (status.textContent = micPermissionHelp(r.os)))
+        .catch(() => {});
     }, 30000);
     try {
       liveCleanup = await withScreenAwake(() =>
@@ -1191,7 +1204,8 @@ function updateAvailableBar(version: string): HTMLElement {
       msg.textContent =
         f < 0 ? "Downloading…" : f >= 1 ? "Installing…" : `Downloading… ${Math.round(f * 100)}%`;
     }).catch((e) => {
-      msg.textContent = `That update couldn't be installed: ${String(e)}`;
+      console.error("update install failed", e);
+      msg.textContent = "That update couldn't be installed. The version you have keeps working — please try again later.";
       btn.disabled = false;
     });
   });

@@ -4,6 +4,14 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-20 — Copy fixes, with their logic made testable
+
+- `picker.test.ts` (4): recommends the most capable standard model that fits; never the experiment; falls back to the smallest when nothing fits; null with no options.
+- `micPermissionHelp` (2): each OS gets its own path, and never another platform's.
+- **Cross-language contract:** the download-failure sentence must contain "connection" (Rust `download_failure_reads_plainly_and_keeps_the_resume_hook`), and the UI's `looksInterrupted` must recognise that exact sentence (vitest). Rewording it can no longer silently remove the Resume button.
+- **Visual check:** screenshotted the first-run picker in `vite preview` with Playwright. **Found while doing it:** `app/scripts/shots.mjs` still drives the pre-pivot intent grid and would fail on today's app, so the screenshot loop is broken. It's queued in `21`.
+- vitest 30 → 36, Rust 66.
+
 ### 2026-10-20 — The UI's formatting gets its first tests
 
 - `app/src/format.test.ts` (24): `renderMarkdown` against seven injection payloads, plus "only its own fixed tag set ever appears"; formatting (bold, emphasis, code, lists, headings, a lone `*` left alone); `escapeHtml` for all five characters; `fmtSize`/`fmtBytes` boundaries (1023 MB vs 1.0 GB, negative, fractional, never "0 MB" for a real file); `friendlyError` never blank or `[object Object]`; `parseProgress` rejects near-misses; `looksInterrupted` vs an unrelated error.

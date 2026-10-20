@@ -612,6 +612,7 @@ body::after {
 .pick-tier { font-family: var(--font-display); font-size: 19px; font-weight: 600; }
 .pick-size { font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
 .pick-blurb { font-size: 14px; color: var(--ink-soft); line-height: 1.45; }
+.pick-rec { font-size: 12px; font-weight: 600; letter-spacing: 0.02em; color: var(--mint-bright); }
 .pick-warn { font-size: 13px; color: var(--coral); margin-top: 3px; }
 .model-picker .primary { margin-top: 8px; }
 

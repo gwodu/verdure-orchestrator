@@ -5,6 +5,7 @@ import {
   fmtSize,
   friendlyError,
   looksInterrupted,
+  micPermissionHelp,
   parseProgress,
   renderMarkdown,
 } from "./format";
@@ -131,5 +132,19 @@ describe("looksInterrupted", () => {
 
   it("does not offer a resume for unrelated failures", () => {
     expect(looksInterrupted("not enough free space")).toBe(false);
+  });
+});
+
+describe("micPermissionHelp", () => {
+  it("names each OS's own settings path", () => {
+    expect(micPermissionHelp("macos")).toContain("System Settings › Privacy & Security › Microphone");
+    expect(micPermissionHelp("ios")).toContain("Settings › Verdure");
+    expect(micPermissionHelp("android")).toContain("Settings › Apps › Verdure");
+  });
+
+  it("never shows another platform's path", () => {
+    expect(micPermissionHelp("macos")).not.toContain("Apps › Verdure");
+    expect(micPermissionHelp("ios")).not.toContain("Privacy & Security");
+    expect(micPermissionHelp("")).toContain("your device's settings");
   });
 });

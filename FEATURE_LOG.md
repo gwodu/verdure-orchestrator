@@ -6,6 +6,22 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-10-20 — Plain errors, the right settings path, and a recommended first choice
+
+**What:**
+- **First-run picker:** pre-selects and labels the most capable standard model that fits this device ("Recommended for this device"), so the first screen is one tap. The experiment is never recommended.
+- **Error messages:** errors from the engine, the microphone and downloads now show a plain sentence ("Verdure couldn't finish that reply. Please try again.") and log the technical detail. The memory message no longer names the internal model or points at a "Settings" screen that doesn't exist; it says to tap the model name at the top.
+- **Microphone help:** names *this* device's settings path (macOS, iOS, Android) instead of Android's everywhere.
+- **Storage:** lists chat models by tier ("Powerful chat model").
+- **Chat screen:** stops quoting a hard-coded "0.4–1.4 GB".
+- **Updates:** a failed update install no longer shows a raw exception.
+
+**Why:** The truck-driver test. Each of these put jargon, a wrong instruction, or a decision with no default in front of a user (2026-10-20 inspection).
+
+**Simpler or more complex for the user?** Simpler: one obvious first tap, and every error tells the user what to do next.
+
+**Tests:** vitest 36 (+6: `recommendedChoice` ×4, per-OS mic help ×2), Rust 66 (a download-message contract shared with the UI's resume detection). Visual check: the first-run picker was screenshotted in the browser preview, showing three cards with Powerful pre-selected and labelled.
+
 ### 2026-10-20 — Sizes read the same everywhere; code in replies stays literal
 
 **What:** Every screen now shows sizes one way: MB under 1 GB, else GB to one decimal. Storage used to say "1336 MB" for a model the picker called "1.3 GB". In chat replies, text inside backticks now stays literal: `**x**` or `a*b*c` in a code span used to come out bold or italic.
