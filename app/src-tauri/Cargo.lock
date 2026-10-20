@@ -4464,6 +4464,7 @@ name = "verdure-porter"
 version = "0.1.0"
 dependencies = [
  "cpal",
+ "encoding_rs",
  "jni 0.21.1",
  "libc",
  "llama-cpp-2",

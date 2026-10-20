@@ -6,6 +6,10 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-10-20 — Emoji and accented letters stop disappearing from replies
+
+**What:** Chat replies are decoded with one UTF-8 decoder for the whole reply instead of a fresh one per token. **Why:** a character can be split across two tokens; decoded separately, each half was invalid and silently dropped, so emoji, CJK and some accented letters could vanish mid-reply. **User impact:** replies show every character the model wrote. **Tests:** Rust 53 (+1); not yet confirmed against a real model on this machine.
+
 ### 2026-10-20 — The pre-pivot porter and its screens are removed
 
 **What:** Deleted the unreachable intent-grid → recommendation → one-click-setup flow and the Buzz installer behind it (`catalog.rs`, `porter.rs`, `port_tool`). Also deleted device-tier detection, which ran on every launch only to feed those screens; file transcription (`transcribe_audio`, the `symphonia` decoder, ~150 lockfile lines); the "best model only" code; and an always-on rollback flag. The command list is now one `handlers()` shared by the app and its integration test.

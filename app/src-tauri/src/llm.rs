@@ -20,7 +20,7 @@ use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
-use llama_cpp_2::model::{AddBos, LlamaModel, Special};
+use llama_cpp_2::model::{AddBos, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 
 use crate::model::{ModelInfo, PromptStyle};
@@ -430,6 +430,12 @@ pub(crate) fn decide(
     ]);
 
     let mut reply = String::new();
+    // ONE decoder for the whole reply. A token is bytes, not characters: an
+    // emoji, a CJK character or an accented letter can be split across two
+    // tokens, and a fresh decoder per token (what the deprecated `token_to_str`
+    // did) sees each half as invalid and drops it. A persistent decoder holds the
+    // partial bytes until the next token completes the character.
+    let mut utf8 = encoding_rs::UTF_8.new_decoder();
     // Position of the next token in the CONTEXT, not in the batch — `batch` now
     // holds only the final prefill chunk, so its length is no longer the count of
     // everything decoded. `pos` tracked that across the chunks.
@@ -440,7 +446,7 @@ pub(crate) fn decide(
         if model.is_eog_token(token) {
             break;
         }
-        if let Ok(piece) = model.token_to_str(token, Special::Tokenize) {
+        if let Ok(piece) = model.token_to_piece(token, &mut utf8, true, None) {
             reply.push_str(&piece);
         }
         batch.clear();
@@ -507,6 +513,25 @@ mod tests {
         }
         // …and stay sane even if a device somehow reports a tiny window.
         assert!(max_prompt_tokens(64) >= 16);
+    }
+
+    #[test]
+    fn one_decoder_per_reply_keeps_characters_split_across_tokens() {
+        // Why `decide` holds one decoder for the whole reply: "é" is two bytes, and
+        // a tokenizer can emit them as two tokens. A fresh decoder per token (the
+        // deprecated `token_to_str`) loses the character; one persistent decoder
+        // joins the halves. Same API path as production (`decode_to_string`).
+        let halves: [&[u8]; 2] = [&[0xC3], &[0xA9]];
+        let decode = |dec: &mut encoding_rs::Decoder, bytes: &[u8]| {
+            let mut out = String::with_capacity(8);
+            let _ = dec.decode_to_string(bytes, &mut out, false);
+            out
+        };
+        let mut persistent = encoding_rs::UTF_8.new_decoder();
+        let joined: String = halves.iter().map(|b| decode(&mut persistent, b)).collect();
+        assert_eq!(joined, "é");
+        let fresh: String = halves.iter().map(|b| decode(&mut encoding_rs::UTF_8.new_decoder(), b)).collect();
+        assert_ne!(fresh, "é", "fresh decoders per token must not reassemble it — that was the bug");
     }
 
     #[test]

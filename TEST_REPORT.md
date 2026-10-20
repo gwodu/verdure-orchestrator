@@ -4,6 +4,12 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-20 — Characters split across tokens no longer vanish
+
+- `one_decoder_per_reply_keeps_characters_split_across_tokens`: "é" fed as two one-byte halves through one persistent decoder gives "é"; through fresh decoders per half (the deprecated `token_to_str`'s behaviour) it doesn't. It exercises the same `decode_to_string` call `token_to_piece` uses.
+- **Not run against a real model here:** there's no `.gguf` on disk. The `#[ignore]`d `repro_oq71_generates_from_a_real_model` harness is the place to confirm with an emoji- or CJK-heavy prompt.
+- Rust 53. The three deprecation warnings are gone; the crate builds with **zero warnings**.
+
 ### 2026-10-20 — Dead code out, guided by the compiler
 
 - **`pub` → `pub(crate)` across the modules first,** so rustc could name dead code. It immediately listed `choose_chat_model`, `preferred_chat_model` and `ChatModelTooBig::model_name`. After each removal it named the next layer (`DeviceSpec`, `detect_spec`, `detect_tier`, file `transcribe`), until only the deprecated decoder call (item 10) remained.

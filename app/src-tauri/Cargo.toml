@@ -46,6 +46,9 @@ whisper-rs = { version = "0.16", default-features = false }
 # rather than failing, which is the whole of [OQ-71]. The backend is now chosen
 # explicitly in `llm.rs::model_params()`; do not re-assert "plain CPU" here.
 llama-cpp-2 = { version = "0.1.150", default-features = false, features = ["common"] }
+# One UTF-8 decoder per reply, so a character split across tokens survives
+# (llm.rs `decide`). Same version llama-cpp-2 already pulls in.
+encoding_rs = "0.8"
 # Live (microphone) capture for streaming transcription: pure-Rust, cross-platform
 # audio I/O (CoreAudio on macOS). No external tool, cross-compiles cleanly to
 # x86_64 (no -march=native). We only use the input side. See live.rs.
