@@ -44,6 +44,14 @@ describe("renderMarkdown formatting", () => {
     expect(renderMarkdown("run `ls -la` now")).toBe("<p>run <code>ls -la</code> now</p>");
   });
 
+  it("does not bold inside a code span", () => {
+    expect(renderMarkdown("`**x**`")).toBe("<p><code>**x**</code></p>");
+  });
+
+  it("keeps asterisks literal inside code, and still formats outside it", () => {
+    expect(renderMarkdown("use `a*b*c` then **go**")).toBe("<p>use <code>a*b*c</code> then <strong>go</strong></p>");
+  });
+
   it("groups bullets and numbers into lists and closes them", () => {
     expect(renderMarkdown("- a\n- b\ntext")).toBe("<ul><li>a</li><li>b</li></ul><p>text</p>");
     expect(renderMarkdown("1. a\n2) b")).toBe("<ol><li>a</li><li>b</li></ol>");

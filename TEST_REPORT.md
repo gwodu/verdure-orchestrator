@@ -4,6 +4,12 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-20 — The UI's formatting gets its first tests
+
+- `app/src/format.test.ts` (24): `renderMarkdown` against seven injection payloads, plus "only its own fixed tag set ever appears"; formatting (bold, emphasis, code, lists, headings, a lone `*` left alone); `escapeHtml` for all five characters; `fmtSize`/`fmtBytes` boundaries (1023 MB vs 1.0 GB, negative, fractional, never "0 MB" for a real file); `friendlyError` never blank or `[object Object]`; `parseProgress` rejects near-misses; `looksInterrupted` vs an unrelated error.
+- **Bug caught by the first test:** "does not bold inside a code span" failed. The code-span step ran first, but bold/emphasis then ran over the `<code>` contents too, so the comment claimed an ordering guarantee the code never had. Committed as two steps: the pure move with the test held back (behaviour unchanged), then the fix with that test plus a mixed code/bold case.
+- vitest 5 → 29. tsc + vite build clean.
+
 ### 2026-10-20 — Checking the shipped iOS and Android artifacts
 
 - **iOS** (`build-testflight.yml`, before upload): unzips the `.ipa`, runs `codesign --verify --strict`, and asserts both kernel entitlements are `true` **in the signed app** and `CFBundleIdentifier` is the App Store ID. Tested locally both ways: the unsigned Mac build is rejected, naming the two missing keys and the wrong bundle ID; a correct plist passes. One fix came out of that: empty `codesign` output (an unsigned app) used to crash `plistlib`, and now it reports cleanly.

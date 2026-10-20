@@ -6,6 +6,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-10-20 — Sizes read the same everywhere; code in replies stays literal
+
+**What:** Every screen now shows sizes one way: MB under 1 GB, else GB to one decimal. Storage used to say "1336 MB" for a model the picker called "1.3 GB". In chat replies, text inside backticks now stays literal: `**x**` or `a*b*c` in a code span used to come out bold or italic.
+
+**Why:** Both came out of moving the UI's pure formatting into `app/src/format.ts`, so it could be tested at all (`main.ts` starts the app when imported). The code-span bug was found by the first test of that function.
+
+**Simpler or more complex for the user?** Simpler: one way of writing sizes, and code in answers shows exactly as written.
+
+**Tests:** vitest 5 → 29, with the injection cases first (scripts, event handlers, `javascript:` links, SVG in headings, lists and code spans are all escaped). tsc and the vite build are clean.
+
 ### 2026-10-20 — Chat sizes its memory with the same number the load check uses
 
 **What:** The conversation window is now sized from `available memory − runtime_mb`, the model's full resident footprint and the same figure the load gate uses. It used to be `available − file size − 700 MB`.

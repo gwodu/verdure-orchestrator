@@ -62,12 +62,19 @@ export function escapeHtml(s: string): string {
  * (tables, footnotes, HTML passthrough).
  */
 export function renderMarkdown(src: string): string {
-  const inline = (s: string): string =>
-    escapeHtml(s)
-      // Code first, so ** inside a code span isn't treated as bold.
-      .replace(/`([^`]+)`/g, "<code>$1</code>")
+  // Code spans are split out FIRST and left verbatim, so `**x**` or `a*b*c`
+  // inside backticks stays literal. (An earlier version wrapped them in <code>
+  // and then ran the bold/emphasis rules over the whole string, including the
+  // code: the comment promised what the code didn't do.)
+  const emphasis = (t: string): string =>
+    t
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/(^|[\s(])[*_]([^*_\s][^*_]*)[*_](?=[\s.,!?)]|$)/g, "$1<em>$2</em>");
+  const inline = (s: string): string =>
+    escapeHtml(s)
+      .split(/(`[^`]+`)/)
+      .map((part) => (/^`[^`]+`$/.test(part) ? `<code>${part.slice(1, -1)}</code>` : emphasis(part)))
+      .join("");
 
   const out: string[] = [];
   let list: "ul" | "ol" | null = null;
