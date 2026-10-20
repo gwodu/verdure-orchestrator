@@ -76,7 +76,7 @@ const SEED: u32 = 0x5EED;
 /// [OQ-55].) The struct is kept so the frontend contract is unchanged.
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ToolDecision {
+pub(crate) struct ToolDecision {
     pub action: String,
     pub reply: String,
 }
@@ -106,7 +106,7 @@ If you don't know something, say so instead of guessing.";
 /// the frontend owns the transcript and passes back the part that still fits
 /// (knowledge/22).
 #[derive(Debug, Clone, serde::Deserialize)]
-pub struct Turn {
+pub(crate) struct Turn {
     pub user: String,
     pub assistant: String,
 }
@@ -118,7 +118,7 @@ pub struct Turn {
 /// is the model's own per-token KV cost. Clamped to `[MIN_CONTEXT, MAX_CONTEXT]`
 /// and never above what the model was trained for — a longer window than training
 /// produces confident nonsense, not more memory.
-pub fn context_for_budget(spare_mb: u64, kv_kb_per_token: u32, trained_ctx: u32) -> u32 {
+pub(crate) fn context_for_budget(spare_mb: u64, kv_kb_per_token: u32, trained_ctx: u32) -> u32 {
     let per_token = kv_kb_per_token.max(1) as u64;
     let affordable = spare_mb.saturating_mul(1024) / per_token;
     let ceiling = trained_ctx.min(MAX_CONTEXT);
@@ -132,7 +132,7 @@ pub fn context_for_budget(spare_mb: u64, kv_kb_per_token: u32, trained_ctx: u32)
 /// the file size instead let a model admitted at the gate's edge exceed the gate
 /// (knowledge/22, corrected 2026-10-20). Saturating: a tighter machine yields 0,
 /// and the caller runs at `MIN_CONTEXT`.
-pub fn spare_for_context_mb(available_mb: u64, runtime_mb: u32) -> u64 {
+pub(crate) fn spare_for_context_mb(available_mb: u64, runtime_mb: u32) -> u64 {
     available_mb.saturating_sub(runtime_mb as u64)
 }
 
@@ -314,14 +314,14 @@ fn cpu_device_indices() -> Vec<usize> {
 /// cache alive would let each turn prefill only its new tokens, but `LlamaContext`
 /// borrows both backend and model, so storing it needs a self-referential struct.
 /// Not justified before the simple version is measured (knowledge/22).
-pub struct ResidentModel {
+pub(crate) struct ResidentModel {
     id: String,
     model: LlamaModel,
 }
 
 /// Load `info`'s weights if they aren't already the resident ones. Returns the
 /// resident model, reloading only when the user switches models.
-pub fn ensure_resident<'a>(
+pub(crate) fn ensure_resident<'a>(
     slot: &'a mut Option<ResidentModel>,
     info: &ModelInfo,
     path: &Path,
@@ -349,7 +349,7 @@ pub fn ensure_resident<'a>(
 ///
 /// `n_ctx` is sized per device+model by `context_for_budget`; history is trimmed
 /// to whole turns that fit it (knowledge/22).
-pub fn decide(
+pub(crate) fn decide(
     resident: &ResidentModel,
     history: &[Turn],
     user_message: &str,

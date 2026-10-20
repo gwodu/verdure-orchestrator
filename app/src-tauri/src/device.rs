@@ -21,7 +21,7 @@ use serde::Serialize;
 /// decider's `DeviceSpec`). Detected, never asked (skills/design.md).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DeviceSpec {
+pub(crate) struct DeviceSpec {
     /// "apple-silicon" | "intel" (a Mac is one of these).
     pub arch: String,
     /// Logical CPU cores.
@@ -38,7 +38,7 @@ pub struct DeviceSpec {
 /// of context" starts with the machine you're on (knowledge/20).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SystemResources {
+pub(crate) struct SystemResources {
     /// "apple-silicon" | "intel".
     pub arch: String,
     /// Logical CPU cores.
@@ -60,7 +60,7 @@ pub struct SystemResources {
 
 /// Detect this machine's specs for the performance predictor.
 #[cfg(target_os = "macos")]
-pub fn detect_spec() -> DeviceSpec {
+pub(crate) fn detect_spec() -> DeviceSpec {
     DeviceSpec {
         arch: if is_apple_silicon() {
             "apple-silicon".to_string()
@@ -78,7 +78,7 @@ pub fn detect_spec() -> DeviceSpec {
 /// there are no shell tools to call (apps can't spawn processes), so the readings
 /// come from syscalls instead of `/usr/sbin/sysctl` ([OQ-65]).
 #[cfg(target_os = "ios")]
-pub fn detect_spec() -> DeviceSpec {
+pub(crate) fn detect_spec() -> DeviceSpec {
     DeviceSpec {
         arch: "apple-silicon".to_string(),
         cores: std::thread::available_parallelism()
@@ -104,7 +104,7 @@ fn sysctl_int(key: &str) -> Option<u64> {
 /// in — we report free space on its volume. Every reading degrades safely: if a
 /// tool can't be read, that field falls back rather than failing the snapshot.
 #[cfg(target_os = "macos")]
-pub fn system_resources(data_dir: &Path) -> SystemResources {
+pub(crate) fn system_resources(data_dir: &Path) -> SystemResources {
     let total_ram_mb = sysctl_int("hw.memsize").map(|b| b / 1_048_576).unwrap_or(8192);
     let available_ram_mb = read_available_ram_mb()
         // If vm_stat can't be read, assume half of total is free — conservative
@@ -128,7 +128,7 @@ pub fn system_resources(data_dir: &Path) -> SystemResources {
 /// truthful gate than system-wide free RAM, which is exactly what the chat model
 /// picker needs to avoid being killed mid-load ([OQ-65], knowledge/11).
 #[cfg(target_os = "ios")]
-pub fn system_resources(data_dir: &Path) -> SystemResources {
+pub(crate) fn system_resources(data_dir: &Path) -> SystemResources {
     let total_ram_mb = ios::total_ram_bytes().map(|b| b / 1_048_576).unwrap_or(4096);
     let available_ram_mb = ios::available_ram_bytes()
         .map(|b| b / 1_048_576)
@@ -157,7 +157,7 @@ pub fn system_resources(data_dir: &Path) -> SystemResources {
 mod ios {
     /// Total physical RAM — the same `hw.memsize` fact the Mac reads via the
     /// sysctl *binary*, read via the sysctl *syscall* (no spawning on iOS).
-    pub fn total_ram_bytes() -> Option<u64> {
+    pub(crate) fn total_ram_bytes() -> Option<u64> {
         let name = std::ffi::CString::new("hw.memsize").ok()?;
         let mut value: u64 = 0;
         let mut size = std::mem::size_of::<u64>();
@@ -185,14 +185,14 @@ mod ios {
 
     /// This app's remaining allocation headroom, in bytes. `None` when the OS
     /// reports 0 (e.g. simulator), so callers fall back conservatively.
-    pub fn available_ram_bytes() -> Option<u64> {
+    pub(crate) fn available_ram_bytes() -> Option<u64> {
         // SAFETY: no-argument call returning an integer by value; nothing owned.
         let bytes = unsafe { os_proc_available_memory() } as u64;
         (bytes > 0).then_some(bytes)
     }
 
     /// Free space on the volume holding `path`, via statvfs (there is no `df`).
-    pub fn free_disk_bytes(path: &std::path::Path) -> Option<u64> {
+    pub(crate) fn free_disk_bytes(path: &std::path::Path) -> Option<u64> {
         let c = std::ffi::CString::new(path.to_str()?).ok()?;
         let mut sv: libc::statvfs = unsafe { std::mem::zeroed() };
         // SAFETY: statvfs fills the struct we own on the stack; `c` outlives the
@@ -205,7 +205,7 @@ mod ios {
 /// Detect this machine's specs — Android. An ARM device; readings come from
 /// Linux syscalls/procfs, no shell tools ([OQ-66]).
 #[cfg(target_os = "android")]
-pub fn detect_spec() -> DeviceSpec {
+pub(crate) fn detect_spec() -> DeviceSpec {
     DeviceSpec {
         arch: "arm".to_string(),
         cores: std::thread::available_parallelism()
@@ -227,7 +227,7 @@ pub fn detect_spec() -> DeviceSpec {
 /// RAM with headroom for the OS + our WebView, and never report less than the real
 /// `MemAvailable`. Still an estimate to calibrate on real devices ([OQ-66]).
 #[cfg(target_os = "android")]
-pub fn system_resources(data_dir: &Path) -> SystemResources {
+pub(crate) fn system_resources(data_dir: &Path) -> SystemResources {
     let total_ram_mb = android::total_ram_bytes().map(|b| b / 1_048_576).unwrap_or(4096);
     let mem_available_mb = android::available_ram_mb().unwrap_or(total_ram_mb / 4);
     // ~60% of total is a realistic ceiling a foreground app can claim once Android
@@ -253,7 +253,7 @@ pub fn system_resources(data_dir: &Path) -> SystemResources {
 #[cfg(target_os = "android")]
 mod android {
     /// Total physical RAM via the sysinfo(2) syscall.
-    pub fn total_ram_bytes() -> Option<u64> {
+    pub(crate) fn total_ram_bytes() -> Option<u64> {
         let mut info: libc::sysinfo = unsafe { std::mem::zeroed() };
         // SAFETY: sysinfo fills the struct we own on the stack; nothing is
         // allocated across the boundary, so there is nothing to free.
@@ -263,13 +263,13 @@ mod android {
 
     /// Memory the kernel can hand out right now: MemAvailable from /proc/meminfo
     /// (readable inside the app sandbox; no syscall wrapper needed).
-    pub fn available_ram_mb() -> Option<u64> {
+    pub(crate) fn available_ram_mb() -> Option<u64> {
         let text = std::fs::read_to_string("/proc/meminfo").ok()?;
         super::parse_meminfo_available_kb(&text).map(|kb| kb / 1024)
     }
 
     /// Free space on the volume holding `path`, via statvfs (same call as iOS).
-    pub fn free_disk_bytes(path: &std::path::Path) -> Option<u64> {
+    pub(crate) fn free_disk_bytes(path: &std::path::Path) -> Option<u64> {
         let c = std::ffi::CString::new(path.to_str()?).ok()?;
         let mut sv: libc::statvfs = unsafe { std::mem::zeroed() };
         // SAFETY: statvfs fills the struct we own on the stack; `c` outlives the
@@ -292,7 +292,7 @@ fn parse_meminfo_available_kb(meminfo: &str) -> Option<u64> {
 /// default keeps the legacy recommendation honest without overpromising. The RAM
 /// gate does the real per-device sizing at model-pick time ([OQ-66]).
 #[cfg(target_os = "android")]
-pub fn detect_tier() -> &'static str {
+pub(crate) fn detect_tier() -> &'static str {
     "L2-high"
 }
 
@@ -409,7 +409,7 @@ fn parse_low_power(pmset: &str) -> bool {
 /// Detect the device's tier as a decider `Tier` string. Always returns a safe,
 /// real tier — never fails to the user.
 #[cfg(target_os = "macos")]
-pub fn detect_tier() -> &'static str {
+pub(crate) fn detect_tier() -> &'static str {
     if is_apple_silicon() {
         // Apple Silicon → DeviceClass apple-silicon (knowledge/03, matrix.ts).
         "L3"
@@ -424,7 +424,7 @@ pub fn detect_tier() -> &'static str {
 /// the decider's purposes; the RAM gate (jetsam-aware, above) does the real
 /// per-device sizing at pick time ([OQ-65]).
 #[cfg(target_os = "ios")]
-pub fn detect_tier() -> &'static str {
+pub(crate) fn detect_tier() -> &'static str {
     "L3"
 }
 

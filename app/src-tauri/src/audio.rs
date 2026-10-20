@@ -20,7 +20,7 @@ use symphonia::core::probe::Hint;
 const TARGET_RATE: u32 = 16_000;
 
 /// Decode an audio file to 16 kHz mono f32 samples, ready for `transcribe`.
-pub fn decode_to_mono_16k(path: &Path) -> Result<Vec<f32>, String> {
+pub(crate) fn decode_to_mono_16k(path: &Path) -> Result<Vec<f32>, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("couldn't open the file: {e}"))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 

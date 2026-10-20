@@ -19,7 +19,7 @@ use crate::catalog::Tool;
 /// The result of a successful port, reported back to the UI.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PortOutcome {
+pub(crate) struct PortOutcome {
     /// True if we installed it just now; false if it was already present.
     pub installed_now: bool,
     /// True once the launch command was issued successfully.
@@ -30,7 +30,7 @@ pub struct PortOutcome {
 
 /// Everything that can go wrong, in language we can show a non-technical user.
 #[derive(Debug)]
-pub enum PortError {
+pub(crate) enum PortError {
     /// A step of the install (download / mount / copy) failed; carries detail.
     InstallFailed(String),
     /// The launch step failed.
@@ -143,7 +143,7 @@ fn launch(tool: &Tool) -> Result<(), PortError> {
 
 /// The full one-click port: check → (download + install) → launch, reporting
 /// each stage to `progress` so the UI keeps the user informed (skills/design.md).
-pub fn port<F: Fn(&str)>(tool: &Tool, progress: F) -> Result<PortOutcome, PortError> {
+pub(crate) fn port<F: Fn(&str)>(tool: &Tool, progress: F) -> Result<PortOutcome, PortError> {
     let is_arm64 = crate::device::is_apple_silicon();
 
     progress(&format!("Checking if {} is already set up…", tool.name));

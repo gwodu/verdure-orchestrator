@@ -15,7 +15,7 @@
 //! port"). See [OQ-51] about resolving "latest" instead of a pinned version.
 
 /// One portable tool: how to get it, how to start it.
-pub struct Tool {
+pub(crate) struct Tool {
     /// Stable id the frontend uses to request a port (e.g. "buzz").
     pub id: &'static str,
     /// Human name shown in the UI.
@@ -33,7 +33,7 @@ pub struct Tool {
 /// extension point for Windows installers / Linux packages later. Data-shaped,
 /// not an abstraction layer, so it stays honest to "no abstraction without a
 /// second implementation" (skills/architecture.md).
-pub enum InstallMethod {
+pub(crate) enum InstallMethod {
     /// Download a macOS .dmg straight from the tool's official release and copy
     /// the .app into /Applications. Arch-specific URLs (the founder's Mac is x64).
     MacDmg {
@@ -43,7 +43,7 @@ pub enum InstallMethod {
 }
 
 /// How to start an installed tool.
-pub enum LaunchMethod {
+pub(crate) enum LaunchMethod {
     /// A macOS .app bundle, launched with `open -a <AppName>`. The app name is
     /// also the bundle name the porter copies out of the .dmg.
     MacOsApp { app_name: &'static str },
@@ -52,7 +52,7 @@ pub enum LaunchMethod {
 impl InstallMethod {
     /// The official download URL for this machine's architecture. Pure — takes
     /// the arch so it can be unit-tested without probing the host.
-    pub fn download_url(&self, is_arm64: bool) -> &'static str {
+    pub(crate) fn download_url(&self, is_arm64: bool) -> &'static str {
         match self {
             InstallMethod::MacDmg { url_x64, url_arm64 } => {
                 if is_arm64 {
@@ -68,7 +68,7 @@ impl InstallMethod {
 impl LaunchMethod {
     /// The .app bundle name (without extension) — used both to launch and to
     /// locate the bundle inside a mounted .dmg.
-    pub fn app_name(&self) -> &'static str {
+    pub(crate) fn app_name(&self) -> &'static str {
         match self {
             LaunchMethod::MacOsApp { app_name } => app_name,
         }
@@ -76,7 +76,7 @@ impl LaunchMethod {
 
     /// The program + args that LAUNCH the tool. `open` is always at /usr/bin/open
     /// on macOS, independent of PATH (which is minimal for Finder-launched apps).
-    pub fn launch_command(&self) -> (String, Vec<String>) {
+    pub(crate) fn launch_command(&self) -> (String, Vec<String>) {
         match self {
             LaunchMethod::MacOsApp { app_name } => {
                 ("/usr/bin/open".into(), vec!["-a".into(), (*app_name).into()])
@@ -100,10 +100,10 @@ const BUZZ: Tool = Tool {
 };
 
 /// Every tool Verdure can port today.
-pub const CATALOG: &[Tool] = &[BUZZ];
+pub(crate) const CATALOG: &[Tool] = &[BUZZ];
 
 /// Look up a tool by its stable id.
-pub fn find(id: &str) -> Option<&'static Tool> {
+pub(crate) fn find(id: &str) -> Option<&'static Tool> {
     CATALOG.iter().find(|t| t.id == id)
 }
 

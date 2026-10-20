@@ -17,7 +17,7 @@ use serde::Serialize;
 /// BOS convention; using the wrong one yields garbage output, so it travels with
 /// the model as data (knowledge/03 — model details). Non-chat models carry `None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PromptStyle {
+pub(crate) enum PromptStyle {
     /// Qwen 2.5 etc. — ChatML (`<|im_start|>`…`<|im_end|>`), no leading BOS.
     ChatMl,
     /// ChatML for a **reasoning** model (Qwen 3.5), with thinking turned OFF.
@@ -40,7 +40,7 @@ pub enum PromptStyle {
 
 /// A downloadable model: what it is, and where to get it.
 #[derive(Debug)]
-pub struct ModelInfo {
+pub(crate) struct ModelInfo {
     pub id: &'static str,
     /// User-facing name (jargon-free; skills/design.md).
     pub name: &'static str,
@@ -74,7 +74,7 @@ pub struct ModelInfo {
 
 /// base.en: a good speed/quality balance for English on a CPU. Official
 /// whisper.cpp weights on Hugging Face. [OQ-51]: pick by device tier later.
-pub const WHISPER_BASE_EN: ModelInfo = ModelInfo {
+pub(crate) const WHISPER_BASE_EN: ModelInfo = ModelInfo {
     id: "whisper-base-en",
     name: "English speech model",
     modality: "Transcription",
@@ -102,7 +102,7 @@ pub const WHISPER_BASE_EN: ModelInfo = ModelInfo {
 /// (Sizes across this file are the URLs' real Content-Length, measured 2026-08-22;
 /// they were round guesses before, and `approx_mb` feeds the picker's fits-disk
 /// check — an understated size can tell a user a download fits when it doesn't.)
-pub const QWEN_CHAT_SMALL: ModelInfo = ModelInfo {
+pub(crate) const QWEN_CHAT_SMALL: ModelInfo = ModelInfo {
     id: "qwen2.5-0.5b-instruct",
     name: "Chat model (Qwen2.5 0.5B)",
     modality: "Chat",
@@ -119,7 +119,7 @@ pub const QWEN_CHAT_SMALL: ModelInfo = ModelInfo {
 };
 
 /// Larger chat model for roomier machines. ~1.04 GB download.
-pub const QWEN_CHAT: ModelInfo = ModelInfo {
+pub(crate) const QWEN_CHAT: ModelInfo = ModelInfo {
     id: "qwen2.5-1.5b-instruct",
     name: "Chat model (Qwen2.5 1.5B)",
     modality: "Chat",
@@ -141,7 +141,7 @@ pub const QWEN_CHAT: ModelInfo = ModelInfo {
 /// is set to the full resident cost (conservative), and the model is held OUT of
 /// the live pick (see `GEMMA4_E2B_VERIFIED`) until an on-device run confirms it
 /// loads and offloads — loading one that doesn't OOM-aborts the whole app. [OQ-61]
-pub const GEMMA4_E2B: ModelInfo = ModelInfo {
+pub(crate) const GEMMA4_E2B: ModelInfo = ModelInfo {
     id: "gemma-4-e2b-it",
     name: "Chat model (Gemma 4 E2B)",
     modality: "Chat",
@@ -176,7 +176,7 @@ pub const GEMMA4_E2B: ModelInfo = ModelInfo {
 /// `LLM_ARCH_QWEN35` + `GGML_OP_GATED_DELTA_NET`), `graph splits = 1`, all CPU, and
 /// answers coherently. It is a REASONING model — see `PromptStyle::ChatMlNoThink`,
 /// without which it burns the whole reply budget thinking out loud.
-pub const QWEN35_2B: ModelInfo = ModelInfo {
+pub(crate) const QWEN35_2B: ModelInfo = ModelInfo {
     id: "qwen3.5-2b-instruct",
     name: "Chat model (Qwen3.5 2B)",
     modality: "Chat",
@@ -205,7 +205,7 @@ pub const QWEN35_2B: ModelInfo = ModelInfo {
 /// FOOTPRINT is not: scaling the 2B's measured buffers suggests ~4.2 GB resident,
 /// which no target device has free, and a wrong `runtime_mb` OOM-aborts the whole
 /// app ([OQ-58]). Measure before enabling — the 2B is the one that pays off now.
-pub const QWEN35_4B: ModelInfo = ModelInfo {
+pub(crate) const QWEN35_4B: ModelInfo = ModelInfo {
     id: "qwen3.5-4b-instruct",
     name: "Chat model (Qwen3.5 4B)",
     modality: "Chat",
@@ -241,7 +241,7 @@ const GEMMA4_E2B_VERIFIED: bool = false;
 /// is within our pinned `llama-cpp-2`'s architecture support. We take the smallest
 /// K-quant (2.77 bpw) as the safest first pick for the RAM-starved floor machine;
 /// step up (`Q3_K_S-3.19bpw` …) for quality once it's confirmed to fit. [OQ-64]
-pub const BYTESHAPE_QWEN3_4B: ModelInfo = ModelInfo {
+pub(crate) const BYTESHAPE_QWEN3_4B: ModelInfo = ModelInfo {
     id: "qwen3-4b-instruct-2507-byteshape",
     name: "Chat model (Qwen3 4B)",
     modality: "Chat",
@@ -277,7 +277,7 @@ pub const BYTESHAPE_QWEN3_4B: ModelInfo = ModelInfo {
 /// `chat_candidates`, so nothing auto-selects it: the user must pick it, and the
 /// RAM gate (`os_proc_available_memory`, i.e. the real jetsam headroom) still
 /// refuses it honestly on a device that can't hold it.
-pub const BYTESHAPE_QWEN38_27B: ModelInfo = ModelInfo {
+pub(crate) const BYTESHAPE_QWEN38_27B: ModelInfo = ModelInfo {
     id: "qwen3.8-27b-byteshape",
     name: "Chat model (Qwen3.8 27B)",
     modality: "Chat",
@@ -310,7 +310,7 @@ const USE_BYTESHAPE_QWEN3_4B: bool = true;
 /// then declines honestly instead of loading a model that would OOM-abort the app
 /// (knowledge/21). Keying on *available* (not total) RAM is the fix for the 8 GB
 /// chat crash: a 0.5B model "fits" 8 GB total but not ~1 GB free.
-pub fn chat_model_for_available(available_mb: u64) -> Option<&'static ModelInfo> {
+pub(crate) fn chat_model_for_available(available_mb: u64) -> Option<&'static ModelInfo> {
     chat_candidates()
         .into_iter()
         .find(|m| (m.runtime_mb as u64) <= available_mb)
@@ -345,7 +345,7 @@ fn chat_candidates() -> Vec<&'static ModelInfo> {
 /// This is the model "best model only" mode insists on, so the user can test it
 /// deliberately instead of silently getting a smaller fallback. The Qwen floor
 /// guarantees the list is never empty.
-pub fn preferred_chat_model() -> &'static ModelInfo {
+pub(crate) fn preferred_chat_model() -> &'static ModelInfo {
     chat_candidates()
         .into_iter()
         .next()
@@ -356,7 +356,7 @@ pub fn preferred_chat_model() -> &'static ModelInfo {
 /// Carries the numbers so the UI can explain honestly (design.md — honest
 /// performance) rather than failing blankly or silently downgrading.
 #[derive(Debug)]
-pub struct ChatModelTooBig {
+pub(crate) struct ChatModelTooBig {
     pub model_name: &'static str,
     pub needed_mb: u32,
     pub available_mb: u64,
@@ -369,7 +369,7 @@ pub struct ChatModelTooBig {
 /// we insist on the preferred model and, if it doesn't fit, return the shortfall so
 /// the caller can tell the user exactly why — never a silent downgrade. Either way we
 /// never return a model that wouldn't fit, since loading one OOM-aborts the app.
-pub fn choose_chat_model(
+pub(crate) fn choose_chat_model(
     available_mb: u64,
     allow_fallback: bool,
 ) -> Result<&'static ModelInfo, ChatModelTooBig> {
@@ -401,7 +401,7 @@ pub fn choose_chat_model(
 /// `chat_candidates` (the internal auto-picker). All three are proven small
 /// footprints so any of them is a safe pick on a modern device. Friendly tier
 /// names + copy live in the UI (design.md — the words belong with the surface).
-pub const CHAT_MODEL_CHOICES: &[&ModelInfo] =
+pub(crate) const CHAT_MODEL_CHOICES: &[&ModelInfo] =
     &[&QWEN_CHAT_SMALL, &QWEN35_2B, &BYTESHAPE_QWEN3_4B];
 
 /// Total memory a device needs before the 27B experiment is even offered. A 16 GB
@@ -413,7 +413,7 @@ const EXPERIMENT_MIN_TOTAL_RAM_MB: u64 = 15_000;
 /// on iOS devices with 16 GB of memory. Keyed on TOTAL memory (what the device
 /// could ever hold), not available memory (what is free this minute): a model
 /// that can never fit must not be offered with "close some apps" advice.
-pub fn chat_model_menu(total_ram_mb: u64) -> Vec<&'static ModelInfo> {
+pub(crate) fn chat_model_menu(total_ram_mb: u64) -> Vec<&'static ModelInfo> {
     chat_model_menu_for(total_ram_mb, cfg!(target_os = "ios"))
 }
 
@@ -432,7 +432,7 @@ fn chat_model_menu_for(total_ram_mb: u64, experiment_platform: bool) -> Vec<&'st
 /// (design.md) so the user chooses with real numbers, not guesses.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChatModelOption {
+pub(crate) struct ChatModelOption {
     pub id: String,
     pub name: String,
     /// One-time download size, MB (what the user is spending on disk).
@@ -448,7 +448,7 @@ pub struct ChatModelOption {
 
 /// Build the picker's options for this device: each choice with its size and
 /// whether it fits the memory/disk free right now.
-pub fn chat_model_options(
+pub(crate) fn chat_model_options(
     data_dir: &Path,
     total_ram_mb: u64,
     available_mb: u64,
@@ -476,7 +476,7 @@ pub fn chat_model_options(
 /// return the shortfall so the UI can say so honestly (never load one that would
 /// OOM-abort). If `id` is empty/unknown (no choice yet, or a stale value), fall
 /// back to auto-picking the largest that fits.
-pub fn chat_model_choice(
+pub(crate) fn chat_model_choice(
     id: &str,
     total_ram_mb: u64,
     available_mb: u64,
@@ -501,7 +501,7 @@ pub fn chat_model_choice(
 /// Every model Verdure can download today. Gemma 4 E2B is listed so the Storage
 /// screen can show + manage it uniformly, but the chat picker won't auto-select it
 /// until it's verified (see `chat_model_for_available`).
-pub const MODELS: &[ModelInfo] = &[
+pub(crate) const MODELS: &[ModelInfo] = &[
     WHISPER_BASE_EN,
     BYTESHAPE_QWEN3_4B,
     BYTESHAPE_QWEN38_27B,
@@ -513,19 +513,19 @@ pub const MODELS: &[ModelInfo] = &[
 ];
 
 /// Look up a model by id.
-pub fn find(id: &str) -> Option<&'static ModelInfo> {
+pub(crate) fn find(id: &str) -> Option<&'static ModelInfo> {
     MODELS.iter().find(|m| m.id == id)
 }
 
 /// Where a model lives once installed.
-pub fn model_path(data_dir: &Path, info: &ModelInfo) -> PathBuf {
+pub(crate) fn model_path(data_dir: &Path, info: &ModelInfo) -> PathBuf {
     data_dir.join(info.file)
 }
 
 /// One model's presence + size, for the UI (transcribe panel + Storage screen).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ModelEntry {
+pub(crate) struct ModelEntry {
     pub id: String,
     pub name: String,
     pub modality: String,
@@ -539,7 +539,7 @@ pub struct ModelEntry {
 
 /// List every known model with whether it's downloaded and its size — including
 /// any interrupted `.part` download, which takes real space and must be visible.
-pub fn list(data_dir: &Path) -> Vec<ModelEntry> {
+pub(crate) fn list(data_dir: &Path) -> Vec<ModelEntry> {
     MODELS
         .iter()
         .map(|m| {
@@ -679,7 +679,7 @@ fn user_label(info: &ModelInfo) -> String {
 }
 
 /// Ensure a model is present, downloading it once if needed. Reports progress.
-pub fn ensure<F: Fn(&str)>(
+pub(crate) fn ensure<F: Fn(&str)>(
     data_dir: &Path,
     info: &ModelInfo,
     progress: &F,
@@ -750,7 +750,7 @@ pub fn ensure<F: Fn(&str)>(
 
 /// Completely remove a downloaded model (and any interrupted .part), reclaiming
 /// the space. It re-downloads on next use.
-pub fn remove(data_dir: &Path, id: &str) -> Result<(), String> {
+pub(crate) fn remove(data_dir: &Path, id: &str) -> Result<(), String> {
     let info = find(id).ok_or_else(|| format!("unknown model: {id}"))?;
     let path = model_path(data_dir, info);
     if path.exists() {
