@@ -45,10 +45,12 @@ Computed from published architectures at f16 KV — **provisional until measured
 The context we actually allocate:
 
 ```
-spare        = available_ram − model weights − headroom for the OS/WebView
+spare        = available_ram − runtime_mb      (the model's full resident footprint)
 affordable   = spare ÷ kv_bytes_per_token
 n_ctx        = clamp(affordable, MIN_CONTEXT, model's trained context)
 ```
+
+**One memory model, the same one the load gate uses (corrected 2026-10-20).** The first version subtracted the *file size* plus a fixed 700 MB of headroom. But the load gate decides with `runtime_mb`, which counts what llama.cpp really holds (weights, the `CPU_REPACK` copy, compute buffers, a baseline window and a margin; peak resident runs ~1 GB above file size, `03`). The two disagreed: the 4B admitted at exactly its 2300 MB gate was then handed ~264 MB of "spare", for ~1900 tokens of KV cache. That would have pushed it to ~2590 MB resident, past the gate that had just let it in, which is an OOM-abort under `[OQ-58]`. Subtracting `runtime_mb` means the window only grows into memory the gate never promised to anything else. `runtime_mb` already budgets the margin, so no separate headroom constant remains.
 
 Below `MIN_CONTEXT` we do not shrink further — a context too small to hold a system prompt plus one exchange is not a degraded chat, it is a broken one. Better to decline honestly, which the RAM gate already does.
 
@@ -98,4 +100,4 @@ If a control is ever added it should be about **behavior, not tokens** — "Reme
 
 - `[OQ-68]` — summarize evicted turns instead of dropping them (deferred; needs evidence users notice).
 - `[OQ-69]` — release the resident model when the app is backgrounded on iOS/Android.
-- `[OQ-70]` — calibrate `kv_kb_per_token` and the headroom constant against real on-device measurements.
+- `[OQ-70]` — calibrate `kv_kb_per_token` and `runtime_mb` against real on-device measurements (the separate headroom constant was removed 2026-10-20; `runtime_mb` carries the margin).

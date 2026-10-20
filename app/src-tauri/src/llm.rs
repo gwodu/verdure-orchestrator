@@ -42,9 +42,6 @@ const MIN_CONTEXT: u32 = 512;
 /// still make the user wait minutes for the first reply. 4096 keeps a long
 /// conversation responsive on the floor machine (knowledge/22).
 const MAX_CONTEXT: u32 = 4096;
-/// Headroom left for the OS + WebView when sizing the window, MB. The 8 GB Mac
-/// runs the WebView alongside us; overshooting here is what ggml-aborts the app.
-const CONTEXT_HEADROOM_MB: u64 = 700;
 /// Slack on top of the reply budget and the (measured) system instruction, to
 /// cover turn markers and tokenizer variance. The instruction itself is no longer
 /// guessed at — it is tokenized at call time, so growing it can't silently start
@@ -119,13 +116,15 @@ pub fn context_for_budget(spare_mb: u64, kv_kb_per_token: u32, trained_ctx: u32)
     (affordable.min(ceiling as u64) as u32).max(MIN_CONTEXT).min(ceiling.max(MIN_CONTEXT))
 }
 
-/// Memory left for the KV cache once the weights and OS headroom are accounted
-/// for. Saturating: a machine tighter than the headroom yields 0, and the caller
-/// then runs at `MIN_CONTEXT` or the RAM gate declines outright.
-pub fn spare_for_context_mb(available_mb: u64, weights_mb: u32) -> u64 {
-    available_mb
-        .saturating_sub(weights_mb as u64)
-        .saturating_sub(CONTEXT_HEADROOM_MB)
+/// Memory left for a longer window once the model's whole resident footprint is
+/// accounted for. `runtime_mb` is the SAME number the load gate decides with
+/// (weights + CPU_REPACK + compute buffers + a baseline window + margin), so the
+/// window can only grow into memory the gate didn't already promise. Subtracting
+/// the file size instead let a model admitted at the gate's edge exceed the gate
+/// (knowledge/22, corrected 2026-10-20). Saturating: a tighter machine yields 0,
+/// and the caller runs at `MIN_CONTEXT`.
+pub fn spare_for_context_mb(available_mb: u64, runtime_mb: u32) -> u64 {
+    available_mb.saturating_sub(runtime_mb as u64)
 }
 
 /// How many prompt tokens can be decoded while still leaving room to answer.
@@ -499,10 +498,22 @@ mod tests {
     }
 
     #[test]
-    fn spare_memory_subtracts_weights_and_headroom() {
-        assert_eq!(spare_for_context_mb(4000, 1400), 4000 - 1400 - CONTEXT_HEADROOM_MB);
-        // Tighter than the headroom itself → 0, not an underflow panic.
-        assert_eq!(spare_for_context_mb(500, 1400), 0);
+    fn spare_memory_subtracts_the_full_resident_footprint() {
+        assert_eq!(spare_for_context_mb(4000, 2300), 1700);
+        // Tighter than the footprint → 0, not an underflow panic.
+        assert_eq!(spare_for_context_mb(500, 2300), 0);
+    }
+
+    #[test]
+    fn a_model_admitted_at_the_gate_edge_gets_no_extra_window() {
+        // The bug: the 4B admitted at exactly its gate (available == runtime_mb)
+        // was handed ~264 MB of "spare" (available - file size - 700), ~1900
+        // tokens of KV, pushing it past the gate that let it in. With one memory
+        // model, the gate edge means no extra memory, so the floor window.
+        let m = &crate::model::BYTESHAPE_QWEN3_4B;
+        let spare = spare_for_context_mb(m.runtime_mb as u64, m.runtime_mb);
+        assert_eq!(spare, 0);
+        assert_eq!(context_for_budget(spare, m.kv_kb_per_token, m.trained_ctx), MIN_CONTEXT);
     }
 
     #[test]

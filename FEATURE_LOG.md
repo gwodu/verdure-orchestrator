@@ -6,6 +6,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-10-20 — Chat sizes its memory with the same number the load check uses
+
+**What:** The conversation window is now sized from `available memory − runtime_mb`, the model's full resident footprint and the same figure the load gate uses. It used to be `available − file size − 700 MB`.
+
+**Why:** The two disagreed. A model let in at exactly its gate could then be given a window that pushed it past that gate, which is an OOM abort that kills the app (`[OQ-58]`). Now the window only grows into memory nothing else was promised.
+
+**Simpler or more complex for the user?** Invisible on typical machines: the 4B with 3.5 GB free still reaches the 4096-token cap. Near the memory edge the window is smaller, and the app doesn't crash.
+
+**Tests:** Rust 65 (+1 new: at the gate edge the window is the floor; the spare test now asserts the full footprint). `knowledge/22` updated first.
+
 ### 2026-10-20 — The 27B experiment no longer takes the 4B away from iPhones
 
 **What:** The picker's Powerful choice is the Qwen3 4B again on every device. The Qwen3.8 27B is now an extra fourth card, labelled **Experimental** ("A much larger model we're still testing. A very big download, and it may be slow or fail to start."), offered only on iOS devices with 16 GB of memory (`model.rs::chat_model_menu`, keyed on *total* memory). If a saved choice isn't on this device's menu, the picker falls back to the first one it does offer.

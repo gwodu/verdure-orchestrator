@@ -4,6 +4,12 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-20 — One memory model for the gate and the window
+
+- `a_model_admitted_at_the_gate_edge_gets_no_extra_window`: the 4B with `available == runtime_mb` gets 0 spare and `MIN_CONTEXT`. Before the fix it got ~264 MB of "spare" (~1900 tokens of KV), past the gate that admitted it.
+- `spare_memory_subtracts_the_full_resident_footprint` replaces the weights-plus-headroom test; it still checks for no underflow when memory is tight.
+- Rust 64 → 65 passed. `CONTEXT_HEADROOM_MB` was deleted: `runtime_mb` already carries the margin.
+
 ### 2026-10-20 — 27B scope fix
 
 - `every_device_keeps_the_4b_as_powerful`: covers iOS at 4/8/16 GB and non-iOS at 8/64 GB; the three standard choices come first, in order.

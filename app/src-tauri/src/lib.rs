@@ -213,7 +213,7 @@ async fn chat<R: Runtime>(
         // available_ram_mb is already platform-honest — vm_stat on macOS,
         // os_proc_available_memory (jetsam headroom) on iOS, MemAvailable on
         // Android — so the same arithmetic sizes correctly on all three.
-        let spare = llm::spare_for_context_mb(res.available_ram_mb, info.approx_mb);
+        let spare = llm::spare_for_context_mb(res.available_ram_mb, info.runtime_mb);
         let n_ctx = llm::context_for_budget(spare, info.kv_kb_per_token, info.trained_ctx);
         // Frame the prompt for this model's family (ChatML vs Gemma). Chat models
         // always carry a style; fall back to ChatML if one ever doesn't.

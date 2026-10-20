@@ -85,7 +85,7 @@ Green locally (2026-10-20): Rust 62 passed + 1 ignored, decider 74, ios-signing 
 Ordered (structural and misleading items first):
 1. ~~**27B scope**~~ — **done 2026-10-20** (`chat_model_menu`, stored-choice fallback in the picker). Needs a `testflight-N` to reach testers.
 2. ~~**Stale CI/verify instructions in procedures**~~ — **done 2026-10-20.** `11` owns tags, triggers and measured costs; `testing.md` and this file link to it; `/cleanup` verifies locally; `debugging.md` says 14-day artifacts.
-3. **Memory accounting: one model** — context sizing uses file size + 700 MB while the gate uses `runtime_mb`, so the 4B at the gate edge can exceed the gate (`llm.rs:125-129`, `lib.rs:215`). An OOM-abort risk under `[OQ-58]`.
+3. ~~**Memory accounting: one model**~~ — **done 2026-10-20.** The window is sized from `available − runtime_mb`, the gate's own number (`22`).
 4. **Run the tests we have in CI** — one cheap Linux job: `python3 -m unittest discover -s app/scripts`, `npm test` for `app/`, `actionlint`. Route release and script work in `skills/README.md` (15 of the last 20 commits had no skill row).
 5. **`verify-release.py` blind spots** — `latest.json` is written outside `--dir` and silently skipped; the `0.1.0` dmg name is hard-coded (`build-app.yml:145,218`, `verify-release.py:242,254`). The next `app-build-N` is the first run of the notarize-dmg and verify steps.
 6. **Verify the shipped iOS/Android artifacts** — `codesign -d --entitlements` on the `.ipa`; `aapt2`/`bundletool` on the APK/AAB; `jarsigner -verify -strict` (`build-android-play.yml:135`). Add `concurrency` groups to the release workflows (two TestFlight runs would delete each other's profile, `ios-signing.py:187`).
