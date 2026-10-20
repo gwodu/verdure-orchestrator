@@ -262,8 +262,10 @@ pub const BYTESHAPE_QWEN3_4B: ModelInfo = ModelInfo {
 
 /// ByteShape's ShapeLearn quant of **Qwen3.8 27B** (Apache 2.0) — an iPad-only
 /// EXPERIMENT, not a tier we'd ship to users ([OQ-84]). The founder asked to push
-/// the iPad as far as it goes, so on iOS it takes the "Powerful" slot in the menu
-/// (`POWERFUL_CHAT_MODEL`); every other platform keeps the 4B above.
+/// the iPad as far as it goes, so it is offered as an EXTRA menu choice on iOS
+/// devices with 16 GB of memory (`chat_model_menu`). Every device keeps the 4B as
+/// "Powerful": a first version swapped the 4B out on all of iOS, which took it away
+/// from iPhones and 8 GB iPads that could never run the 27B (fixed 2026-10-20).
 ///
 /// The smallest file in the repo (`IQ2_XXS`, 2.56 bpw). Same `qwen35` hybrid
 /// architecture as `QWEN35_2B`, which our pinned llama.cpp already runs; the GGUF
@@ -400,14 +402,30 @@ pub fn choose_chat_model(
 /// footprints so any of them is a safe pick on a modern device. Friendly tier
 /// names + copy live in the UI (design.md — the words belong with the surface).
 pub const CHAT_MODEL_CHOICES: &[&ModelInfo] =
-    &[&QWEN_CHAT_SMALL, &QWEN35_2B, POWERFUL_CHAT_MODEL];
+    &[&QWEN_CHAT_SMALL, &QWEN35_2B, &BYTESHAPE_QWEN3_4B];
 
-/// The "Powerful" slot. On iOS it's the Qwen3.8 27B experiment ([OQ-84]); the
-/// 4B everywhere else. Revert the iOS line to drop the experiment.
-#[cfg(not(target_os = "ios"))]
-pub const POWERFUL_CHAT_MODEL: &ModelInfo = &BYTESHAPE_QWEN3_4B;
-#[cfg(target_os = "ios")]
-pub const POWERFUL_CHAT_MODEL: &ModelInfo = &BYTESHAPE_QWEN38_27B;
+/// Total memory a device needs before the 27B experiment is even offered. A 16 GB
+/// device reports ~16 384 MB; 15 000 leaves room for rounding while no 8 GB device
+/// can ever reach it ([OQ-84]).
+const EXPERIMENT_MIN_TOTAL_RAM_MB: u64 = 15_000;
+
+/// The menu for THIS device: the three standard choices, plus the 27B experiment
+/// on iOS devices with 16 GB of memory. Keyed on TOTAL memory (what the device
+/// could ever hold), not available memory (what is free this minute): a model
+/// that can never fit must not be offered with "close some apps" advice.
+pub fn chat_model_menu(total_ram_mb: u64) -> Vec<&'static ModelInfo> {
+    chat_model_menu_for(total_ram_mb, cfg!(target_os = "ios"))
+}
+
+/// `chat_model_menu` with the platform as a parameter, so the iOS branch is
+/// testable on any machine.
+fn chat_model_menu_for(total_ram_mb: u64, experiment_platform: bool) -> Vec<&'static ModelInfo> {
+    let mut menu = CHAT_MODEL_CHOICES.to_vec();
+    if experiment_platform && total_ram_mb >= EXPERIMENT_MIN_TOTAL_RAM_MB {
+        menu.push(&BYTESHAPE_QWEN38_27B);
+    }
+    menu
+}
 
 /// One chat model as the picker needs it: what it is, how big the download is, and
 /// whether it fits THIS device right now (memory + disk). Honest space up front
@@ -432,11 +450,12 @@ pub struct ChatModelOption {
 /// whether it fits the memory/disk free right now.
 pub fn chat_model_options(
     data_dir: &Path,
+    total_ram_mb: u64,
     available_mb: u64,
     free_disk_mb: u64,
 ) -> Vec<ChatModelOption> {
-    CHAT_MODEL_CHOICES
-        .iter()
+    chat_model_menu(total_ram_mb)
+        .into_iter()
         .map(|m| {
             let installed = model_path(data_dir, m).exists();
             ChatModelOption {
@@ -459,9 +478,10 @@ pub fn chat_model_options(
 /// back to auto-picking the largest that fits.
 pub fn chat_model_choice(
     id: &str,
+    total_ram_mb: u64,
     available_mb: u64,
 ) -> Result<&'static ModelInfo, ChatModelTooBig> {
-    match CHAT_MODEL_CHOICES.iter().copied().find(|m| m.id == id) {
+    match chat_model_menu(total_ram_mb).into_iter().find(|m| m.id == id) {
         Some(m) if (m.runtime_mb as u64) <= available_mb => Ok(m),
         Some(m) => Err(ChatModelTooBig {
             model_name: m.name,
@@ -859,11 +879,11 @@ mod tests {
         let big = &BYTESHAPE_QWEN3_4B;
         // Chosen + fits → exactly that model, no auto-substitution.
         assert_eq!(
-            chat_model_choice(big.id, big.runtime_mb as u64).unwrap().id,
+            chat_model_choice(big.id, 8192, big.runtime_mb as u64).unwrap().id,
             big.id
         );
         // Chosen + doesn't fit → honest error (strict), never a silent smaller model.
-        let err = chat_model_choice(big.id, big.runtime_mb as u64 - 1).unwrap_err();
+        let err = chat_model_choice(big.id, 8192, big.runtime_mb as u64 - 1).unwrap_err();
         assert!(err.strict);
         assert_eq!(err.model_name, big.name);
     }
@@ -873,22 +893,22 @@ mod tests {
         // No choice yet / stale id → largest that fits, non-strict error only if
         // nothing fits at all.
         assert_eq!(
-            chat_model_choice("", 8000).unwrap().id,
+            chat_model_choice("", 8192, 8000).unwrap().id,
             chat_model_for_available(8000).unwrap().id
         );
-        assert!(chat_model_choice("nope", 100).unwrap_err().strict == false);
+        assert!(chat_model_choice("nope", 8192, 100).unwrap_err().strict == false);
     }
 
     #[test]
     fn chat_options_report_fit_against_the_device() {
         // Roomy machine, empty dir → every choice fits memory, none installed.
-        let opts = chat_model_options(Path::new("/tmp/verdure-none-xyz"), 64_000, 64_000);
+        let opts = chat_model_options(Path::new("/tmp/verdure-none-xyz"), 8192, 64_000, 64_000);
         assert_eq!(opts.len(), CHAT_MODEL_CHOICES.len());
         assert!(opts.iter().all(|o| o.fits_memory && o.fits_disk && !o.installed));
         // Tiny free memory → the Powerful one no longer fits; the Small one still does.
-        let tight = chat_model_options(Path::new("/tmp/verdure-none-xyz"), 1200, 64_000);
+        let tight = chat_model_options(Path::new("/tmp/verdure-none-xyz"), 8192, 1200, 64_000);
         let small = tight.iter().find(|o| o.id == QWEN_CHAT_SMALL.id).unwrap();
-        let powerful = tight.iter().find(|o| o.id == POWERFUL_CHAT_MODEL.id).unwrap();
+        let powerful = tight.iter().find(|o| o.id == BYTESHAPE_QWEN3_4B.id).unwrap();
         assert!(small.fits_memory);
         assert!(!powerful.fits_memory);
     }
@@ -917,13 +937,36 @@ mod tests {
     }
 
     #[test]
-    fn powerful_slot_is_the_4b_off_ios() {
-        // The 27B swap is iOS-only; Mac/Android/Windows keep the proven 4B.
-        #[cfg(not(target_os = "ios"))]
-        assert_eq!(POWERFUL_CHAT_MODEL.id, BYTESHAPE_QWEN3_4B.id);
-        #[cfg(target_os = "ios")]
-        assert_eq!(POWERFUL_CHAT_MODEL.id, BYTESHAPE_QWEN38_27B.id);
-        assert_eq!(CHAT_MODEL_CHOICES.last().unwrap().id, POWERFUL_CHAT_MODEL.id);
+    fn every_device_keeps_the_4b_as_powerful() {
+        // The first 27B change swapped the 4B out on all of iOS, so iPhones and
+        // 8 GB iPads lost it. The 4B must be on every menu, whatever the device.
+        for (total, ios) in [(4_096, true), (8_192, true), (16_384, true), (8_192, false), (65_536, false)] {
+            let menu = chat_model_menu_for(total, ios);
+            assert!(menu.iter().any(|m| m.id == BYTESHAPE_QWEN3_4B.id), "{total} MB, ios={ios}");
+            let ids = |ms: &[&ModelInfo]| ms.iter().map(|m| m.id).collect::<Vec<_>>();
+            assert_eq!(ids(&menu[..3]), ids(CHAT_MODEL_CHOICES), "standard choices first, in order");
+        }
+    }
+
+    #[test]
+    fn the_27b_is_offered_only_on_16gb_ios() {
+        let has_27b = |total, ios| chat_model_menu_for(total, ios).iter().any(|m| m.id == BYTESHAPE_QWEN38_27B.id);
+        assert!(has_27b(16_384, true), "16 GB iPad gets the experiment");
+        assert!(!has_27b(8_192, true), "8 GB iPad: it can never fit, so it isn't offered");
+        assert!(!has_27b(6_144, true), "iPhone");
+        assert!(!has_27b(65_536, false), "never off iOS, however roomy");
+        // On this (non-iOS) machine the real menu is the standard three.
+        if !cfg!(target_os = "ios") {
+            assert_eq!(chat_model_menu(65_536).len(), CHAT_MODEL_CHOICES.len());
+        }
+    }
+
+    #[test]
+    fn a_27b_choice_on_a_small_device_falls_back_instead_of_failing() {
+        // A stored 27B id on a device that doesn't offer it is treated as unknown:
+        // auto-pick a model that fits, never a strict "needs 10 GB" refusal.
+        let pick = chat_model_choice(BYTESHAPE_QWEN38_27B.id, 8_192, 8_000).unwrap();
+        assert_ne!(pick.id, BYTESHAPE_QWEN38_27B.id);
     }
 
     #[test]
@@ -971,7 +1014,7 @@ mod tests {
         // The menu offers a model; `find()` resolves it for download AND the
         // Storage screen lists it for removal. A choice missing from MODELS is
         // both undownloadable and unremovable ([OQ-73]).
-        for m in CHAT_MODEL_CHOICES {
+        for m in chat_model_menu_for(16_384, true) {
             assert!(find(m.id).is_some(), "menu choice {} is not in MODELS", m.id);
         }
         for m in chat_candidates() {

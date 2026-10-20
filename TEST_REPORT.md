@@ -4,6 +4,14 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-20 — 27B scope fix
+
+- `every_device_keeps_the_4b_as_powerful`: covers iOS at 4/8/16 GB and non-iOS at 8/64 GB; the three standard choices come first, in order.
+- `the_27b_is_offered_only_on_16gb_ios`: yes on 16 GB iOS; no on an 8 GB iPad, an iPhone, or a 64 GB non-iOS machine. The platform is a parameter (`chat_model_menu_for`), so **the iOS branch now runs on this Mac**. The old `cfg`-swapped constant's iOS assertion never ran anywhere.
+- `a_27b_choice_on_a_small_device_falls_back_instead_of_failing`: a stored 27B id where it isn't offered auto-picks a model that fits.
+- `every_menu_choice_is_in_the_registry` now iterates the largest menu (16 GB iOS), so the 27B is covered too.
+- Replaced `powerful_slot_is_the_4b_off_ios` (it tested the swap that was the bug). Rust 62 → 64 passed.
+
 ### 2026-10-08 — `ios-signing.py` (one certificate for every iOS build)
 
 `python3 -m unittest app/scripts/test_ios_signing.py`: **10/10 pass.**

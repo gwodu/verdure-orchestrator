@@ -72,9 +72,10 @@ const MODEL_TIERS: { id: string; tier: string; blurb: string }[] = [
   { id: "qwen2.5-0.5b-instruct", tier: "Small", blurb: "Quick and light — runs on any device. Great for short questions." },
   { id: "qwen3.5-2b-instruct", tier: "Balanced", blurb: "A capable all-rounder, and it remembers much more of the conversation." },
   { id: "qwen3-4b-instruct-2507-byteshape", tier: "Powerful", blurb: "The most capable — richer answers, needs a little more room." },
-  // iPad-only experiment ([OQ-84]); the backend offers it instead of the 4B on iOS.
-  // Only the options the backend returns are drawn, so other platforms never see it.
-  { id: "qwen3.8-27b-byteshape", tier: "Powerful", blurb: "Our biggest model yet. Needs a 16 GB iPad and takes a while to download." },
+  // iPad experiment ([OQ-84]): the backend offers it, as an EXTRA choice, only on
+  // iOS devices with 16 GB of memory. Only offered options are drawn, so no other
+  // device sees it. Labelled as a test, not sold as a product (copywriting.md).
+  { id: "qwen3.8-27b-byteshape", tier: "Experimental", blurb: "A much larger model we're still testing. A very big download, and it may be slow or fail to start." },
 ];
 const tierName = (id: string): string =>
   MODEL_TIERS.find((t) => t.id === id)?.tier ?? "Chat model";
@@ -406,6 +407,9 @@ async function renderModelPicker(onboarding: boolean): Promise<void> {
   const stored = chosenModelId();
   let selected = MODEL_TIERS.some((t) => t.id === stored) ? stored : MODEL_TIERS[0].id;
   let options = await chatModelOptions().catch(() => [] as ChatModelOption[]);
+  // The backend's menu differs per device, so a selection it doesn't offer would
+  // be drawn as nothing at all. Fall back to its first offer.
+  if (options.length > 0 && !options.some((o) => o.id === selected)) selected = options[0].id;
 
   const gb = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);
   // Which OS this is decides the honest way to help when a model doesn't fit the

@@ -8,7 +8,7 @@
 
 **Ready to do, in order:**
 
-1. **Fix the scope of the 27B experiment (`[OQ-84]`) — user-facing, do first.** `model.rs` swaps the Powerful slot to the Qwen3.8 27B on **every iOS build**, so iPhones and 8 GB iPads on TestFlight lost the 4B and are offered a model they can never run. Their memory warning also says "close some apps", which can never make it fit. Fix: keep the 4B everywhere, and offer the 27B as an *extra* choice only when total RAM ≥ 16 GB. Then re-tag `testflight-N`.
+1. **Ship the 27B scope fix to TestFlight (`[OQ-84]`).** Fixed in code 2026-10-20 (the 4B is back everywhere; the 27B is an extra "Experimental" choice on 16 GB iOS devices only), but TestFlight testers still have `testflight-12`'s iOS-wide swap until the next `testflight-N` (~55 billable).
 2. **Run the 27B on the founder's iPad (`[OQ-84]`).** `testflight-12` delivered it. Record whether it loads, its real footprint (`runtime_mb = 10000` is an estimate), and the time to the first reply.
 3. **Work the cleanup queue below** (`/cleanup` takes the top item). The top three items correct things that mislead the next session.
 4. **Website: make the monorepo build on Vercel (`[OQ-81]`).** Until it's fixed, verdureai.com runs a *copied* decider from `main`, so a decider change on this branch can't reach the site. `main` has also gained `app/privacy/page.tsx` since `[OQ-81]` was written, so merge `main` into the branch before deploying. `[OQ-87]` (what the site is for after the pivot) and `[OQ-86]` (a wrong L3 model recommendation) are the next website items.
@@ -83,7 +83,7 @@ Green locally (2026-10-20): Rust 62 passed + 1 ignored, decider 74, ios-signing 
 - **(D) Tests that exist but no gate runs:** script tests, vitest, the untestable `main.ts`, unchecked `.ipa`/`.apk` artifacts, and `verify-release.py` steps that have never run in CI.
 
 Ordered (structural and misleading items first):
-1. **27B scope** — see Start here #1 (`model.rs:405-410`, `main.ts:75-77`, `:453`). Also map a stored 4B id to the current Powerful slot (`main.ts:406`, `model.rs:472`).
+1. ~~**27B scope**~~ — **done 2026-10-20** (`chat_model_menu`, stored-choice fallback in the picker). Needs a `testflight-N` to reach testers.
 2. **Stale CI/verify instructions in procedures** — `/cleanup` itself still says to verify by pushing (`.claude/commands/cleanup.md:41-45`); `skills/testing.md:84,102,155`; `debugging.md:75` (says 90-day artifacts; actual is 14), `:138`. Make `11` the one owner of tags, costs and triggers; others link to it (`testing.md:85-96` vs `:93`).
 3. **Memory accounting: one model** — context sizing uses file size + 700 MB while the gate uses `runtime_mb`, so the 4B at the gate edge can exceed the gate (`llm.rs:125-129`, `lib.rs:215`). An OOM-abort risk under `[OQ-58]`.
 4. **Run the tests we have in CI** — one cheap Linux job: `python3 -m unittest discover -s app/scripts`, `npm test` for `app/`, `actionlint`. Route release and script work in `skills/README.md` (15 of the last 20 commits had no skill row).

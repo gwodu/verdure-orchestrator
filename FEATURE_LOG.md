@@ -6,6 +6,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-10-20 — The 27B experiment no longer takes the 4B away from iPhones
+
+**What:** The picker's Powerful choice is the Qwen3 4B again on every device. The Qwen3.8 27B is now an extra fourth card, labelled **Experimental** ("A much larger model we're still testing. A very big download, and it may be slow or fail to start."), offered only on iOS devices with 16 GB of memory (`model.rs::chat_model_menu`, keyed on *total* memory). If a saved choice isn't on this device's menu, the picker falls back to the first one it does offer.
+
+**Why:** The 2026-10-08 version swapped the 4B for the 27B on every iOS build, so iPhones and 8 GB iPads lost a model they could run and were offered one they never could, with "close some apps" advice that could never work. Found by the 2026-10-20 inspection.
+
+**Simpler or more complex for the user?** Simpler for everyone except the 16 GB iPad, which sees one extra, clearly labelled card.
+
+**Tests:** Rust 64 (3 new: the 4B is on every menu; the 27B only on 16 GB iOS; a stored 27B id on a small device falls back instead of refusing). tsc clean, vitest 5. Reaches TestFlight with the next `testflight-N`.
+
 ### 2026-10-08 — iOS builds reuse one certificate instead of minting one per run
 
 **What:** `build-testflight.yml` now signs manually with one stored Apple Distribution certificate (`IOS_DIST_CERT_P12` / `IOS_DIST_CERT_PASSWORD`), imported into a throwaway keychain. A new script, `app/scripts/ios-signing.py`, fetches the App Store profile for that certificate from the App Store Connect API (replacing one fixed-name profile each run) and checks that the profile grants the entitlements the build requests. The API cannot enable kernel capabilities such as Increased Memory Limit (HTTP 409), so those are ticked once in the portal. It uses only Python's standard library plus `openssl`, with no third-party action, so the API key stays in code we own. The signing steps now run first.

@@ -109,6 +109,7 @@ fn chat_model_options<R: Runtime>(
     let res = device::system_resources(&data_dir);
     Ok(model::chat_model_options(
         &data_dir,
+        res.total_ram_mb,
         res.available_ram_mb,
         res.free_disk_mb,
     ))
@@ -186,7 +187,7 @@ async fn chat<R: Runtime>(
         // chat-crash fix); we say why instead. Empty/unknown id → auto-pick.
         let res = device::system_resources(&data_dir);
         let gb = |mb: u64| format!("{:.1} GB", mb as f64 / 1024.0);
-        let info = model::chat_model_choice(&model_id, res.available_ram_mb).map_err(|e| {
+        let info = model::chat_model_choice(&model_id, res.total_ram_mb, res.available_ram_mb).map_err(|e| {
             if e.strict {
                 format!(
                     "\u{201c}{}\u{201d} needs about {} of free memory, but only {} is free right now. \
