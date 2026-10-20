@@ -662,6 +662,22 @@ fn download(url: &str, dest: &Path, approx_mb: u32, progress: &dyn Fn(&str)) -> 
     Ok(())
 }
 
+/// What a failed download says to the user. Plain, true (the `.part` file is
+/// kept, so progress really is saved), and it names the likeliest fix.
+const DOWNLOAD_FAILED: &str =
+    "The download didn't finish, but your progress is saved. Check your internet connection, then try again.";
+
+/// How a model is named in progress messages. Chat models are "your chat model":
+/// the internal name ("Chat model (Qwen3 4B)") is jargon on screen, and the
+/// picker's tier names (Small/Balanced/Powerful) live in the UI, not here.
+fn user_label(info: &ModelInfo) -> String {
+    if info.modality == "Chat" {
+        "your chat model".to_string()
+    } else {
+        format!("the {}", info.name.to_lowercase())
+    }
+}
+
 /// Ensure a model is present, downloading it once if needed. Reports progress.
 pub fn ensure<F: Fn(&str)>(
     data_dir: &Path,
@@ -694,23 +710,26 @@ pub fn ensure<F: Fn(&str)>(
     let already_mb = std::fs::metadata(&part).map(|m| m.len() / 1_048_576).unwrap_or(0);
     if already_mb > 0 {
         progress(&format!(
-            "Resuming the {} download — {} of ~{} MB so far…",
-            info.name.to_lowercase(),
+            "Resuming the download of {} — {} of ~{} MB so far…",
+            user_label(info),
             already_mb,
             info.approx_mb
         ));
     } else {
         progress(&format!(
-            "Getting the {} ready — a one-time ~{} MB download…",
-            info.name.to_lowercase(),
+            "Getting {} ready — a one-time ~{} MB download…",
+            user_label(info),
             info.approx_mb
         ));
     }
 
     if let Err(msg) = download(info.url, &part, info.approx_mb, progress) {
-        // Keep the .part on interruption — the next attempt resumes from it. Only
-        // report the failure so the UI can invite a retry.
-        return Err(format!("{} couldn't be downloaded. {}", info.name, msg));
+        // Keep the .part on interruption — the next attempt resumes from it. The
+        // raw cause (curl/ureq/OS text) goes to the log, not the screen. The
+        // sentence keeps the word "connection": the chat screen keys its one-tap
+        // "Resume download" on it (format.ts `looksInterrupted`).
+        eprintln!("download of {} failed: {msg}", info.id);
+        return Err(DOWNLOAD_FAILED.to_string());
     }
 
     std::fs::rename(&part, &path).map_err(|e| format!("couldn't save the model: {e}"))?;
@@ -934,6 +953,18 @@ mod tests {
         // Runtime can never be below the weights it has to hold.
         assert!(BYTESHAPE_QWEN38_27B.runtime_mb > BYTESHAPE_QWEN38_27B.approx_mb);
         assert_eq!(BYTESHAPE_QWEN38_27B.prompt_style, Some(PromptStyle::ChatMlNoThink));
+    }
+
+    #[test]
+    fn download_failure_reads_plainly_and_keeps_the_resume_hook() {
+        // The chat screen offers "Resume download" when the error looks like a
+        // dropped connection (format.ts `looksInterrupted`, mirrored in
+        // format.test.ts). Rewording this sentence must not silently lose that.
+        assert!(DOWNLOAD_FAILED.contains("connection"));
+        assert!(!DOWNLOAD_FAILED.contains("os error") && !DOWNLOAD_FAILED.contains("curl"));
+        // Chat models are "your chat model" on screen, never the internal name.
+        assert_eq!(user_label(&BYTESHAPE_QWEN3_4B), "your chat model");
+        assert_eq!(user_label(&WHISPER_BASE_EN), "the english speech model");
     }
 
     #[test]

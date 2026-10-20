@@ -189,10 +189,11 @@ async fn chat<R: Runtime>(
         let gb = |mb: u64| format!("{:.1} GB", mb as f64 / 1024.0);
         let info = model::chat_model_choice(&model_id, res.total_ram_mb, res.available_ram_mb).map_err(|e| {
             if e.strict {
+                // No internal model name (jargon) and no "Settings" (there is no
+                // such screen): the switch is the model name at the top of chat.
                 format!(
-                    "\u{201c}{}\u{201d} needs about {} of free memory, but only {} is free right now. \
-                     Close some apps to free memory — or pick a smaller model in Settings.",
-                    e.model_name,
+                    "This model needs about {} of free memory, but only {} is free right now. \
+                     Close some apps, or tap the model name at the top to pick a smaller one.",
                     gb(e.needed_mb as u64),
                     gb(e.available_mb)
                 )

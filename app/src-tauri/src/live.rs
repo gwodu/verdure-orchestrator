@@ -213,7 +213,9 @@ fn emit_segment<R: Runtime>(
         }
         Ok(_) => {} // no speech in this chunk — nothing to add
         Err(e) => {
-            let _ = app.emit("live:status", format!("(skipped a bit — {e})"));
+            // The engine's error text is jargon; log it, tell the user plainly.
+            eprintln!("transcription of a segment failed: {e}");
+            let _ = app.emit("live:status", "(missed a moment of what you said)");
         }
     }
 }
@@ -240,7 +242,8 @@ fn build_stream<R: Runtime>(
 
     let app_err = app.clone();
     let err_fn = move |err| {
-        let _ = app_err.emit("live:status", format!("microphone hiccup — {err}"));
+        eprintln!("microphone stream error: {err}");
+        let _ = app_err.emit("live:status", "The microphone cut out for a moment.");
     };
 
     let stream = match format {

@@ -42,6 +42,15 @@ const MIN_CONTEXT: u32 = 512;
 /// still make the user wait minutes for the first reply. 4096 keeps a long
 /// conversation responsive on the floor machine (knowledge/22).
 const MAX_CONTEXT: u32 = 4096;
+
+/// What the user sees when the engine fails mid-reply. The engine's own text
+/// (batch/decode errors) is jargon, so it goes to the log, never to the screen.
+const REPLY_FAILED: &str = "Verdure couldn't finish that reply. Please try again.";
+
+fn reply_failed(e: impl std::fmt::Display) -> String {
+    eprintln!("chat engine error: {e}");
+    REPLY_FAILED.to_string()
+}
 /// Slack on top of the reply budget and the (measured) system instruction, to
 /// cover turn markers and tokenizer variance. The instruction itself is no longer
 /// guessed at — it is tokenized at call time, so growing it can't silently start
@@ -323,7 +332,10 @@ pub fn ensure_resident<'a>(
         // is what OOM-aborts a tight machine (knowledge/21 gap #2).
         *slot = None;
         let model = LlamaModel::load_from_file(backend()?, path, &model_params())
-            .map_err(|e| format!("couldn't load the chat model: {e}"))?;
+            .map_err(|e| {
+                eprintln!("model load failed ({}): {e}", info.id);
+                "Verdure couldn't open the chat model. Removing it in Storage and letting it download again usually fixes this.".to_string()
+            })?;
         *slot = Some(ResidentModel {
             id: info.id.to_string(),
             model,
@@ -393,11 +405,11 @@ pub fn decide(
             let is_last = pos as usize == last_idx;
             batch
                 .add(*token, pos, &[0], is_last)
-                .map_err(|e| e.to_string())?;
+                .map_err(reply_failed)?;
             pos += 1;
         }
         ctx.decode(&mut batch)
-            .map_err(|e| format!("chat failed: {e}"))?;
+            .map_err(reply_failed)?;
     }
 
     // Real sampling — NOT pure greedy, and crucially NO grammar sampler (see the
@@ -434,10 +446,10 @@ pub fn decide(
         batch.clear();
         batch
             .add(token, n_cur, &[0], true)
-            .map_err(|e| e.to_string())?;
+            .map_err(reply_failed)?;
         n_cur += 1;
         ctx.decode(&mut batch)
-            .map_err(|e| format!("chat failed: {e}"))?;
+            .map_err(reply_failed)?;
         if n_cur >= n_ctx as i32 {
             break;
         }

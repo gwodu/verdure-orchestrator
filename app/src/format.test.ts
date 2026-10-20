@@ -125,6 +125,10 @@ describe("looksInterrupted", () => {
     }
   });
 
+  it("recognises the backend's own download-failure sentence (model.rs DOWNLOAD_FAILED)", () => {
+    expect(looksInterrupted("The download didn't finish, but your progress is saved. Check your internet connection, then try again.")).toBe(true);
+  });
+
   it("does not offer a resume for unrelated failures", () => {
     expect(looksInterrupted("not enough free space")).toBe(false);
   });
