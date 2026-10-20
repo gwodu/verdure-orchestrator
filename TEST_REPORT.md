@@ -4,6 +4,13 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-20 — Checking the shipped iOS and Android artifacts
+
+- **iOS** (`build-testflight.yml`, before upload): unzips the `.ipa`, runs `codesign --verify --strict`, and asserts both kernel entitlements are `true` **in the signed app** and `CFBundleIdentifier` is the App Store ID. Tested locally both ways: the unsigned Mac build is rejected, naming the two missing keys and the wrong bundle ID; a correct plist passes. One fix came out of that: empty `codesign` output (an unsigned app) used to crash `plistlib`, and now it reports cleanly.
+- **Android Play** (`.aab`): `jarsigner -verify` exits 0 on an unsigned jar ("jar is unsigned."), so the step now requires `jar verified`. Tested locally: an unsigned jar is rejected and a self-signed one accepted. **Rejected the inspection's `-strict` suggestion:** a self-signed upload key raises warnings (self-signed, no timestamp, invalid chain), and `-strict` would have made every Play build fail.
+- **Android APK:** `aapt2 dump badging` asserts `package: name='ai.verdure.app'` and `RECORD_AUDIO` on the built APK. No `aapt2` on this Mac, so its first run is the next `android-build-N`.
+- `concurrency` groups on all four release workflows (no cancel-in-progress). actionlint clean.
+
 ### 2026-10-20 — `verify-release.py` can no longer pass by checking nothing
 
 - New `test_verify_release.py` (6), the script's first committed tests. `dmg_name` follows the manifest version (and strips `v`); no version is an error, not a guess. `find_latest_json` uses an explicit path outside the bundle (where CI writes it), returns None when the path is missing, finds one nested in the bundle, and returns None when there is nothing, which the caller now treats as a **failed** check rather than a skip.

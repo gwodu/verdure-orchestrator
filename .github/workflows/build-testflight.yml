@@ -50,6 +50,11 @@ env:
   # situation belongs with the identifier rename, [OQ-60].)
   BUNDLE_ID: ai.verdure.porter.898PY37K5S
 
+# One at a time, never cancelled mid-run: two runs at once would delete each other's signing profile (ios-signing.py replaces ONE named profile).
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
 jobs:
   testflight:
     name: Build signed + upload to TestFlight
@@ -265,6 +270,35 @@ jobs:
             -archivePath build-ios/Verdure.xcarchive \
             -exportPath build-ios/export \
             -exportOptionsPlist ExportOptions.plist
+      - name: Verify the exported .ipa (the artifact, not the project)
+        # The profile check (ios-signing.py --require-entitlement) proves Apple
+        # WOULD grant the entitlements; this proves the signed app CARRIES them,
+        # with the right identity, before anything is uploaded. Remove the two
+        # kernel keys here when the 27B experiment ends ([OQ-84]).
+        working-directory: app
+        run: |
+          IPA=$(find build-ios/export -maxdepth 1 -name "*.ipa" | head -1)
+          test -n "$IPA"
+          rm -rf "$RUNNER_TEMP/ipa" && mkdir "$RUNNER_TEMP/ipa"
+          unzip -q "$IPA" -d "$RUNNER_TEMP/ipa"
+          APP=$(find "$RUNNER_TEMP/ipa/Payload" -maxdepth 1 -name "*.app" | head -1)
+          test -n "$APP"
+          codesign --verify --strict "$APP"
+          codesign -d --entitlements :- "$APP" 2>/dev/null > "$RUNNER_TEMP/ents.plist"
+          python3 - "$RUNNER_TEMP/ents.plist" "$APP/Info.plist" "$BUNDLE_ID" <<'PYEOF'
+          import plistlib, sys
+          raw = open(sys.argv[1], "rb").read()
+          ents = plistlib.loads(raw) if raw.strip() else {}  # unsigned/no entitlements -> report, not crash
+          info = plistlib.load(open(sys.argv[2], "rb"))
+          want = ["com.apple.developer.kernel.increased-memory-limit",
+                  "com.apple.developer.kernel.extended-virtual-addressing"]
+          bad = [k for k in want if ents.get(k) is not True]
+          if info.get("CFBundleIdentifier") != sys.argv[3]:
+              bad.append(f"CFBundleIdentifier={info.get('CFBundleIdentifier')!r}")
+          print("entitlements:", sorted(k for k in ents if k.startswith("com.apple.developer")))
+          print("bundle id:", info.get("CFBundleIdentifier"), "| min iOS:", info.get("MinimumOSVersion"))
+          sys.exit(f"the signed app is wrong: {bad}" if bad else 0)
+          PYEOF
       - name: Upload to TestFlight
         working-directory: app
         env:

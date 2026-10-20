@@ -21,6 +21,11 @@ on:
       - "android-build-*"
       - "release-*"
 
+# One at a time, never cancelled mid-run: one at a time; a second queues.
+concurrency:
+  group: android-build
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Package Verdure for Android (.apk, test-signed)
@@ -120,6 +125,12 @@ jobs:
           "$BT/apksigner" sign --ks test.keystore --ks-pass pass:verduretest \
             --key-pass pass:verduretest --out verdure-android-test.apk aligned.apk
           "$BT/apksigner" verify verdure-android-test.apk
+          # Assert on the BUILT package, not the patched project: the identity
+          # Play will freeze and the mic permission dictation needs.
+          "$BT/aapt2" dump badging verdure-android-test.apk > badging.txt
+          grep -q "package: name='ai.verdure.app'" badging.txt || { echo "::error::built APK is not ai.verdure.app"; head -1 badging.txt; exit 1; }
+          grep -q "uses-permission: name='android.permission.RECORD_AUDIO'" badging.txt || { echo "::error::built APK lacks RECORD_AUDIO"; exit 1; }
+          head -1 badging.txt
       - name: Upload the Android test build
         uses: actions/upload-artifact@v4
         with:

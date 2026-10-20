@@ -27,6 +27,11 @@ on:
       - "app-build-*"
       - "release-*"
 
+# One at a time, never cancelled mid-run: one macOS release build at a time; a second queues rather than double-billing at 10x.
+concurrency:
+  group: app-build
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Package Verdure (.app + .dmg)

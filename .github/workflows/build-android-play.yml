@@ -33,6 +33,11 @@ on:
     tags:
       - "android-play-*"
 
+# One at a time, never cancelled mid-run: one Play upload at a time; two would race for the same versionCode track.
+concurrency:
+  group: android-play
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Package Verdure for Play (.aab, signed)
@@ -132,7 +137,10 @@ jobs:
             -storepass "$ANDROID_KEYSTORE_PASSWORD" \
             -keypass "$ANDROID_KEY_PASSWORD" \
             "$AAB" "$ANDROID_KEY_ALIAS"
-          jarsigner -verify "$AAB"
+          # `jarsigner -verify` exits 0 on an UNSIGNED jar too ("jar is unsigned"),
+          # so require the words that only a signed, intact bundle produces.
+          jarsigner -verify "$AAB" | tee verify.txt
+          grep -q "jar verified" verify.txt || { echo "::error::the .aab is not signed and verified"; exit 1; }
           cp "$AAB" verdure-release.aab
           rm -f upload.keystore
       - name: Upload the signed App Bundle
