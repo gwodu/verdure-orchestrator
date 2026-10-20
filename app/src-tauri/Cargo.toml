@@ -53,6 +53,12 @@ encoding_rs = "0.8"
 # audio I/O (CoreAudio on macOS). No external tool, cross-compiles cleanly to
 # x86_64 (no -march=native). We only use the input side. See live.rs.
 cpal = "0.15"
+# In-process HTTPS (rustls — no OpenSSL to cross-compile). Two uses: model
+# downloads on iOS/Android (model.rs, where there is no curl to shell out to) and
+# the web-search relay call on EVERY platform (web.rs, knowledge/24). It used to
+# be scoped to non-macOS so the verified Mac build's tree stayed byte-identical;
+# web search needed it on the Mac too, and the Mac build was re-verified locally.
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 # Self-update for the DESKTOP app only. iOS and Android get updates from their
 # stores, so the plugin is scoped to desktop targets — pulling it into the mobile
@@ -80,11 +86,16 @@ tauri-plugin-process = "2"
 # dependency tree is byte-identical. The cfg matches the code's cfg gates exactly
 # (model.rs `download`, device.rs `ios` module).
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-# In-process HTTPS download (rustls — no OpenSSL to cross-compile).
-ureq = { version = "2", default-features = false, features = ["tls"] }
 # Audited syscall wrappers: sysctlbyname (RAM), statvfs (disk). skills/testing.md
 # FFI rule 1 — reach C through audited wrapper crates, don't hand-write bindings.
 libc = "0.2"
+
+# Wi-Fi vs cellular vs offline, for the web-search data rule (web.rs,
+# knowledge/24). An audited wrapper over SCNetworkReachability — skills/testing.md
+# FFI rule 1. Its build script links SystemConfiguration on every `-apple` target,
+# so iOS and macOS share one code path; Android has no equivalent yet.
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+system-configuration = "0.8"
 
 # Android-only ([OQ-66]). cpal's Android backend (oboe) enumerates the mic over
 # JNI and reads the app's JavaVM + Context from the process-global `ndk_context`.

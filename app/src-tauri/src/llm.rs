@@ -36,7 +36,7 @@ const N_BATCH: u32 = 512;
 /// Never run below this: a window too small to hold the instruction plus one
 /// exchange isn't a degraded chat, it's a broken one — the RAM gate declines
 /// honestly instead (knowledge/22).
-const MIN_CONTEXT: u32 = 512;
+pub(crate) const MIN_CONTEXT: u32 = 512;
 /// Cap the window by TIME, not just memory. Prefill is linear in tokens and runs
 /// on the CPU, so a roomy device that could afford 32k tokens of KV cache would
 /// still make the user wait minutes for the first reply. 4096 keeps a long
@@ -344,18 +344,46 @@ pub(crate) fn ensure_resident<'a>(
     Ok(slot.as_ref().expect("just populated"))
 }
 
+/// Web grounding for one turn (knowledge/24): the rendered search results, or
+/// the note that the check couldn't happen. It rides in the final user turn
+/// ahead of the question and is NOT part of the history the frontend keeps —
+/// sources are for this answer, not the conversation's memory.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Grounding<'a> {
+    /// `web::sources_block` — results the model should answer from and cite.
+    Sources(&'a str),
+    /// `web::unavailable_note` — the user wanted a check and the device was
+    /// offline; the model is told so it says so, instead of pretending.
+    Unavailable(&'a str),
+}
+
+/// The final user turn: the question, with any grounding ahead of it. Pure, so
+/// the framing is tested without a model. The question comes LAST because small
+/// models weight the end of the prompt most (knowledge/24, "lost in the middle").
+pub(crate) fn compose_user_turn(user_message: &str, grounding: Option<Grounding<'_>>) -> String {
+    match grounding {
+        None => user_message.to_string(),
+        Some(Grounding::Sources(block)) => format!("{block}\n\nQuestion: {user_message}"),
+        Some(Grounding::Unavailable(note)) => format!("{note}\n\n{user_message}"),
+    }
+}
+
 /// Answer `user_message` in the context of `history`. Plain sampling (no grammar,
 /// no JSON/tool-calling) — the generated text IS the reply, shown as-is.
 ///
 /// `n_ctx` is sized per device+model by `context_for_budget`; history is trimmed
-/// to whole turns that fit it (knowledge/22).
+/// to whole turns that fit it (knowledge/22). `grounding` is this turn's web
+/// context, if any (knowledge/24): it is costed with the question, so sources
+/// push out old history rather than overflowing the window.
 pub(crate) fn decide(
     resident: &ResidentModel,
     history: &[Turn],
     user_message: &str,
     style: PromptStyle,
     n_ctx: u32,
+    grounding: Option<Grounding<'_>>,
 ) -> Result<ToolDecision, String> {
+    let user_message = &compose_user_turn(user_message, grounding);
     let model = &resident.model;
     let ctx_params = LlamaContextParams::default()
         .with_n_ctx(NonZeroU32::new(n_ctx.max(MIN_CONTEXT)))
@@ -661,11 +689,31 @@ mod tests {
         let resident = ensure_resident(&mut slot, info, path).expect("model loads");
 
         // Fixed window so context size is not a variable in this experiment.
-        let out = decide(resident, &[], "How do the northern lights work?", style, 1024)
+        let out = decide(resident, &[], "How do the northern lights work?", style, 1024, None)
             .expect("generation succeeds");
 
         eprintln!("--- reply ---\n{}\n-------------", out.reply);
         assert!(!out.reply.trim().is_empty(), "empty reply");
+    }
+
+    #[test]
+    fn grounding_rides_in_the_final_turn_with_the_question_last() {
+        let block = "Web search results for \"x\" (just now):\n[1] a.com — T\nfact";
+        let composed = compose_user_turn("what is x?", Some(Grounding::Sources(block)));
+        assert!(composed.starts_with(block));
+        assert!(composed.ends_with("Question: what is x?"));
+        // And the history is framed WITHOUT it: sources belong to one answer.
+        let hist = [turn("earlier", "reply")];
+        let p = format_chat_prompt(&hist, &composed, PromptStyle::ChatMl);
+        assert_eq!(p.matches("Web search results").count(), 1);
+        assert!(p.contains("<|im_start|>user\nearlier<|im_end|>"));
+    }
+
+    #[test]
+    fn an_offline_check_is_said_to_the_model_not_hidden() {
+        let turn = compose_user_turn("naira rate today?", Some(Grounding::Unavailable("(offline note)")));
+        assert_eq!(turn, "(offline note)\n\nnaira rate today?");
+        assert_eq!(compose_user_turn("plain", None), "plain");
     }
 
     #[test]

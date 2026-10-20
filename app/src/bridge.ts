@@ -41,6 +41,26 @@ export async function chatModelOptions(): Promise<ChatModelOption[]> {
 /** One completed exchange, as the backend wants it for conversation memory. */
 export type ChatTurn = { user: string; assistant: string };
 
+/** One web search result (web.rs `Snippet`), as the prompt and the UI use it. */
+export type Snippet = {
+  title: string;
+  url: string;
+  domain: string;
+  date?: string | null;
+  text: string;
+};
+
+/**
+ * This turn's web context (knowledge/24): the approved query and what came
+ * back, or `unavailable` when the user wanted the check and there was no
+ * connection — the model is told, so it says so.
+ */
+export type WebContext = {
+  query: string;
+  sources: Snippet[];
+  unavailable: boolean;
+};
+
 /**
  * Send a chat message to the local model, streaming a status line. `modelId` is
  * the model the user picked (Small/Balanced/Powerful); the backend loads it if it
@@ -48,13 +68,15 @@ export type ChatTurn = { user: string; assistant: string };
  *
  * `history` is the conversation so far — this is what gives the chat memory
  * (knowledge/22). The backend keeps whichever recent turns fit the window it
- * sized for this device, so the frontend can pass everything it has.
+ * sized for this device, so the frontend can pass everything it has. `web` is
+ * for this answer only and never enters the history.
  */
 export async function chatSend(
   message: string,
   onProgress: ProgressFn,
   modelId = "",
   history: ChatTurn[] = [],
+  web: WebContext | null = null,
 ): Promise<ChatDecision> {
   if (!inTauri) {
     onProgress("Thinking…");
@@ -65,6 +87,15 @@ export async function chatSend(
         action: "set_up_transcription",
         reply: "I can set you up to turn recordings into text.",
       };
+    }
+    if (web?.sources.length) {
+      return {
+        action: "answer",
+        reply: `(Browser preview.) From the results: ${web.sources[0].text} [1] The second source agrees [2].`,
+      };
+    }
+    if (web?.unavailable) {
+      return { action: "answer", reply: "(Browser preview.) I couldn't check the web — you're offline. From memory, …" };
     }
     // Echo the memory back so the preview shows history is actually flowing.
     return {
@@ -80,10 +111,51 @@ export async function chatSend(
     onProgress(e.payload),
   );
   try {
-    return await invoke<ChatDecision>("chat", { message, modelId, history });
+    return await invoke<ChatDecision>("chat", {
+      message,
+      modelId,
+      history,
+      webQuery: web?.query ?? null,
+      webSources: web?.sources ?? null,
+      webUnavailable: web?.unavailable ?? false,
+    });
   } finally {
     unlisten();
   }
+}
+
+// --- Web search (knowledge/24) ------------------------------------------------
+//
+// Mechanism only. Whether a search may run — the user's Wi-Fi/mobile-data
+// choice, the offer, the approval of the words — is decided in web.ts and
+// main.ts. Nothing here consults that preference, so one place owns the rule.
+
+/** Whether the relay is reachable, and over Wi-Fi or mobile data. */
+export async function networkState(): Promise<"offline" | "wifi" | "cellular" | "unknown"> {
+  if (!inTauri) return "wifi";
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke("network_state");
+}
+
+/** The scrubbed words that WOULD leave the device for `message` — for the user
+ *  to read and approve before anything is sent. */
+export async function prepareWebQuery(message: string): Promise<string> {
+  if (!inTauri) return message.replace(/\S+@\S+/g, "").replace(/\s+/g, " ").trim();
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<string>("prepare_web_query", { message });
+}
+
+/** Run an approved search through Verdure's relay. */
+export async function webSearch(query: string, modelId = ""): Promise<Snippet[]> {
+  if (!inTauri) {
+    await new Promise((r) => setTimeout(r, 600));
+    return [
+      { title: "Exchange rates — Central Bank", url: "https://cbn.gov.ng/rates", domain: "cbn.gov.ng", date: "2026-10-20", text: "The official rate closed at 1,480 naira to the dollar on Monday." },
+      { title: "Markets today", url: "https://example.news/markets", domain: "example.news", date: "2026-10-20", text: "The naira held steady in the parallel market at around 1,520." },
+    ];
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<Snippet[]>("web_search", { query, modelId });
 }
 
 /** A live snapshot of free resources — the machine-context for orchestration. */

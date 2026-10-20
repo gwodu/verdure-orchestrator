@@ -8,6 +8,7 @@ import {
   micPermissionHelp,
   parseProgress,
   renderMarkdown,
+  citedSources,
 } from "./format";
 
 // renderMarkdown is the safety boundary for model output: a local model's reply
@@ -146,5 +147,31 @@ describe("micPermissionHelp", () => {
     expect(micPermissionHelp("macos")).not.toContain("Apps › Verdure");
     expect(micPermissionHelp("ios")).not.toContain("Privacy & Security");
     expect(micPermissionHelp("")).toContain("your device's settings");
+  });
+});
+
+// Citations (knowledge/24): a [n] that names a real source becomes a marker;
+// anything else stays literal, so the UI never invents a source.
+describe("citations", () => {
+  it("marks only the numbers that name a source", () => {
+    const html = renderMarkdown("The rate is 1500 [1], said [2]. See [3] and [12].", 2);
+    expect(html).toContain('<sup class="cite">1</sup>');
+    expect(html).toContain('<sup class="cite">2</sup>');
+    expect(html).toContain("See [3] and [12].");
+  });
+
+  it("leaves brackets alone when the answer had no sources", () => {
+    expect(renderMarkdown("Footnote [1] here.")).toBe("<p>Footnote [1] here.</p>");
+  });
+
+  it("does not touch code spans", () => {
+    expect(renderMarkdown("use `arr[1]` here [1]", 1)).toBe(
+      '<p>use <code>arr[1]</code> here <sup class="cite">1</sup></p>',
+    );
+  });
+
+  it("lists the sources a reply leaned on, once each, in order of first use", () => {
+    expect(citedSources("A [2]. B [1]. C [2]. D [9].", 3)).toEqual([2, 1]);
+    expect(citedSources("No citations at all.", 3)).toEqual([]);
   });
 });

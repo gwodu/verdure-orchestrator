@@ -1072,3 +1072,77 @@ body::after {
   color: var(--ink);
 }
 .updates-mode.selected::before { content: "✓ "; color: var(--mint); }
+
+/* --- Web search (knowledge/24) --------------------------------------------
+   The offer card is an AI message with a question in it: the words that would
+   leave the device, editable, and two equal-weight answers. Quiet on purpose —
+   it is asking permission (design.md). */
+.web-offer { white-space: normal; max-width: 92%; }
+.web-offer > p { margin: 0 0 10px; }
+.web-query {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 14.5px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-line);
+  background: rgba(5, 15, 30, 0.55);
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+.web-query:focus {
+  outline: none;
+  border-color: var(--mint);
+  box-shadow: 0 0 0 3px rgba(52, 198, 154, 0.18);
+}
+.web-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* The disclosure: a tiny toggle, open the first time, a line of small print
+   after. Native <details> so it costs nothing and reads with a screen reader. */
+.disclose { margin-top: 10px; font-size: 12.5px; color: var(--ink-soft); }
+.disclose summary {
+  cursor: pointer;
+  color: var(--mint-bright);
+  list-style: none;
+  user-select: none;
+}
+.disclose summary::-webkit-details-marker { display: none; }
+.disclose summary::before { content: "ⓘ "; }
+.disclose[open] summary::before { content: "▾ "; }
+.disclose-text { margin: 6px 0 0; line-height: 1.5; }
+
+/* Under a web-checked answer: what was searched, the sources, and the badge
+   that says when the model answered from memory instead. */
+.sources {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  white-space: normal;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.sources-query { font-style: italic; }
+.sources-list { margin: 0; padding-left: 18px; }
+.sources-list li { margin: 2px 0; opacity: 0.7; }
+.sources-list li.cited { opacity: 1; color: var(--ink); }
+.source-domain { font-weight: 600; margin-right: 6px; }
+.source-title { color: var(--ink-soft); }
+.cite {
+  font-size: 0.72em;
+  color: var(--mint-bright);
+  margin-left: 1px;
+}
+.badge {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 157, 138, 0.4);
+  color: var(--coral);
+  font-size: 12px;
+}

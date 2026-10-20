@@ -17,6 +17,8 @@ This rules out:
 
 Inference happens on the user's machine. Models never phone home. Conversations never leave the device. This is the entire reason local AI matters; Verdure protects it.
 
+The two things that *can* leave the device do so only on the user's say-so, and are named exactly: the opt-in update check (`23`) and the search words the user approves for an opt-in web search (`24` — the conversation still never leaves; only the words shown in the editable field do, and the disclosure states who sees them).
+
 ## 3. No telemetry by default
 
 If Verdure ever collects anything — even anonymized hardware specs to improve the orchestrator — it is opt-in, explained clearly, and refusable without losing functionality.

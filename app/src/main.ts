@@ -20,9 +20,14 @@ import {
   revealModelsDir,
   type ChatModelOption,
   openThirdPartyNotices,
+  networkState,
+  prepareWebQuery,
+  webSearch,
+  type WebContext,
 } from "./bridge";
 
 import {
+  citedSources,
   escapeHtml,
   fmtBytes,
   fmtSize,
@@ -32,6 +37,16 @@ import {
   parseProgress,
   renderMarkdown,
 } from "./format";
+import {
+  WEB_DISCLOSURE,
+  disclosureSeen,
+  looksTimeSensitive,
+  markDisclosureSeen,
+  searchGate,
+  setWebMode,
+  webMode,
+  type WebMode,
+} from "./web";
 import { recommendedChoice } from "./picker";
 
 const WHISPER_MODEL_ID = "whisper-base-en";
@@ -136,6 +151,9 @@ function renderStorage(): void {
   // really consent (knowledge/23) — the mode they picked on first launch is
   // changeable from this row, forever.
   if (updatesSupported()) panel.appendChild(updatesSection());
+  // Web search: the other thing Verdure can send off the device (knowledge/24).
+  // Same reasoning as updates — a choice that cannot be revisited isn't a choice.
+  panel.appendChild(webSection());
 
   // Live "Your computer" readout — the machine-context Verdure uses to size what
   // it runs (knowledge/20/21). Honest, plain numbers; no jargon.
@@ -746,20 +764,65 @@ function renderChat(): void {
   // recent turns fit the window it sized for this device, so we pass all of it.
   const history: ChatTurn[] = [];
 
-  const addMsg = (who: "user" | "ai", text: string) => {
+  const addMsg = (who: "user" | "ai", text: string, web: WebContext | null = null) => {
     // Only the model's replies get Markdown rendering. What the USER typed is
     // shown exactly as typed — if they write **bold**, they meant asterisks.
     const m =
       who === "ai"
         ? (() => {
             const node = el("div", "msg ai");
-            node.innerHTML = renderMarkdown(text); // escaped inside renderMarkdown
+            node.innerHTML = renderMarkdown(text, web?.sources.length ?? 0); // escaped inside renderMarkdown
+            if (web) node.appendChild(sourcesFooter(text, web));
             return node;
           })()
         : el("div", "msg user", text);
     thread.appendChild(m);
     thread.scrollTop = thread.scrollHeight;
     return m;
+  };
+
+  // Under a web-checked answer: what was searched, which sources it leaned on,
+  // and — the honest part — when it didn't lean on them at all (knowledge/24).
+  // Sources are listed by site, not linked: Verdure has no way to open a page
+  // yet, and a link that does nothing is worse than a name.
+  const sourcesFooter = (reply: string, web: WebContext): HTMLElement => {
+    const box = el("div", "sources");
+    if (web.unavailable) {
+      box.appendChild(el("span", "badge", "Couldn't check the web — no connection. Answered from memory."));
+      return box;
+    }
+    box.appendChild(el("span", "sources-query", `Searched the web for “${web.query}”`));
+    const used = citedSources(reply, web.sources.length);
+    if (used.length === 0) {
+      box.appendChild(el("span", "badge", "Answered from memory — the results weren't used."));
+    }
+    const list = el("ol", "sources-list");
+    web.sources.forEach((s, i) => {
+      const li = el("li", used.includes(i + 1) ? "cited" : "");
+      li.appendChild(el("span", "source-domain", s.domain));
+      li.appendChild(el("span", "source-title", s.title));
+      list.appendChild(li);
+    });
+    box.appendChild(list);
+    return box;
+  };
+
+  // The small, optional explanation of what leaves the device. Open on the very
+  // first search so nobody sends anything without having seen it; a tiny
+  // toggle thereafter. Native <details>: no script, works everywhere.
+  const disclosure = (): HTMLElement => {
+    const d = document.createElement("details");
+    d.className = "disclose";
+    d.open = !disclosureSeen();
+    const s = document.createElement("summary");
+    s.textContent = "What leaves your device?";
+    d.appendChild(s);
+    d.appendChild(el("p", "disclose-text", WEB_DISCLOSURE));
+    d.addEventListener("toggle", () => {
+      if (d.open) markDisclosureSeen();
+    });
+    if (d.open) markDisclosureSeen();
+    return d;
   };
 
   // An AI message that offers to run a capability — the human confirms before
@@ -800,9 +863,102 @@ function renderChat(): void {
     };
   };
 
+  // Offer a web check for a question that looks like it needs fresh facts
+  // (knowledge/24). The words that would be sent are shown — and editable —
+  // before anything leaves the device; a tap on "Check the web" is the approval.
+  const offerWebCheck = async (text: string) => {
+    const card = el("div", "msg ai web-offer");
+    card.appendChild(el("p", "", "This might need up-to-date information. Check the web for:"));
+    const q = document.createElement("input");
+    q.className = "web-query";
+    q.type = "text";
+    q.setAttribute("aria-label", "The search words that would be sent");
+    q.value = await prepareWebQuery(text);
+    card.appendChild(q);
+    const row = el("div", "web-row");
+    const go = document.createElement("button");
+    go.type = "button";
+    go.className = "update-choice preferred";
+    go.textContent = "Check the web";
+    const skip = document.createElement("button");
+    skip.type = "button";
+    skip.className = "update-choice";
+    skip.textContent = "Answer without it";
+    row.appendChild(go);
+    row.appendChild(skip);
+    card.appendChild(row);
+    card.appendChild(disclosure());
+    thread.appendChild(card);
+    thread.scrollTop = thread.scrollHeight;
+    go.addEventListener("click", () => {
+      const query = q.value.trim();
+      card.remove();
+      void runChat(text, query ? { query, sources: [], unavailable: false } : null);
+    });
+    skip.addEventListener("click", () => {
+      card.remove();
+      void runChat(text);
+    });
+  };
+
+  // On mobile data with Wi-Fi only set (or when the device can't tell): ask,
+  // once, to allow it — the answer is a setting, changeable from Storage. No
+  // byte counts here; a search is a few kilobytes and the number is noise.
+  const askMobileData = (text: string, web: WebContext) => {
+    const card = el("div", "msg ai web-offer");
+    card.appendChild(
+      el("p", "", "You're not on Wi-Fi, and web search is set to Wi-Fi only. Allow it on mobile data too? A search uses very little."),
+    );
+    const row = el("div", "web-row");
+    const allow = document.createElement("button");
+    allow.type = "button";
+    allow.className = "update-choice preferred";
+    allow.textContent = "Allow on mobile data";
+    allow.addEventListener("click", () => {
+      setWebMode("any");
+      card.remove();
+      void runChat(text, web);
+    });
+    const not = document.createElement("button");
+    not.type = "button";
+    not.className = "update-choice";
+    not.textContent = "Not now";
+    not.addEventListener("click", () => {
+      card.remove();
+      void runChat(text);
+    });
+    row.appendChild(allow);
+    row.appendChild(not);
+    card.appendChild(row);
+    thread.appendChild(card);
+    thread.scrollTop = thread.scrollHeight;
+  };
+
   // Run one chat turn for `text`. Split out from `submit` so the "Resume" button
   // can re-attempt (which resumes the download) without re-posting the question.
-  const runChat = async (text: string) => {
+  // `web` is an approved search to run first (knowledge/24).
+  const runChat = async (text: string, web: WebContext | null = null) => {
+    if (web && web.sources.length === 0 && !web.unavailable) {
+      // Approved, not yet run: the data rule decides how.
+      const gate = searchGate(webMode(), await networkState().catch(() => "unknown" as const));
+      if (gate === "ask-mobile-data") return askMobileData(text, web);
+      if (gate === "off") web = null;
+      else if (gate === "offline") web = { ...web, unavailable: true };
+      else {
+        status.textContent = "Checking the web…";
+        try {
+          web = { ...web, sources: await webSearch(web.query, chosenModelId()) };
+        } catch (err) {
+          // Couldn't reach the relay: the model is told, and the user sees why.
+          status.textContent = friendlyError(err);
+          web = { ...web, unavailable: true };
+        }
+        if (web.sources.length === 0 && !web.unavailable) {
+          // Nothing came back — say so, rather than framing an empty source list.
+          web = { ...web, unavailable: true };
+        }
+      }
+    }
     busy = true;
     send.disabled = true;
     const downloading = !!(chosen && !chosen.installed);
@@ -819,14 +975,14 @@ function renderChat(): void {
     try {
       // Hold a screen wake lock while a (possibly large) model downloads.
       const decision = downloading
-        ? await withScreenAwake(() => chatSend(text, onProgress, chosenModelId(), history))
-        : await chatSend(text, onProgress, chosenModelId(), history);
+        ? await withScreenAwake(() => chatSend(text, onProgress, chosenModelId(), history, web))
+        : await chatSend(text, onProgress, chosenModelId(), history, web);
       status.textContent = "";
       card?.el.remove();
       if (chosen) chosen.installed = true; // downloaded now — don't renotify
       // Chat is a plain conversation now — just show the reply.
       const reply = decision.reply || "(no reply)";
-      addMsg("ai", reply);
+      addMsg("ai", reply, web);
       // Only a completed exchange becomes memory (see `history`'s note).
       if (decision.reply) history.push({ user: text, assistant: decision.reply });
     } catch (err) {
@@ -839,7 +995,7 @@ function renderChat(): void {
         addActionMsg(
           "Download paused — your progress is saved. Tap to pick up where it left off. (If it keeps pausing, check your connection or allow background data for Verdure in Settings.)",
           "Resume download →",
-          () => void runChat(text),
+          () => void runChat(text, web),
         );
       } else {
         addMsg("ai", msg);
@@ -857,6 +1013,12 @@ function renderChat(): void {
     input.value = "";
     examples.remove(); // empty-state examples make way for the conversation
     addMsg("user", text);
+    // Deciding whether to OFFER a search is local and deterministic; nothing is
+    // sent until the user taps the words they can read (knowledge/24).
+    if (webMode() !== "off" && looksTimeSensitive(text)) {
+      await offerWebCheck(text);
+      return;
+    }
     await runChat(text);
   };
 
@@ -1083,6 +1245,57 @@ function updatesSection(): HTMLElement {
   credits.title = "The open-source software Verdure is built on";
   credits.addEventListener("click", () => void openThirdPartyNotices());
   box.appendChild(credits);
+  return box;
+}
+
+// --- Web search (knowledge/24) ------------------------------------------------
+
+/**
+ * The Web search row in Storage: the connection rule, and the disclosure of
+ * what leaves the device — the same small toggle the chat shows, so the words
+ * are identical wherever the user meets them.
+ */
+function webSection(): HTMLElement {
+  const box = el("div", "updates-box");
+  box.appendChild(el("h2", "section-title", "Web search"));
+  box.appendChild(
+    el(
+      "p",
+      "updates-status",
+      "For questions that need up-to-date answers, Verdure can offer to check the web. You see the search words first, and nothing is sent until you tap.",
+    ),
+  );
+  const modes: { mode: WebMode; label: string }[] = [
+    { mode: "wifi", label: "On Wi-Fi only" },
+    { mode: "any", label: "On Wi-Fi and mobile data" },
+    { mode: "off", label: "Off — never offer to check the web" },
+  ];
+  const list = el("div", "updates-modes");
+  const paint = () => {
+    list.innerHTML = "";
+    const current = webMode();
+    for (const m of modes) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "updates-mode" + (m.mode === current ? " selected" : "");
+      b.textContent = m.label;
+      b.setAttribute("aria-pressed", String(m.mode === current));
+      b.addEventListener("click", () => {
+        setWebMode(m.mode);
+        paint();
+      });
+      list.appendChild(b);
+    }
+  };
+  paint();
+  box.appendChild(list);
+  const d = document.createElement("details");
+  d.className = "disclose";
+  const s = document.createElement("summary");
+  s.textContent = "What leaves your device?";
+  d.appendChild(s);
+  d.appendChild(el("p", "disclose-text", WEB_DISCLOSURE));
+  box.appendChild(d);
   return box;
 }
 

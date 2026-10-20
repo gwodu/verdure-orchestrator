@@ -6,6 +6,20 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-10-20 — Web search: the local model can check the web, on the user's say-so (`knowledge/24`)
+
+**What:** For a question that looks like it needs fresh facts ("naira to dollar rate today", "who won the AFCON final"), chat offers to check the web: an AI message shows the scrubbed search words in an editable field, **Check the web** / **Answer without it**, and a small "What leaves your device?" disclosure (open the first time, a one-line toggle after). On the tap, the words go through a relay on verdureai.com (`website/app/api/search`) to Brave's LLM Context API and ≤5 short snippets return; the model answers from them with `[n]` citations, and the reply lists its sources by site. If the reply cites nothing, a badge says it answered from memory. Wi-Fi only by default; on mobile data a one-time ask ("Allow on mobile data") becomes a setting; offline, the model is told the check couldn't happen and the answer says so. Storage gets a **Web search** section (Wi-Fi only / Wi-Fi and mobile data / Off) with the same disclosure.
+
+**What problem it solves:** a local model's knowledge stops at its training date, and the people Verdure is for ask about prices, rates, results and news. The research (`24`) showed every cheap route — scraping, WebViews, SearXNG — leaks the phone's IP and fingerprint to a search engine and breaks or gets blocked; this route sends only the approved words, through one hostname, for a few KB.
+
+**Simpler or more complex for the user?** One extra tap on the questions where it matters, and only there — the offer is a local rule, never a network call. Justified: the tap *is* the privacy guarantee (nothing is sent the user hasn't read), and the words being editable is principle 4 of `06` made concrete. No byte counts, no settings wizard: the only setting is the connection rule, and it's asked in the moment, once.
+
+**User impact statement:** After this change, the user can get an up-to-date answer to a time-sensitive question more easily because Verdure offers the search, shows exactly what would be sent, and marks which parts of the answer came from the web.
+
+**Tests:** Rust 53 → 67 (`web.rs` scrub incl. trailing punctuation and multibyte caps, budget bounds, fit order/trim/count, sources block framing, reply parsing and the no-jargon error, the flags→state rule, relay host; `llm.rs` grounding placement and history exclusion). App vitest 36 → 50 (`web.ts` default/gate/offer heuristic/disclosure claims; `format.ts` citations and `citedSources`). Website 9 → 25 (`lib/search.ts` validation, budget clamp, upstream URLs carry no user parameters, both Brave reducers, trim, a maximal reply < 4 KB). Route exercised locally: GET → 405, no key → 503 with a plain sentence. Screens reviewed in the browser preview at phone width. **Not yet:** a live keyed call (`[OQ-90]`), on-device on the iPad, iOS cross-compile.
+
+**Pending the founder:** `BRAVE_SEARCH_API_KEY` on Vercel; a `testflight-N` tag.
+
 ### 2026-10-20 — Website: "newer Mac" visitors get a model that fits
 
 **What:** The default text recommendation for a newer Mac (L3) is now **Qwen3 8B** (5.2 GB), replacing **Mistral Small**. `knowledge/03` had listed Mistral Small as a ~5 GB 7B model; it is a 22–24B model and a **14.3 GB** download (measured from the Ollama registry), on machines that often have 8 GB. **Why Qwen3 8B:** a real 8B in the size the page promises, under Apache 2.0 (`09`: lead with Apache/MIT). Llama 3.1 8B stays as the coding pick. **Tests:** decider 83 with fixtures updated. Reaches verdureai.com once `[OQ-81]` is fixed.

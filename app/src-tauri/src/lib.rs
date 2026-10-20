@@ -12,6 +12,7 @@ mod live;
 mod llm;
 mod model;
 mod transcribe;
+mod web;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -78,13 +79,20 @@ fn chat_model_options<R: Runtime>(
 
 /// The conversational front door: ensure the chat model → generate a reply.
 /// Long-running, so it runs on a blocking thread and streams a "Thinking…" stage
-/// via the `chat:progress` event (knowledge/18). Tool-calling lands next.
+/// via the `chat:progress` event (knowledge/18).
+///
+/// `web_query` + `web_sources` carry this turn's approved web search and its
+/// results (knowledge/24); `web_unavailable` says the user wanted the check and
+/// the device was offline, so the model is told rather than left to guess.
 #[tauri::command]
 async fn chat<R: Runtime>(
     app: AppHandle<R>,
     message: String,
     model_id: String,
     history: Vec<llm::Turn>,
+    web_query: Option<String>,
+    web_sources: Option<Vec<web::Snippet>>,
+    web_unavailable: Option<bool>,
 ) -> Result<llm::ToolDecision, String> {
     let data_dir = app
         .path()
@@ -142,10 +150,72 @@ async fn chat<R: Runtime>(
             .lock()
             .map_err(|_| "the chat session is in a bad state — please restart Verdure.".to_string())?;
         let resident = llm::ensure_resident(&mut slot, info, &path)?;
-        llm::decide(resident, &history, &message, style, n_ctx)
+        // Fit the sources to THIS window (the relay sized them for it already;
+        // this is the guarantee) and frame them for the model.
+        let block = web_sources
+            .filter(|s| !s.is_empty())
+            .map(|s| web::fit_snippets(s, web::snippet_budget_tokens(n_ctx), web::MAX_SOURCES))
+            .map(|s| web::sources_block(web_query.as_deref().unwrap_or(""), &s));
+        let grounding = match (&block, web_unavailable.unwrap_or(false)) {
+            (Some(b), _) => Some(llm::Grounding::Sources(b)),
+            (None, true) => Some(llm::Grounding::Unavailable(web::unavailable_note())),
+            (None, false) => None,
+        };
+        llm::decide(resident, &history, &message, style, n_ctx, grounding)
     })
     .await
     .map_err(|e| format!("the chat task could not run: {e}"))?
+}
+
+/// Whether the relay is reachable, and over Wi-Fi or mobile data (knowledge/24).
+/// The UI's data rule runs on this before any search is offered.
+#[tauri::command]
+fn network_state() -> web::NetState {
+    web::network_state()
+}
+
+/// The words that would leave the device for `message`, scrubbed — shown to the
+/// user for approval BEFORE anything is sent (knowledge/06 principle 4: show
+/// what Verdure understood, then ask).
+#[tauri::command]
+fn prepare_web_query(message: String) -> String {
+    web::prepare_query(&message)
+}
+
+/// Run the approved search through Verdure's relay. The snippet budget is sized
+/// to the window this device gives the chosen model, so the relay trims
+/// server-side and the phone never downloads text the model couldn't read.
+#[tauri::command]
+async fn web_search<R: Runtime>(
+    app: AppHandle<R>,
+    query: String,
+    model_id: String,
+) -> Result<Vec<web::Snippet>, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    let res = device::system_resources(&data_dir);
+    // Same arithmetic as `chat`. A model that doesn't fit right now still gets a
+    // search at the smallest budget; `chat` will explain the memory problem.
+    let n_ctx = model::chat_model_choice(&model_id, res.total_ram_mb, res.available_ram_mb)
+        .map(|info| {
+            let spare = llm::spare_for_context_mb(res.available_ram_mb, info.runtime_mb);
+            llm::context_for_budget(spare, info.kv_kb_per_token, info.trained_ctx)
+        })
+        .unwrap_or(llm::MIN_CONTEXT);
+    let budget = web::snippet_budget_tokens(n_ctx);
+    // Scrubbed again at the boundary: the UI sends what the user approved, and
+    // this is the last line before the network, so the floor holds regardless.
+    let query = web::prepare_query(&query);
+    if query.is_empty() {
+        return Err("There's nothing to search for after removing private details.".to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        web::search(web::RELAY_URL, &query, budget).map(|s| web::fit_snippets(s, budget, web::MAX_SOURCES))
+    })
+    .await
+    .map_err(|e| format!("the web search task could not run: {e}"))?
 }
 
 /// Start live (microphone) transcription. Ensures + loads the speech model ONCE,
@@ -579,7 +649,10 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         reveal_models_dir,
         open_third_party_notices,
         free_up_space,
-        open_storage_settings
+        open_storage_settings,
+        network_state,
+        prepare_web_query,
+        web_search
     ]
 }
 

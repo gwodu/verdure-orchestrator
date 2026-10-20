@@ -61,7 +61,7 @@ export function escapeHtml(s: string): string {
  * the floor user would pay for in download size, for syntax we don't need
  * (tables, footnotes, HTML passthrough).
  */
-export function renderMarkdown(src: string): string {
+export function renderMarkdown(src: string, sourceCount = 0): string {
   // Code spans are split out FIRST and left verbatim, so `**x**` or `a*b*c`
   // inside backticks stays literal. (An earlier version wrapped them in <code>
   // and then ran the bold/emphasis rules over the whole string, including the
@@ -70,10 +70,21 @@ export function renderMarkdown(src: string): string {
     t
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/(^|[\s(])[*_]([^*_\s][^*_]*)[*_](?=[\s.,!?)]|$)/g, "$1<em>$2</em>");
+  // Citations: a `[n]` that names one of this answer's web sources becomes a
+  // small marker the source list below the message explains (knowledge/24).
+  // Any other bracketed number stays literal — the model also writes "[1]"
+  // when it means a footnote of its own, and inventing a source for it would
+  // be a lie in the one place the feature promises honesty.
+  const cite = (t: string): string =>
+    sourceCount > 0
+      ? t.replace(/\[(\d{1,2})\]/g, (m, n) =>
+          +n >= 1 && +n <= sourceCount ? `<sup class="cite">${n}</sup>` : m,
+        )
+      : t;
   const inline = (s: string): string =>
     escapeHtml(s)
       .split(/(`[^`]+`)/)
-      .map((part) => (/^`[^`]+`$/.test(part) ? `<code>${part.slice(1, -1)}</code>` : emphasis(part)))
+      .map((part) => (/^`[^`]+`$/.test(part) ? `<code>${part.slice(1, -1)}</code>` : cite(emphasis(part))))
       .join("");
 
   const out: string[] = [];
@@ -106,6 +117,18 @@ export function renderMarkdown(src: string): string {
   }
   closeList();
   return out.join("");
+}
+
+/** Which of this answer's sources the reply actually cites (1-based, in order
+ *  of first mention). Empty means the model answered without leaning on them —
+ *  the UI then says so rather than implying the answer was checked. */
+export function citedSources(reply: string, sourceCount: number): number[] {
+  const seen: number[] = [];
+  for (const m of reply.matchAll(/\[(\d{1,2})\]/g)) {
+    const n = +m[1];
+    if (n >= 1 && n <= sourceCount && !seen.includes(n)) seen.push(n);
+  }
+  return seen;
 }
 
 /** Where to grant microphone access, in the words of THIS device's settings app.
