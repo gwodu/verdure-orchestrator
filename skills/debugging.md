@@ -72,7 +72,7 @@ magic header, and whether the tail is real data rather than zeros.
 
 Three bisections, cheapest first.
 
-**Over build artifacts.** CI keeps artifacts for 90 days — a working binary from
+**Over build artifacts.** CI keeps artifacts for 14 days (`retention-days: 14`) — a working binary from
 any past commit, at no build cost and no local toolchain. List past builds, map
 each to its commit, download from the middle, run it. Two downloads usually beat
 an afternoon of reading diffs.
@@ -135,8 +135,8 @@ test suite means the code is right; that the founder's Mac is too weak to run
 these models (42.5 tok/s says otherwise); that a documented constraint still
 holds (the "no Xcode CLT, tight disk" rule outlived the tight disk by months).
 
-**CI-specific:** `gh run list --limit 1` right after a push returns the
-*previous* commit's run — GitHub often hasn't registered yours yet. This produced
+**CI-specific:** `gh run list --limit 1` right after you open a PR, dispatch CI or push a tag returns the
+*previous* run — GitHub often hasn't registered yours yet. This produced
 two "CI is green" reports while the suite was red, and a release tagged from a
 red commit. Always resolve by head SHA:
 

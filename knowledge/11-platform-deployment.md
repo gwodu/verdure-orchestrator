@@ -34,6 +34,20 @@ This file documents the practical realities of shipping Verdure on each platform
 
 **What CI actually checks** (`ci.yml`, PRs only): a `paths-filter` job decides what changed, then the decider/website suites on Linux, the porter Rust suite plus an `aarch64-apple-ios` `cargo check` on macOS, and an `aarch64-linux-android` `cargo check` on Linux. Model-download URLs are verified by extracting them from `model.rs` (not a hand-kept copy).
 
+**What each trigger costs** — *this table is the one owner; `skills/testing.md` and `21` link here.* Billable = wall minutes × the runner multiplier (macOS 10×, Linux 1×).
+
+| What you need | How | Billable min | Measured |
+|---|---|---|---|
+| Rust / logic correctness | **local** `cd app/src-tauri && cargo test` | **0** | seconds |
+| Test macOS yourself | **local** `cd app && npm run tauri build` | **0** | ~8 min cold |
+| Pre-merge checks (incl. the iOS cross-compile) | open a PR, or `workflow_dispatch` on `ci.yml` | ~40 | — |
+| Test on iPad | tag `testflight-N` | ~55 | `testflight-12`: 5 min wall, cold cache |
+| Test on Android | tag `android-build-N` | ~8 cached, ~19 cold | `release-14` |
+| Signed + notarized macOS for someone else | tag `app-build-N` | ~145 | `app-build-24/25`: ~14–15 min wall (universal: both arches) |
+| Genuinely ship everywhere | tag `release-N` | ≈ the three above, ~210 | `release-14` was 144, before macOS went universal |
+
+**Caches warm only on success.** `actions/cache` saves at the end of a *green* job, so a run of failing iterations stays cold every time (`testflight-9`…`-11`, 2026-10-08). Before claiming a cache hit, grep the log for `Cache restored`. Put cheap, failure-prone steps (secrets, signing, API calls) before the Rust build so they fail in a minute.
+
 **Cost shape.** macOS runners bill at **10× per minute**, which is why Android moved to Linux and why the macOS CI job is off the per-push path entirely. A three-file docs commit once triggered 7.6 minutes of Android compilation before `paths-filter` was fixed to diff the push rather than the whole branch.
 
 ## macOS

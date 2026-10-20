@@ -69,6 +69,7 @@ Verdure is a monorepo over one brain (the shared decider, `packages/decider`), s
 
 - **Decider + website** (Linux): the decider tests (the single source of truth), the website tests, and the website production build. Triggers on `packages/decider/**` or `website/**`.
 - **Desktop porter** (macOS runner, PR/manual only): its remaining reason to exist is the **iOS** cross-compile check, which this Mac cannot do. It also runs the frontend build, `cargo test`, the x86_64 check, and the model-URL reachability check — all of which now duplicate free local work. Triggers on `app/**` or `packages/decider/**`.
+- **Android compile check** (Linux): `cargo check --target aarch64-linux-android`, so an Android-only `cfg` branch can't break silently. Triggers on `app/**`.
 - The long-term Rust core (`src/`/`tests/`) has **no job yet** — it's a scaffold with a malformed manifest; it gets one when it becomes real.
 
 Never merge red. When CI fails, the fix lives in the same change.
@@ -81,25 +82,16 @@ CI minutes are a real budget on a private repo, and **macOS runners bill at 10×
 
 **Compile-checking is continuous and cheap. Packaging is deliberate and expensive.** Never conflate them.
 
-- **Compile checks** answer "does the code still build for this platform." They run on push, on Linux where possible, and cost ~1–2 billable minutes. Keep them.
-- **Packaging builds** produce an installable artifact (`.dmg`, `.ipa`, `.apk`). They are triggered by a **tag you type on purpose**, never automatically. Measured on `release-14` (2026-08-22): macOS `.dmg` **66 billable min**, TestFlight **57**, Android `.apk` **19** (before caching). One ship-everywhere tag ≈ **144 billable minutes**.
+- **Compile checks** answer "does the code still build for this platform." For this Mac's own target they run **locally** (`cargo test`, free). The cross-compiles this Mac can't do (iOS) run in CI on a **pull request or `workflow_dispatch`**, never on push.
+- **Packaging builds** produce an installable artifact (`.dmg`, `.ipa`, `.apk`). They are triggered by a **tag you type on purpose**, never automatically.
 
-**Pick the narrowest trigger that answers your question:**
-
-| What you need | How | Billable |
-|---|---|---|
-| Test macOS yourself | **Build locally** — `cd app && npm run tauri build` (~8 min cold, gives `bundle/macos/Verdure.app`; the `.dmg` step fails locally and doesn't matter) | **0** |
-| Rust/logic correctness | **Locally** — `cd app/src-tauri && cargo test` | **0** |
-| Signed + notarized macOS for someone else | tag `app-build-N` | ~130 (universal: compiles both arches) |
-| Test on iPad | tag `testflight-N` | ~57 |
-| Test on Android | tag `android-build-N` | ~8 cached |
-| Genuinely ship everywhere | tag `release-N` | ~200 |
+**Pick the narrowest trigger that answers your question.** The tags, triggers and what each one costs (measured) live in one place: `knowledge/11-platform-deployment.md`, "What each trigger costs". Read the number there rather than copying it here; copies of that table drifted apart twice.
 
 `release-N` exists because iOS once sat three weeks behind (2026-08-12) — but it is a **shipping** tag, not a testing one. Reaching for it to test one platform buys the other two builds nobody asked for. That happened on `release-14`: macOS was wanted, and the tag also spent 57 minutes on an iOS archive that failed on an unrelated Apple account limit.
 
 **The default loop is local.** The founder's Mac has the toolchain (since 2026-08-21), so a macOS build needs no runner at all. Reach for CI when you need a *signature*, a *platform this machine isn't*, or the pre-merge gate.
 
-**Other levers already in place** (don't undo them): `concurrency: cancel-in-progress` so three quick pushes don't queue three builds; `dorny/paths-filter` diffing the actual push so a docs commit triggers nothing; `timeout-minutes` on every job so a hung runner can't bill for hours; cargo caching on every compiling job; and `retention-days: 14` on artifacts, since private-repo storage bills by GB-month.
+**Other levers already in place** (don't undo them): `concurrency: cancel-in-progress` so three quick pushes don't queue three builds; `dorny/paths-filter` diffing against the PR base so a docs-only PR triggers nothing; `timeout-minutes` on every job so a hung runner can't bill for hours; cargo caching on every compiling job; and `retention-days: 14` on artifacts, since private-repo storage bills by GB-month.
 
 **A known gap this creates, tracked honestly:** the macOS CI job is gated to PRs and manual runs, so on a long-lived branch that never opens a PR, the **iOS and x86_64 cross-compile checks effectively never run**. iOS can therefore break silently until a `testflight-N` tag fails. Before tagging iOS after a long gap, trigger CI manually (`workflow_dispatch`) — that path is not gated to PRs and compile-checks iOS for ~40 billable minutes instead of discovering it inside a 57-minute signed build.
 
@@ -152,4 +144,4 @@ verifier written to prevent it. Check for the artifact, or check `${PIPESTATUS[0
 - If this is UI: has Claude actually looked at the screenshot?
 - If a future Claude refactors the internals, will these tests still pass?
 - Has `TEST_REPORT.md` been updated with what was tested and any edge cases caught?
-- Is CI green on the PR? (For porter/Rust changes, "green" means pushed — CI is the porter's compiler; see "Continuous integration" above.)
+- Are `cargo test`, the frontend build/tests and the decider suite green **locally**, before pushing? (A push runs no CI.) Is CI green on the PR before merge?

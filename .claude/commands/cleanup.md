@@ -38,13 +38,12 @@ Name the move you are making before you make it. "I'd Extract Function on
 
 ## Verdure-specific constraints
 
-- **Rust cannot be compiled or tested on this Mac** (no Xcode CLT). That is
-  expected, not a blocker. Verify Rust changes by pushing the branch — the
-  `porter` job in `.github/workflows/ci.yml` compiles and tests it. Keep pure
-  logic (parsers, prompt formatting, model gating) unit-testable so CI exercises
-  it. Never report a Rust change as "unverifiable."
-- The JS side (`packages/decider`, `app/src`) **does** run locally — `npm test`
-  and `tsc`/`vite` before claiming green.
+- **Everything verifies locally, and a push runs no CI.** `cd app/src-tauri &&
+  cargo test`, `cd app && npx tsc --noEmit && npx vitest run`, `npm test
+  --workspace @verdure/decider`, and `python3 -B -m unittest discover -s
+  app/scripts` — all green before each commit (`skills/testing.md`, "Continuous
+  integration"). Only an iOS/Android-only `cfg` branch can't run here: keep that
+  logic behind a pure function with the platform as a parameter so it *can*.
 - `@verdure/decider` is the single source of truth for recommendation logic, and
   `knowledge/` is the *why*. If a cleanup changes recommendation behavior, the
   knowledge file changes **first** and the code follows — never the reverse.

@@ -84,7 +84,7 @@ Green locally (2026-10-20): Rust 62 passed + 1 ignored, decider 74, ios-signing 
 
 Ordered (structural and misleading items first):
 1. ~~**27B scope**~~ — **done 2026-10-20** (`chat_model_menu`, stored-choice fallback in the picker). Needs a `testflight-N` to reach testers.
-2. **Stale CI/verify instructions in procedures** — `/cleanup` itself still says to verify by pushing (`.claude/commands/cleanup.md:41-45`); `skills/testing.md:84,102,155`; `debugging.md:75` (says 90-day artifacts; actual is 14), `:138`. Make `11` the one owner of tags, costs and triggers; others link to it (`testing.md:85-96` vs `:93`).
+2. ~~**Stale CI/verify instructions in procedures**~~ — **done 2026-10-20.** `11` owns tags, triggers and measured costs; `testing.md` and this file link to it; `/cleanup` verifies locally; `debugging.md` says 14-day artifacts.
 3. **Memory accounting: one model** — context sizing uses file size + 700 MB while the gate uses `runtime_mb`, so the 4B at the gate edge can exceed the gate (`llm.rs:125-129`, `lib.rs:215`). An OOM-abort risk under `[OQ-58]`.
 4. **Run the tests we have in CI** — one cheap Linux job: `python3 -m unittest discover -s app/scripts`, `npm test` for `app/`, `actionlint`. Route release and script work in `skills/README.md` (15 of the last 20 commits had no skill row).
 5. **`verify-release.py` blind spots** — `latest.json` is written outside `--dir` and silently skipped; the `0.1.0` dmg name is hard-coded (`build-app.yml:145,218`, `verify-release.py:242,254`). The next `app-build-N` is the first run of the notarize-dmg and verify steps.
@@ -114,22 +114,13 @@ Ordered (structural and misleading items first):
 ## How to build / ship
 
 Rust builds and tests run **locally** since 2026-08-21 (Xcode CLT 16.4 + `cmake`) — that's the inner loop. **Shipping** still runs entirely in CI, because the runners hold the signing identities (Developer ID, App Store Connect, Android keystores) and cross-compile the platforms this Mac can't:
-**Decision rule (set 2026-08-22): compile continuously, package on request.** Pick the narrowest trigger that answers your question — full costs and rationale in `skills/testing.md` ("CI cost discipline").
-
-| What you need | How | Billable min |
-|---|---|---|
-| Test macOS yourself | **local** `cd app && npm run tauri build` | **0** |
-| Rust/logic correctness | **local** `cd app/src-tauri && cargo test` | **0** |
-| Signed+notarized macOS for someone else (universal) | tag `app-build-N` | ~130 |
-| Test on iPad | tag `testflight-N` | ~57 |
-| Test on Android | tag `android-build-N` | ~8 cached |
-| Genuinely ship everywhere | tag `release-N` | ~200 |
+**Decision rule (set 2026-08-22): compile continuously, package on request.** Pick the narrowest trigger that answers your question. Tags, triggers and measured costs: `11`, "What each trigger costs" (the one owner).
 
 - **macOS is built on this machine, not in CI.** `cd app && npm run tauri build` → **`target/release/bundle/macos/Verdure.app`**. Verified 2026-08-22: compiles in **~8 min** cold (llama.cpp + whisper.cpp at `-O3`; incremental rebuilds are far quicker), produces a valid x86_64 Mach-O, and **launches**. Unsigned, which is fine for the founder's own testing — a locally built app carries no quarantine flag, so Gatekeeper doesn't prompt and it won't translocate. CI's macOS build exists only to *sign and notarize* for handing to someone else.
   **The `.dmg` step fails locally and that's OK.** `bundle_dmg.sh` errors after the `.app` is already built (it drives Finder via AppleScript to style the disk image, which needs an interactive session + Automation permission). The `.app` is the deliverable — copy it to /Applications and run it. If it fails, `hdiutil detach` any leftover `/Volumes/dmg.*` and delete the `rw.*.dmg` intermediate it strands, or the next run inherits the mess. Want a real `.dmg`? That's what `app-build-N` is for.
   **Trap when scripting this:** `npm run tauri build | tail` reports **`tail`'s** exit status, so a failed build looks like success. Check for the artifact, not the exit code (`skills/debugging.md` §7 — a null result from a broken tool looks exactly like a clean one).
 - **iOS and Android are built only on request** — when the founder asks, or when enough has changed that they should be re-verified on device. Never as a side effect of shipping something else.
-- **`release-N` is a SHIPPING tag, not a testing one.** It fires all three platforms (~144 billable min). It was added 2026-08-12 after iOS silently sat three weeks behind, and it still earns its place for a real release — but reaching for it to test *one* platform buys two builds nobody asked for. That is exactly what happened on `release-14`. The Play `.aab` is deliberately *not* on `release-*`.
+- **`release-N` is a SHIPPING tag, not a testing one.** It fires all three platforms (cost in `11`). It was added 2026-08-12 after iOS silently sat three weeks behind, and it still earns its place for a real release — but reaching for it to test *one* platform buys two builds nobody asked for. That is exactly what happened on `release-14`. The Play `.aab` is deliberately *not* on `release-*`.
 - **Pushing a branch runs no CI** (no `push` trigger since 2026-09-16). CI runs on a pull request or `workflow_dispatch`. The x86_64 and iOS cross-compile checks only run there, so before tagging iOS after a long gap, either dispatch CI manually (~40 billable min) or accept that a `testflight-N` fails early on a compile error. **Caveat:** `main`'s `ci.yml` still has a push trigger that fails every time (`[OQ-88]`).
 - **macOS app from CI (signed + notarized, UNIVERSAL):** `git tag app-build-N && git push origin app-build-N` → `build-app.yml` → `verdure-macos-universal` (.dmg/.app). Runs natively on both Apple Silicon and Intel ([OQ-76]). Install with `gh run download <run-id> -n verdure-macos-universal`, then copy to /Applications. **Use `gh`, not the browser** — a Safari download carries a quarantine flag that makes macOS run the app translocated from `/private/var`, so you can end up testing a stale copy (this bit us 2026-08-22). No `xattr -cr` needed since notarization landed.
 - **iPad via TestFlight** (the current iOS channel): `git tag testflight-N` → `build-testflight.yml`. Signs **manually** with one stored distribution certificate; the secrets, the one-time portal steps and the yearly renewal are in `11` (iOS, "Signing reuses ONE certificate"), the single runbook. iOS bundle ID is `ai.verdure.porter.898PY37K5S`. **Costs:** macOS bills 10×; `testflight-12` was 5 min wall ≈ 55 billable on a cold cache, and the cache saves only on a green run, so failed iterations stay cold. Test vehicle only — the shippable iOS strategy stays `11`'s thin-decider.
