@@ -77,6 +77,8 @@ The shipping app picks its **chat** model through its own small registry (`app/s
 
 The boundary: **this file owns which models are worth recommending and why** (the registry's candidates should be justifiable from the sections above — the 4B-over-0.5B bet is the speed/quality axis applied to the memory floor); **`model.rs` owns the runtime gate**. A model added to the registry without a rationale expressible here is the smell that this decision needs revisiting. The registry's code comments cross-reference this section.
 
+**Experiment, not a tier (2026-10-08): Qwen3.8 27B on iOS.** ByteShape's `IQ2_XXS` (8.8 GB file, ~10 GB estimated resident) is in the registry to find the iPad's ceiling on a 16 GB device; it is not a recommendation. The rationale and exit live in `[OQ-84]`. This section was written after the code (the knowledge-first rule was skipped), and the experiment's iOS-wide scope is a known bug (`[OQ-84]`).
+
 ## Hybrid attention: the KV-cache axis (2026-09-10)
 
 The matrix keys on **total params** (fit) and **active params** (speed). A third axis now matters as much as either, and it is the one that decides how much of a *conversation* a device can hold: **how many layers carry a KV cache.**

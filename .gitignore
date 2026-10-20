@@ -42,3 +42,7 @@ node_modules/
 *.apk
 *.aab
 .vercel
+
+# Python bytecode (from running app/scripts tests)
+__pycache__/
+*.pyc

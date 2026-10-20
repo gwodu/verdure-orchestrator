@@ -16,6 +16,8 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 **Simpler or more complex for the user?** Invisible to app users. For the founder: two more secrets once, and renewal once a year, in exchange for builds that stop failing on a limit nobody can see coming.
 
+**Tests:** `test_ios_signing.py` 10/10 locally; live runs `testflight-9`…`-12`, first green at -12 (TEST_REPORT 2026-10-08). No CI job runs the script tests yet (cleanup queue in `21`).
+
 ### 2026-10-08 — iPad experiment: Qwen3.8 27B in the Powerful slot
 
 **What:** On iOS builds only, the picker's Powerful choice is now ByteShape's Qwen3.8 27B (`IQ2_XXS`, 8.8 GB download, ~10 GB estimated to run) instead of the Qwen3 4B. Mac, Android and Windows are unchanged. The TestFlight workflow now asks iPadOS for the increased memory limit and extended virtual addressing; without them, iPadOS kills the app long before a 10 GB model fits. The picker now draws only the models the backend offers, so each platform shows exactly three cards.
