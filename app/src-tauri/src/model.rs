@@ -297,14 +297,6 @@ pub(crate) const BYTESHAPE_QWEN38_27B: ModelInfo = ModelInfo {
     prompt_style: Some(PromptStyle::ChatMlNoThink),
 };
 
-/// Use the ByteShape Qwen3 4B as the base chat model. Enabled for the on-device
-/// trial: it leads the pick when it fits, with the Qwen models as automatic
-/// RAM-gated fallback, so enabling it can't strand a machine that's too tight — it
-/// simply isn't picked there. This is NOT a "verified" claim (cf. Gemma's gate on an
-/// unproven runtime feature); the on-device run IS the verification. Flip to `false`
-/// to revert instantly if a run shows it fails to load on our pinned llama.cpp. [OQ-64]
-const USE_BYTESHAPE_QWEN3_4B: bool = true;
-
 /// Pick the largest chat model that fits the AVAILABLE memory right now, leaving
 /// headroom for the WebView + OS. Returns `None` when nothing fits — the caller
 /// then declines honestly instead of loading a model that would OOM-abort the app
@@ -320,7 +312,7 @@ pub(crate) fn chat_model_for_available(available_mb: u64) -> Option<&'static Mod
 /// OUT until it's cleared for on-device use, so we never auto-select one that might
 /// fail to load and OOM-abort the app. The Qwen pair is always present as the
 /// floor/fallback. One list (not nested ifs) so adding a gated model is one line and
-/// so every caller — the RAM picker AND the strict/preferred pick — shares one order.
+/// so the RAM picker reads one order.
 fn chat_candidates() -> Vec<&'static ModelInfo> {
     let mut candidates: Vec<&'static ModelInfo> = Vec::new();
     if QWEN35_4B_VERIFIED {
@@ -329,9 +321,7 @@ fn chat_candidates() -> Vec<&'static ModelInfo> {
     if GEMMA4_E2B_VERIFIED {
         candidates.push(&GEMMA4_E2B); // roomy tier, only once verified ([OQ-61])
     }
-    if USE_BYTESHAPE_QWEN3_4B {
-        candidates.push(&BYTESHAPE_QWEN3_4B); // the incumbent 4B when it fits ([OQ-64])
-    }
+    candidates.push(&BYTESHAPE_QWEN3_4B); // the incumbent 4B when it fits ([OQ-64])
     // Below the 4B by footprint, but a newer generation with 12× cheaper context —
     // so it is the fallback that a tight machine actually WANTS, not a consolation
     // prize. Ordered by what fits, which is what the RAM gate below consumes.
@@ -341,59 +331,16 @@ fn chat_candidates() -> Vec<&'static ModelInfo> {
     candidates
 }
 
-/// The preferred (most capable) chat model, regardless of whether it fits right now.
-/// This is the model "best model only" mode insists on, so the user can test it
-/// deliberately instead of silently getting a smaller fallback. The Qwen floor
-/// guarantees the list is never empty.
-pub(crate) fn preferred_chat_model() -> &'static ModelInfo {
-    chat_candidates()
-        .into_iter()
-        .next()
-        .expect("the Qwen floor is always a candidate")
-}
-
 /// Why chat can't run: the chosen model needs more free memory than the machine has.
 /// Carries the numbers so the UI can explain honestly (design.md — honest
 /// performance) rather than failing blankly or silently downgrading.
 #[derive(Debug)]
 pub(crate) struct ChatModelTooBig {
-    pub model_name: &'static str,
     pub needed_mb: u32,
     pub available_mb: u64,
-    /// The user asked for the best model only (no silent fallback to a smaller one).
+    /// The user chose this model, so we explain the shortfall rather than
+    /// silently loading a smaller one.
     pub strict: bool,
-}
-
-/// Choose which chat model to load. With `allow_fallback` we take the largest model
-/// that fits available memory (the friendly default). Without it ("best model only")
-/// we insist on the preferred model and, if it doesn't fit, return the shortfall so
-/// the caller can tell the user exactly why — never a silent downgrade. Either way we
-/// never return a model that wouldn't fit, since loading one OOM-aborts the app.
-pub(crate) fn choose_chat_model(
-    available_mb: u64,
-    allow_fallback: bool,
-) -> Result<&'static ModelInfo, ChatModelTooBig> {
-    if allow_fallback {
-        chat_model_for_available(available_mb).ok_or(ChatModelTooBig {
-            // Even the smallest floor model won't fit — report against it.
-            model_name: QWEN_CHAT_SMALL.name,
-            needed_mb: QWEN_CHAT_SMALL.runtime_mb,
-            available_mb,
-            strict: false,
-        })
-    } else {
-        let preferred = preferred_chat_model();
-        if (preferred.runtime_mb as u64) <= available_mb {
-            Ok(preferred)
-        } else {
-            Err(ChatModelTooBig {
-                model_name: preferred.name,
-                needed_mb: preferred.runtime_mb,
-                available_mb,
-                strict: true,
-            })
-        }
-    }
 }
 
 /// The chat models the user chooses from on first launch (Small · Balanced ·
@@ -484,13 +431,11 @@ pub(crate) fn chat_model_choice(
     match chat_model_menu(total_ram_mb).into_iter().find(|m| m.id == id) {
         Some(m) if (m.runtime_mb as u64) <= available_mb => Ok(m),
         Some(m) => Err(ChatModelTooBig {
-            model_name: m.name,
             needed_mb: m.runtime_mb,
             available_mb,
             strict: true,
         }),
         None => chat_model_for_available(available_mb).ok_or(ChatModelTooBig {
-            model_name: QWEN_CHAT_SMALL.name,
             needed_mb: QWEN_CHAT_SMALL.runtime_mb,
             available_mb,
             strict: false,
@@ -814,13 +759,8 @@ mod tests {
 
     #[test]
     fn chat_model_picks_by_available_memory() {
-        // Plenty free → the base 4B chat model (ByteShape Qwen3), when enabled.
-        let roomy = chat_model_for_available(8000).unwrap().id;
-        if USE_BYTESHAPE_QWEN3_4B {
-            assert_eq!(roomy, BYTESHAPE_QWEN3_4B.id);
-        } else {
-            assert_eq!(roomy, QWEN_CHAT.id);
-        }
+        // Plenty free → the base 4B chat model (ByteShape Qwen3).
+        assert_eq!(chat_model_for_available(8000).unwrap().id, BYTESHAPE_QWEN3_4B.id);
         // Tight (the 8 GB Mac with the WebView running) → the small model only.
         assert_eq!(
             chat_model_for_available(1500).unwrap().id,
@@ -832,10 +772,6 @@ mod tests {
 
     #[test]
     fn byteshape_4b_is_the_base_when_it_fits_and_falls_back_when_it_does_not() {
-        // Only meaningful while the base model is enabled.
-        if !USE_BYTESHAPE_QWEN3_4B {
-            return;
-        }
         // Enough for the 4B → it's the pick, ahead of the Qwen fallback.
         assert_eq!(
             chat_model_for_available(BYTESHAPE_QWEN3_4B.runtime_mb as u64).unwrap().id,
@@ -853,47 +789,6 @@ mod tests {
     }
 
     #[test]
-    fn preferred_chat_model_is_the_top_candidate() {
-        // The preferred model is the most capable candidate, independent of RAM —
-        // it's what "best model only" insists on. Matches the head of the pick order.
-        let preferred = preferred_chat_model();
-        assert_eq!(preferred.id, chat_model_for_available(u64::MAX).unwrap().id);
-        if USE_BYTESHAPE_QWEN3_4B {
-            assert_eq!(preferred.id, BYTESHAPE_QWEN3_4B.id);
-        }
-    }
-
-    #[test]
-    fn best_model_only_uses_the_preferred_or_explains_why_not() {
-        let preferred = preferred_chat_model();
-        // Fits → we get the preferred model, never a downgrade.
-        let ok = choose_chat_model(preferred.runtime_mb as u64, false).unwrap();
-        assert_eq!(ok.id, preferred.id);
-        // Doesn't fit → Err carrying the shortfall, flagged strict, and NO fallback
-        // (even though a smaller model would have fit that memory).
-        let err = choose_chat_model(preferred.runtime_mb as u64 - 1, false).unwrap_err();
-        assert!(err.strict);
-        assert_eq!(err.model_name, preferred.name);
-        assert_eq!(err.needed_mb, preferred.runtime_mb);
-    }
-
-    #[test]
-    fn fallback_downgrades_and_only_fails_when_nothing_fits() {
-        // With fallback on and no room for the preferred model, we still get a
-        // smaller one that fits (never the preferred, never a non-fitting model).
-        let preferred = preferred_chat_model();
-        let tight = QWEN_CHAT_SMALL.runtime_mb as u64; // fits only the floor
-        let pick = choose_chat_model(tight, true).unwrap();
-        assert!((pick.runtime_mb as u64) <= tight);
-        if USE_BYTESHAPE_QWEN3_4B {
-            assert_ne!(pick.id, preferred.id);
-        }
-        // Nothing fits → Err flagged non-strict (the "close some apps" message).
-        let err = choose_chat_model(QWEN_CHAT_SMALL.runtime_mb as u64 - 1, true).unwrap_err();
-        assert!(!err.strict);
-    }
-
-    #[test]
     fn explicit_choice_used_when_it_fits_declined_when_it_does_not() {
         let big = &BYTESHAPE_QWEN3_4B;
         // Chosen + fits → exactly that model, no auto-substitution.
@@ -904,7 +799,7 @@ mod tests {
         // Chosen + doesn't fit → honest error (strict), never a silent smaller model.
         let err = chat_model_choice(big.id, 8192, big.runtime_mb as u64 - 1).unwrap_err();
         assert!(err.strict);
-        assert_eq!(err.model_name, big.name);
+        assert_eq!(err.needed_mb, big.runtime_mb);
     }
 
     #[test]
