@@ -6,6 +6,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
 
+### 2026-10-20 — The pre-pivot porter and its screens are removed
+
+**What:** Deleted the unreachable intent-grid → recommendation → one-click-setup flow and the Buzz installer behind it (`catalog.rs`, `porter.rs`, `port_tool`). Also deleted device-tier detection, which ran on every launch only to feed those screens; file transcription (`transcribe_audio`, the `symphonia` decoder, ~150 lockfile lines); the "best model only" code; and an always-on rollback flag. The command list is now one `handlers()` shared by the app and its integration test.
+
+**Why:** The founder's call during the cleanup (`[OQ-60]`'s legacy half): none of it was reachable since the app opened into chat in July. It was kept "pending a decision", and the decision was remove. Git history is the archive.
+
+**Simpler or more complex for the user?** Nothing visible changes. The app does less work on launch (no tier detection) and ships a smaller dependency tree. THIRD-PARTY-NOTICES no longer lists `symphonia`, and now points to the source of every MPL-2.0 component (only `symphonia` had a pointer before).
+
+**Tests:** Rust 66 → 52. The removed tests covered only deleted code: 9 for catalog/porter, 2 for tier detection, 3 for best-model-only. The notices guard now checks every MPL row, and a positive control confirmed it fails when a pointer is missing. tsc clean, vitest 36.
+
 ### 2026-10-20 — Plain errors, the right settings path, and a recommended first choice
 
 **What:**

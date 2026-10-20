@@ -1,21 +1,16 @@
 //! Verdure desktop — Tauri application wiring.
 //!
-//! The web UI calls these commands:
-//!   - `detect_device`    → which hardware tier this machine is (no question asked)
-//!   - `transcribe_audio` → run Whisper on a dropped audio file, IN-APP (the pivot,
-//!                          knowledge/18 — wrap the model, no separate app)
-//!   - `port_tool`        → (legacy) install + launch an OSS app; kept while other
-//!                          modalities are still being wrapped
-//!
-//! Model work lives in audio.rs (decode), model.rs (weights), transcribe.rs (run).
+//! One interface over local models (knowledge/18): chat (llm.rs), live
+//! dictation (live.rs over transcribe.rs), the model registry and downloads
+//! (model.rs), and honest device readings (device.rs). The command surface the
+//! UI calls is `handlers()`; the app and its integration test share that one
+//! list, so they cannot drift apart.
 
 mod audio;
-mod catalog;
 mod device;
 mod live;
 mod llm;
 mod model;
-mod porter;
 mod transcribe;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -46,40 +41,6 @@ struct ChatState(Mutex<Option<llm::ResidentModel>>);
 struct LiveHandle {
     stop: Arc<AtomicBool>,
     thread: JoinHandle<()>,
-}
-
-/// Return the detected hardware tier as a decider `Tier` string (e.g. "L2-high").
-/// The frontend feeds this straight into `recommend()` from @verdure/decider.
-#[tauri::command]
-fn detect_device() -> String {
-    device::detect_tier().to_string()
-}
-
-/// The one click: port `tool_id` onto this machine. Long-running (a download),
-/// so it runs on a blocking thread and streams progress to the UI via the
-/// `porter:progress` event.
-#[tauri::command]
-async fn port_tool<R: Runtime>(
-    app: AppHandle<R>,
-    tool_id: String,
-) -> Result<porter::PortOutcome, String> {
-    let tool = catalog::find(&tool_id).ok_or_else(|| format!("Unknown tool: {tool_id}"))?;
-    let app_for_progress = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        porter::port(tool, move |msg| {
-            // A dropped event only costs a progress line; never fail the port for it.
-            let _ = app_for_progress.emit("porter:progress", msg);
-        })
-    })
-    .await
-    .map_err(|e| format!("The setup task could not run: {e}"))?
-    .map_err(|e| e.to_string())
-}
-
-/// The detected machine specs the frontend feeds to the performance predictor.
-#[tauri::command]
-fn device_spec() -> device::DeviceSpec {
-    device::detect_spec()
 }
 
 /// A LIVE snapshot of free resources (available RAM, free disk, low-power) — the
@@ -113,51 +74,6 @@ fn chat_model_options<R: Runtime>(
         res.available_ram_mb,
         res.free_disk_mb,
     ))
-}
-
-/// A finished transcription plus the timing that calibrates the predictor: how
-/// long the audio was vs how long it took (→ the real "× real-time" factor).
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Transcription {
-    text: String,
-    audio_seconds: f64,
-    processing_seconds: f64,
-}
-
-/// Transcribe a dropped audio file entirely on-device: ensure the model →
-/// decode the audio → run Whisper → return the text + timing. Long-running, so it
-/// runs on a blocking thread and streams stage updates via `transcribe:progress`.
-/// First model wrapped directly in the Verdure UI (knowledge/18).
-#[tauri::command]
-async fn transcribe_audio<R: Runtime>(
-    app: AppHandle<R>,
-    path: String,
-) -> Result<Transcription, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
-    let app_for_progress = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let progress = |msg: &str| {
-            let _ = app_for_progress.emit("transcribe:progress", msg);
-        };
-        let model = model::ensure(&data_dir, &model::WHISPER_BASE_EN, &progress)?;
-        progress("Reading the audio…");
-        let samples = audio::decode_to_mono_16k(std::path::Path::new(&path))?;
-        let audio_seconds = samples.len() as f64 / 16_000.0;
-        progress("Transcribing — this runs on your computer and can take a little while…");
-        let started = std::time::Instant::now();
-        let text = transcribe::transcribe(&model, &samples)?;
-        Ok(Transcription {
-            text,
-            audio_seconds,
-            processing_seconds: started.elapsed().as_secs_f64(),
-        })
-    })
-    .await
-    .map_err(|e| format!("the transcription task could not run: {e}"))?
 }
 
 /// The conversational front door: ensure the chat model → generate a reply.
@@ -627,8 +543,37 @@ mod notices_tests {
             notices.contains("Copyright (c) 2023-2024 The ggml authors"),
             "whisper.cpp's copyright is absent"
         );
-        assert!(notices.contains("Symphonia"), "the MPL-2.0 source pointer is absent");
+        // MPL-2.0 is weak copyleft: every MPL component listed in the table needs
+        // a pointer to its source (generate-notices.py derives them).
+        for line in notices.lines().filter(|l| l.starts_with("| ") && l.ends_with("| MPL-2.0 |")) {
+            let name = line.split('|').nth(1).unwrap().trim();
+            assert!(
+                notices.contains(&format!("crates.io/crates/{name}/")),
+                "MPL-2.0 component {name} has no source pointer"
+            );
+        }
     }
+}
+
+/// Every command the UI can call, in ONE place. `run()` registers it and the
+/// integration test builds the real app with it, so a command can't be live in
+/// the app but missing from the test (the test's own copy had drifted, missing
+/// two commands, by 2026-10-20).
+fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        system_resources,
+        chat_model_options,
+        start_live_transcription,
+        stop_live_transcription,
+        chat,
+        list_models,
+        remove_model,
+        models_dir,
+        reveal_models_dir,
+        open_third_party_notices,
+        free_up_space,
+        open_storage_settings
+    ]
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -647,32 +592,15 @@ pub fn run() {
     builder
         .manage(LiveState::default())
         .manage(ChatState::default())
-        .invoke_handler(tauri::generate_handler![
-            detect_device,
-            device_spec,
-            system_resources,
-            chat_model_options,
-            transcribe_audio,
-            start_live_transcription,
-            stop_live_transcription,
-            chat,
-            list_models,
-            remove_model,
-            models_dir,
-            reveal_models_dir,
-            open_third_party_notices,
-            free_up_space,
-            open_storage_settings,
-            port_tool
-        ])
+        .invoke_handler(handlers())
         .run(build_context())
         .expect("error while running the Verdure porter");
 }
 
-// Integration tests for the Tauri command surface — the wiring the frontend's
-// invoke() calls land on. The unit tests in catalog/device/porter cover the
-// logic; these prove the commands are REGISTERED in the real app (built with the
-// real config) and that the dispatched function returns correctly.
+// Integration test for the Tauri command surface — the wiring the frontend's
+// invoke() calls land on. It builds the real app (real config, capabilities,
+// icons) with the real `handlers()`, so every registered command compiles as a
+// handler and the config parses.
 //
 // Note on IPC byte-routing: we intentionally do NOT assert get_ipc_response()
 // here. Tauri's mock IPC harness denies app commands in this setup ("not
@@ -684,29 +612,13 @@ pub fn run() {
 #[cfg(test)]
 mod command_tests {
     // Build the FULL app with the real context (tauri.conf.json + capabilities +
-    // icons all parse and load) and the real invoke_handler. This is genuine
-    // integration coverage: it caught port_tool not being runtime-generic, and
-    // it fails if the config, capabilities, or icons are malformed.
+    // icons all parse and load) and the real `handlers()`. It fails if a command
+    // isn't runtime-generic, or the config, capabilities, or icons are malformed.
     fn create_app<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::App<R> {
         builder
             .manage(super::LiveState::default())
             .manage(super::ChatState::default())
-            .invoke_handler(tauri::generate_handler![
-                super::detect_device,
-                super::device_spec,
-                super::system_resources,
-                super::transcribe_audio,
-                super::start_live_transcription,
-                super::stop_live_transcription,
-                super::chat,
-                super::list_models,
-                super::remove_model,
-                super::models_dir,
-                super::reveal_models_dir,
-                super::free_up_space,
-                super::open_storage_settings,
-                super::port_tool
-            ])
+            .invoke_handler(super::handlers())
             .build(super::build_context())
             .expect("the app builds with the real config + both commands registered")
     }
@@ -716,16 +628,5 @@ mod command_tests {
         // Proves generate_handler! accepts both commands, the real config parses,
         // and the runtime builds — the command surface the frontend targets.
         let _app = create_app(tauri::test::mock_builder());
-    }
-
-    #[test]
-    fn detect_device_command_returns_a_valid_tier() {
-        // The exact function the detect_device IPC command dispatches to — the
-        // value the frontend feeds into recommend().
-        let tier = super::detect_device();
-        assert!(
-            ["L1", "L2-low", "L2-high", "L3", "L3+"].contains(&tier.as_str()),
-            "detect_device returned an unknown tier: {tier}"
-        );
     }
 }

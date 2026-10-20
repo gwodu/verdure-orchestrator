@@ -4,6 +4,14 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure desktop app (`app/`) — post-pivot
 
+### 2026-10-20 — Dead code out, guided by the compiler
+
+- **`pub` → `pub(crate)` across the modules first,** so rustc could name dead code. It immediately listed `choose_chat_model`, `preferred_chat_model` and `ChatModelTooBig::model_name`. After each removal it named the next layer (`DeviceSpec`, `detect_spec`, `detect_tier`, file `transcribe`), until only the deprecated decoder call (item 10) remained.
+- **Removed tests:** 14 that covered only deleted code. Rust 66 → 52, all green.
+- **`handlers()`**: the integration test now builds the real app with the real command list. Its private copy had drifted, missing `chat_model_options` and `open_third_party_notices`.
+- **Notices:** regenerated. `the_engines_we_wrap_are_credited` now checks that every `| MPL-2.0 |` row has a crates.io source link, replacing a hard-coded "Symphonia". **Positive control:** deleting the `cssparser` link made it fail with "MPL-2.0 component cssparser has no source pointer"; restoring it made it pass.
+- **Not compiled here:** the iOS and Android `cfg` branches of `device.rs` (no iOS or Android target on this Mac). The removed functions were self-contained per platform; CI's iOS/Android checks cover them on the next PR.
+
 ### 2026-10-20 — Copy fixes, with their logic made testable
 
 - `picker.test.ts` (4): recommends the most capable standard model that fits; never the experiment; falls back to the smallest when nothing fits; null with no options.

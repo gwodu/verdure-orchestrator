@@ -12,15 +12,15 @@ You always test what you build. You always document what you learn. You are a bu
 
 Verdure is a single private monorepo — surfaces over one brain:
 
-- `app/` — **the MVP: the desktop porter** (Tauri v2 = Rust backend + Vite/TS web UI). Imports the decider from `@verdure/decider`; the Rust backend (`app/src-tauri/`) installs + launches OSS tools in one click (catalog-as-data; first port = Buzz). **This is the current build — see `knowledge/17-build-plan.md`.** (Scaffolded 2026-06-16; on-Mac end-to-end run pending Xcode CLT.)
-- `packages/decider/` — **the matching brain as a shared package** (`@verdure/decider`): `tiers`, `modality`, `matrix` (`decide()`), `intent`, `recommend`. Imported by both `website/` and `app/` so the decision never differs between surfaces. This is the single source of truth for recommendation logic.
+- `app/` — **the MVP: Verdure, one interface over local models** (Tauri v2 = Rust backend + Vite/TS web UI). Chat and live dictation run whisper.cpp and llama.cpp compiled in; it ships on macOS, iOS (TestFlight) and Android. Current state: `knowledge/21-handoff.md`. (The pre-pivot "porter" that installed separate OSS apps was removed 2026-10-20; the name survives only in identifiers, `[OQ-60]`.)
+- `packages/decider/` — **the matching brain as a shared package** (`@verdure/decider`): `tiers`, `modality`, `matrix` (`decide()`), `intent`, `recommend`. Imported by `website/` (the app's only use of it was removed with the pre-pivot screens, 2026-10-20). This is the single source of truth for recommendation logic.
 - `src/`, `tests/`, `Cargo.toml` — the **long-term** pure-Rust core + adapter seams (the multi-caller daemon, `knowledge/14-architecture.md`). *Not* the MVP; the porter grows toward it.
 - `website/` — the Phase 0 recommendation website (Next.js + TypeScript), deployed at verdureai.com. The decider/funnel, exposed publicly; imports `@verdure/decider`.
 - `knowledge/` — the propositional knowledge base, **shared by both**. The website's recommendation engine is this knowledge operationalized in code.
 - `skills/` — procedural skills (how to work), shared by both.
 - `FEATURE_LOG.md`, `TEST_REPORT.md` — project-wide living logs at the root (canonical), organized by component.
 
-Knowledge and design decisions live once, in `knowledge/` and `skills/`, and inform both surfaces. When you change recommendation logic, the knowledge file is the source of truth and the code in `packages/decider/` follows it — never the reverse. Both surfaces import that package, so the change reaches them together.
+Knowledge and design decisions live once, in `knowledge/` and `skills/`, and inform both surfaces. When you change recommendation logic, the knowledge file is the source of truth and the code in `packages/decider/` follows it — never the reverse. Today only the website imports that package; if the app needs recommendations again, it imports the same package rather than forking the logic.
 
 ## Operational ground truth
 

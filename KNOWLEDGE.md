@@ -8,7 +8,7 @@ Verdure is the **cheapest, safest, and easiest way to use AI in daily life** —
 
 This file is an orientation index, not a content store. Knowledge lives in the `knowledge/` subfolder as numbered, modular files. Claude should read this file at the start of every session, then load only the knowledge files relevant to the current task.
 
-This knowledge base is shared across the monorepo: it informs the Phase 0 website (`website/`, the decider/funnel), the **MVP desktop porter** (`app/`, the near-term build — see `17`), and the long-term Rust core (`src/`). The recommendation engine is this knowledge operationalized in code — now a shared workspace package, **`@verdure/decider`** (`packages/decider/`), imported by both the website and the porter so the decision can never differ between surfaces. See `CLAUDE.md` ("Repository layout").
+This knowledge base is shared across the monorepo: it informs the website (`website/`, the decider/funnel), the **app** (`app/`, Verdure itself: one interface over local models, see `21`), and the long-term Rust core (`src/`, a scaffold). The recommendation engine is this knowledge operationalized in code as a workspace package, **`@verdure/decider`** (`packages/decider/`). The website imports it; the app's only use (the pre-pivot recommendation screens) was removed 2026-10-20. See `CLAUDE.md` ("Repository layout").
 
 For perspective — *who Claude is while working on this project* — see `CLAUDE.md`.
 

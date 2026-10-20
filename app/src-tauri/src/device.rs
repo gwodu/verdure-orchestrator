@@ -1,34 +1,17 @@
-//! Device detection — pick the user's hardware tier WITHOUT asking them a
-//! technical question (skills/design.md, "Assume zero technical knowledge").
+//! Honest readings of the device Verdure runs on — what it HAS and, more
+//! importantly, what is FREE right now (`SystemResources`). The model picker and
+//! the chat memory gate size everything from these numbers (knowledge/21, 22),
+//! each platform reading them its own honest way: `vm_stat`/`df`/`pmset` on
+//! macOS, syscalls on iOS (jetsam headroom), procfs on Android.
 //!
-//! The website asks the user to pick a device card; the desktop porter can do
-//! better — it is already running on the machine, so it detects instead of asks,
-//! removing a whole screen. The result is one of the decider's Tier strings
-//! (knowledge/02-hardware-tiers.md), fed straight into `recommend()`.
-//!
-//! Provisional and deliberately coarse for the MVP: Apple Silicon vs Intel is
-//! the one distinction that changes which tools are feasible on a Mac (it drives
-//! the decider's DeviceClass). RAM-level refinement within a tier is a known
-//! follow-up — see knowledge/17 "Small known follow-ups".
+//! (Tier detection for the pre-pivot recommendation screen lived here until
+//! 2026-10-20; the screen was removed and nothing else read it.)
 
 use std::path::Path;
 #[cfg(target_os = "macos")]
 use std::process::Command;
 
 use serde::Serialize;
-
-/// The detected machine specs the performance predictor needs (mirrors the
-/// decider's `DeviceSpec`). Detected, never asked (skills/design.md).
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct DeviceSpec {
-    /// "apple-silicon" | "intel" (a Mac is one of these).
-    pub arch: String,
-    /// Logical CPU cores.
-    pub cores: u32,
-    /// Total RAM in GB.
-    pub ram_gb: u32,
-}
 
 /// A LIVE snapshot of the machine's resources — not just what it has, but what
 /// is FREE right now. This is the context that lets Verdure orchestrate honestly:
@@ -58,39 +41,6 @@ pub(crate) struct SystemResources {
     pub os: &'static str,
 }
 
-/// Detect this machine's specs for the performance predictor.
-#[cfg(target_os = "macos")]
-pub(crate) fn detect_spec() -> DeviceSpec {
-    DeviceSpec {
-        arch: if is_apple_silicon() {
-            "apple-silicon".to_string()
-        } else {
-            "intel".to_string()
-        },
-        cores: sysctl_int("hw.logicalcpu").unwrap_or(4) as u32,
-        ram_gb: sysctl_int("hw.memsize")
-            .map(|b| (b as f64 / 1_073_741_824.0).round() as u32)
-            .unwrap_or(8),
-    }
-}
-
-/// Detect this machine's specs — iOS. Every iPhone/iPad CPU is Apple ARM, and
-/// there are no shell tools to call (apps can't spawn processes), so the readings
-/// come from syscalls instead of `/usr/sbin/sysctl` ([OQ-65]).
-#[cfg(target_os = "ios")]
-pub(crate) fn detect_spec() -> DeviceSpec {
-    DeviceSpec {
-        arch: "apple-silicon".to_string(),
-        cores: std::thread::available_parallelism()
-            .map(|n| n.get() as u32)
-            .unwrap_or(4),
-        ram_gb: ios::total_ram_bytes()
-            .map(|b| (b as f64 / 1_073_741_824.0).round() as u32)
-            .unwrap_or(4),
-    }
-}
-
-/// Read an integer sysctl value (fixed path, PATH-independent).
 #[cfg(target_os = "macos")]
 fn sysctl_int(key: &str) -> Option<u64> {
     Command::new("/usr/sbin/sysctl")
@@ -202,21 +152,6 @@ mod ios {
     }
 }
 
-/// Detect this machine's specs — Android. An ARM device; readings come from
-/// Linux syscalls/procfs, no shell tools ([OQ-66]).
-#[cfg(target_os = "android")]
-pub(crate) fn detect_spec() -> DeviceSpec {
-    DeviceSpec {
-        arch: "arm".to_string(),
-        cores: std::thread::available_parallelism()
-            .map(|n| n.get() as u32)
-            .unwrap_or(4),
-        ram_gb: android::total_ram_bytes()
-            .map(|b| (b as f64 / 1_073_741_824.0).round() as u32)
-            .unwrap_or(4),
-    }
-}
-
 /// Take a live snapshot of free resources — Android. `available_ram_mb` here is an
 /// *allocatable budget*, not raw `MemAvailable`. On Android that distinction
 /// matters: `/proc/meminfo MemAvailable` systematically UNDERSTATES what a
@@ -286,20 +221,6 @@ fn parse_meminfo_available_kb(meminfo: &str) -> Option<u64> {
         .lines()
         .find(|l| l.starts_with("MemAvailable:"))
         .and_then(|l| l.split_whitespace().nth(1)?.parse().ok())
-}
-
-/// Detect the device's tier — Android. ARM phones/tablets vary widely; a middle
-/// default keeps the legacy recommendation honest without overpromising. The RAM
-/// gate does the real per-device sizing at model-pick time ([OQ-66]).
-#[cfg(target_os = "android")]
-pub(crate) fn detect_tier() -> &'static str {
-    "L2-high"
-}
-
-/// Never on Android — used by the legacy porter to pick Mac download flavors.
-#[cfg(target_os = "android")]
-pub(crate) fn is_apple_silicon() -> bool {
-    false
 }
 
 /// Available RAM (MB) from `vm_stat`: free + reclaimable pages × page size.
@@ -406,32 +327,9 @@ fn parse_low_power(pmset: &str) -> bool {
         .any(|l| l.contains("lowpowermode") && l.split_whitespace().last() == Some("1"))
 }
 
-/// Detect the device's tier as a decider `Tier` string. Always returns a safe,
-/// real tier — never fails to the user.
-#[cfg(target_os = "macos")]
-pub(crate) fn detect_tier() -> &'static str {
-    if is_apple_silicon() {
-        // Apple Silicon → DeviceClass apple-silicon (knowledge/03, matrix.ts).
-        "L3"
-    } else {
-        // Intel Mac (the founder's 2019 machine) → a capable CPU laptop. This
-        // keeps transcription/text "recommended" and graphics-bound work honest.
-        "L2-high"
-    }
-}
-
-/// Detect the device's tier — iOS. Every iPad/iPhone is Apple Silicon-class for
-/// the decider's purposes; the RAM gate (jetsam-aware, above) does the real
-/// per-device sizing at pick time ([OQ-65]).
-#[cfg(target_os = "ios")]
-pub(crate) fn detect_tier() -> &'static str {
-    "L3"
-}
-
 /// True on Apple Silicon. `sysctl hw.optional.arm64` is "1" there, absent/"0"
 /// on Intel. sysctl lives at a fixed path, so this works under the minimal PATH
-/// a Finder-launched app inherits. Also used by the porter to pick the right
-/// architecture's download (x64 vs ARM64).
+/// a Finder-launched app inherits.
 #[cfg(target_os = "macos")]
 pub(crate) fn is_apple_silicon() -> bool {
     Command::new("/usr/sbin/sysctl")
@@ -442,26 +340,9 @@ pub(crate) fn is_apple_silicon() -> bool {
         .unwrap_or(false)
 }
 
-/// True on Apple Silicon — iOS: always (there are no Intel iPads).
-#[cfg(target_os = "ios")]
-pub(crate) fn is_apple_silicon() -> bool {
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn detected_tier_is_a_known_tier() {
-        // Whatever this machine is, detection must yield a tier the decider
-        // recognizes — never an empty or bogus string.
-        let tier = detect_tier();
-        assert!(
-            ["L1", "L2-low", "L2-high", "L3", "L3+"].contains(&tier),
-            "unexpected tier: {tier}"
-        );
-    }
 
     #[test]
     fn parses_available_ram_from_vm_stat() {

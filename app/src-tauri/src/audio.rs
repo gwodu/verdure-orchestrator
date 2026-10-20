@@ -1,88 +1,13 @@
-//! Audio decoding — turn whatever file the user dropped (mp3, m4a, wav, flac…)
-//! into the 16 kHz mono f32 PCM that whisper.cpp expects. Pure Rust (symphonia),
-//! so there's no ffmpeg/external tool to install — in keeping with the pivot's
-//! "one interface, no extra apps" goal (knowledge/18).
+//! Audio helpers for live dictation (`live.rs`): bring captured mic audio to the
+//! 16 kHz mono f32 PCM that whisper.cpp expects. Pure functions, unit-tested.
 //!
-//! Resampling is intentionally simple for v1 (linear interpolation, no
-//! anti-alias filter): Whisper is robust to it, and "dead-simple" is the bar the
-//! founder set. A proper resampler (rubato) is a later upgrade if accuracy needs it.
-
-use std::path::Path;
-
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
+//! Resampling is intentionally simple (linear interpolation, no anti-alias
+//! filter): Whisper is robust to it. A proper resampler (rubato) is a later
+//! upgrade if accuracy needs it. (A file decoder built on symphonia lived here
+//! until 2026-10-20; it served the drop-a-file screen removed in July.)
 
 /// Whisper's required input sample rate.
-const TARGET_RATE: u32 = 16_000;
-
-/// Decode an audio file to 16 kHz mono f32 samples, ready for `transcribe`.
-pub(crate) fn decode_to_mono_16k(path: &Path) -> Result<Vec<f32>, String> {
-    let file = std::fs::File::open(path).map_err(|e| format!("couldn't open the file: {e}"))?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
-
-    let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
-    }
-
-    let probed = symphonia::default::get_probe()
-        .format(
-            &hint,
-            mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        )
-        .map_err(|_| "this audio format isn't supported yet".to_string())?;
-
-    let mut format = probed.format;
-    let track = format
-        .default_track()
-        .ok_or_else(|| "no audio track in this file".to_string())?;
-    let track_id = track.id;
-    let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
-        .map_err(|e| format!("couldn't read this audio: {e}"))?;
-
-    let mut src_rate = track.codec_params.sample_rate.unwrap_or(TARGET_RATE);
-    let mut channels = 1usize;
-    let mut interleaved: Vec<f32> = Vec::new();
-
-    loop {
-        let packet = match format.next_packet() {
-            Ok(p) => p,
-            Err(_) => break, // end of stream
-        };
-        if packet.track_id() != track_id {
-            continue;
-        }
-        match decoder.decode(&packet) {
-            Ok(audio_buf) => {
-                let spec = *audio_buf.spec();
-                src_rate = spec.rate;
-                channels = spec.channels.count().max(1);
-                let mut sb = SampleBuffer::<f32>::new(audio_buf.capacity() as u64, spec);
-                sb.copy_interleaved_ref(audio_buf);
-                interleaved.extend_from_slice(sb.samples());
-            }
-            Err(symphonia::core::errors::Error::DecodeError(_)) => continue, // skip bad packet
-            Err(_) => break,
-        }
-    }
-
-    if interleaved.is_empty() {
-        return Err("couldn't find any audio in this file".to_string());
-    }
-
-    let mono = downmix_to_mono(&interleaved, channels);
-    Ok(resample_linear(&mono, src_rate, TARGET_RATE))
-}
-
-/// Whisper's required input sample rate, shared with live capture (`live.rs`).
-pub(crate) const WHISPER_RATE: u32 = TARGET_RATE;
+pub(crate) const WHISPER_RATE: u32 = 16_000;
 
 /// Average channels down to mono. Reused by live capture to downmix mic frames.
 pub(crate) fn downmix_to_mono(interleaved: &[f32], channels: usize) -> Vec<f32> {
