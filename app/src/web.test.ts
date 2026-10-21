@@ -9,19 +9,29 @@ import {
   looksTimeSensitive,
   markDisclosureSeen,
   searchGate,
+  setWebEnabled,
   setWebMode,
+  webEnabled,
   webMode,
 } from "./web";
 
 beforeEach(() => localStorage.clear());
+
+describe("the switch", () => {
+  it("is off until the user turns it on — the one network feature is opt-in", () => {
+    expect(webEnabled()).toBe(false);
+    setWebEnabled(true);
+    expect(webEnabled()).toBe(true);
+    setWebEnabled(false);
+    expect(webEnabled()).toBe(false);
+  });
+});
 
 describe("web mode", () => {
   it("defaults to Wi-Fi only, and remembers a change", () => {
     expect(webMode()).toBe("wifi");
     setWebMode("any");
     expect(webMode()).toBe("any");
-    setWebMode("off");
-    expect(webMode()).toBe("off");
   });
 
   it("treats a corrupt stored value as the default", () => {
@@ -31,12 +41,6 @@ describe("web mode", () => {
 });
 
 describe("the data rule", () => {
-  it("never searches when web search is off", () => {
-    for (const net of ["offline", "wifi", "cellular", "unknown"] as const) {
-      expect(searchGate("off", net)).toBe("off");
-    }
-  });
-
   it("searches on Wi-Fi, asks on mobile data, says so when offline", () => {
     expect(searchGate("wifi", "wifi")).toBe("search");
     expect(searchGate("wifi", "cellular")).toBe("ask-mobile-data");
@@ -56,7 +60,7 @@ describe("the data rule", () => {
 });
 
 describe("offering a search", () => {
-  it("offers one for questions that need fresh information", () => {
+  it("fast-paths questions that plainly need fresh information", () => {
     for (const q of [
       "What's the naira to dollar rate today?",
       "Who won the AFCON final?",
@@ -93,7 +97,8 @@ describe("the disclosure", () => {
   });
 
   it("names every party that sees anything, and nothing it can't promise", () => {
-    expect(WEB_DISCLOSURE).toContain("Only the search words you approve");
+    expect(WEB_DISCLOSURE).toContain("only short search words");
+    expect(WEB_DISCLOSURE).toContain("never the conversation");
     expect(WEB_DISCLOSURE).toContain("Brave");
     expect(WEB_DISCLOSURE).toContain("verdureai.com");
     expect(WEB_DISCLOSURE).toContain("90 days");

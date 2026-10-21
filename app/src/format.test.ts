@@ -9,6 +9,7 @@ import {
   parseProgress,
   renderMarkdown,
   citedSources,
+  shortfallMessage,
 } from "./format";
 
 // renderMarkdown is the safety boundary for model output: a local model's reply
@@ -173,5 +174,31 @@ describe("citations", () => {
   it("lists the sources a reply leaned on, once each, in order of first use", () => {
     expect(citedSources("A [2]. B [1]. C [2]. D [9].", 3)).toEqual([2, 1]);
     expect(citedSources("No citations at all.", 3)).toEqual([]);
+  });
+});
+
+// The honest line about the model (knowledge/21): which one, why not the best,
+// and the number the user can act on — in the words of the thing they'd do.
+describe("shortfallMessage", () => {
+  it("says nothing when the best model is running", () => {
+    expect(shortfallMessage("Powerful", "Powerful", null)).toBe("");
+  });
+
+  it("names memory as closing apps, with the gap", () => {
+    const m = shortfallMessage("Balanced", "Powerful", { kind: "memory", neededMb: 700 });
+    expect(m).toContain("Using the Balanced model");
+    expect(m).toContain("Powerful");
+    expect(m).toContain("700 MB more free memory");
+    expect(m).toContain("close some apps");
+  });
+
+  it("names storage as freeing space, with the gap", () => {
+    const m = shortfallMessage("Balanced", "Powerful", { kind: "storage", neededMb: 1300 });
+    expect(m).toContain("1.3 GB more free space");
+    expect(m).not.toContain("memory");
+  });
+
+  it("explains when nothing fits at all", () => {
+    expect(shortfallMessage(null, "Powerful", { kind: "memory", neededMb: 400 })).toContain("No chat model fits");
   });
 });

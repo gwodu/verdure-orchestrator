@@ -57,19 +57,18 @@ fn system_resources<R: Runtime>(app: AppHandle<R>) -> Result<device::SystemResou
     Ok(device::system_resources(&data_dir))
 }
 
-/// The chat models the user picks from (Small/Balanced/Powerful), each with its
-/// download size and whether it fits THIS device's free memory + disk right now —
-/// what the first-launch picker renders (design.md: honest space up front).
+/// Verdure's model choice for this device, with the honesty that goes with it:
+/// what was picked, what the best model would need (memory or storage, and how
+/// much more), and the opt-in experiment where offered (knowledge/21, design.md:
+/// the user no longer chooses a tier; they see what was chosen and why).
 #[tauri::command]
-fn chat_model_options<R: Runtime>(
-    app: AppHandle<R>,
-) -> Result<Vec<model::ChatModelOption>, String> {
+fn chat_model_plan<R: Runtime>(app: AppHandle<R>) -> Result<model::ChatModelPlan, String> {
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
     let res = device::system_resources(&data_dir);
-    Ok(model::chat_model_options(
+    Ok(model::chat_model_plan(
         &data_dir,
         res.total_ram_mb,
         res.available_ram_mb,
@@ -94,6 +93,7 @@ async fn chat<R: Runtime>(
     web_query: Option<String>,
     web_sources: Option<Vec<web::Snippet>>,
     web_unavailable: Option<web::UnavailableReason>,
+    web_enabled: Option<bool>,
 ) -> Result<llm::ToolDecision, String> {
     let data_dir = app
         .path()
@@ -112,13 +112,13 @@ async fn chat<R: Runtime>(
         // chat-crash fix); we say why instead. Empty/unknown id → auto-pick.
         let res = device::system_resources(&data_dir);
         let gb = |mb: u64| format!("{:.1} GB", mb as f64 / 1024.0);
-        let info = model::chat_model_choice(&model_id, res.total_ram_mb, res.available_ram_mb).map_err(|e| {
+        let info = model::chat_model_choice(&model_id, &data_dir, res.total_ram_mb, res.available_ram_mb, res.free_disk_mb).map_err(|e| {
             if e.strict {
                 // No internal model name (jargon) and no "Settings" (there is no
                 // such screen): the switch is the model name at the top of chat.
                 format!(
-                    "This model needs about {} of free memory, but only {} is free right now. \
-                     Close some apps, or tap the model name at the top to pick a smaller one.",
+                    "The experimental model needs about {} of free memory, but only {} is free right now. \
+                     Close some apps, or switch the experiment off under the model name at the top.",
                     gb(e.needed_mb as u64),
                     gb(e.available_mb)
                 )
@@ -162,7 +162,8 @@ async fn chat<R: Runtime>(
             (None, Some(reason)) => Some(llm::Grounding::Unavailable(web::unavailable_note(reason))),
             (None, None) => None,
         };
-        llm::decide(resident, &history, &message, style, n_ctx, grounding)
+        let web = if web_enabled.unwrap_or(false) { llm::WebAccess::On } else { llm::WebAccess::Off };
+        llm::decide(resident, &history, &message, style, n_ctx, grounding, web)
     })
     .await
     .map_err(|e| format!("the chat task could not run: {e}"))?
@@ -199,7 +200,7 @@ async fn web_search<R: Runtime>(
     let res = device::system_resources(&data_dir);
     // Same arithmetic as `chat`. A model that doesn't fit right now still gets a
     // search at the smallest budget; `chat` will explain the memory problem.
-    let n_ctx = model::chat_model_choice(&model_id, res.total_ram_mb, res.available_ram_mb)
+    let n_ctx = model::chat_model_choice(&model_id, &data_dir, res.total_ram_mb, res.available_ram_mb, res.free_disk_mb)
         .map(|info| {
             let spare = llm::spare_for_context_mb(res.available_ram_mb, info.runtime_mb);
             llm::context_for_budget(spare, info.kv_kb_per_token, info.trained_ctx)
@@ -640,7 +641,7 @@ mod notices_tests {
 fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         system_resources,
-        chat_model_options,
+        chat_model_plan,
         start_live_transcription,
         stop_live_transcription,
         chat,
@@ -670,6 +671,10 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init());
+    // Opens a web-search source in the system browser when its citation is
+    // tapped (knowledge/24). Only `open_url` is used, on every platform; the
+    // capability file limits it to http(s)/mailto/tel.
+    let builder = builder.plugin(tauri_plugin_opener::init());
     builder
         .manage(LiveState::default())
         .manage(ChatState::default())

@@ -1146,3 +1146,34 @@ body::after {
   color: var(--coral);
   font-size: 12px;
 }
+
+/* --- Web switch + Your model (knowledge/21, 24) ------------------------------ */
+.icon-btn.on {
+  color: var(--mint-bright);
+  background: rgba(52, 198, 154, 0.16);
+  box-shadow: inset 0 0 0 1px var(--glass-line);
+}
+/* The honest line about which model is running and why — a notice, not an
+   alarm: mint-pale on a faint mint well, like the install note. */
+.model-note {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--mint-pale);
+  background: rgba(52, 198, 154, 0.08);
+  border: 1px solid rgba(76, 216, 173, 0.2);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin: -6px 0 14px;
+}
+.yourmodel { display: flex; flex-direction: column; gap: 12px; }
+.yourmodel-head { display: flex; flex-direction: column; gap: 4px; }
+.yourmodel-tier { font-size: 22px; font-weight: 700; color: var(--ink); }
+.yourmodel-meta { font-size: 13.5px; color: var(--ink-soft); }
+.yourmodel-blurb { font-size: 14.5px; color: var(--ink); line-height: 1.5; margin-top: 4px; }
+.yourmodel-ok { font-size: 13.5px; color: var(--mint-bright); margin: 0; }
+.yourmodel .update-choice { align-self: flex-start; }
+/* Sources and citations open their page: make that visible. */
+.sources-list li[role="link"] { cursor: pointer; }
+.sources-list li[role="link"]:hover .source-title { text-decoration: underline; }
+sup.cite[role="link"] { cursor: pointer; }
+sup.cite[role="link"]:hover { text-decoration: underline; }

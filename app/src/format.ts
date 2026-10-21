@@ -119,6 +119,27 @@ export function renderMarkdown(src: string, sourceCount = 0): string {
   return out.join("");
 }
 
+import type { Shortfall } from "./bridge";
+
+/**
+ * What stands between this device and its best model, in the user's words and
+ * with the number they can act on (knowledge/21: honest numbers, and the user
+ * is told WHY answers may be weaker). Empty when nothing stands in the way.
+ * Memory means "close some apps"; storage means "free some space".
+ */
+export function shortfallMessage(pickedTier: string | null, bestTier: string, s: Shortfall | null): string {
+  if (!s) return "";
+  const more = fmtSize(s.neededMb);
+  if (!pickedTier) {
+    return s.kind === "memory"
+      ? `No chat model fits the memory free right now — it needs about ${more} more. Close some apps, then check again.`
+      : `There isn't enough free space to download a chat model — it needs about ${more} more. Free some space, then check again.`;
+  }
+  return s.kind === "memory"
+    ? `Using the ${pickedTier} model. The ${bestTier} one gives better answers but needs about ${more} more free memory — close some apps, then check again.`
+    : `Using the ${pickedTier} model. The ${bestTier} one gives better answers but needs about ${more} more free space — remove something you don't need, then check again.`;
+}
+
 /** Which of this answer's sources the reply actually cites (1-based, in order
  *  of first mention). Empty means the model answered without leaning on them —
  *  the UI then says so rather than implying the answer was checked. */

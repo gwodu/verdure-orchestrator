@@ -1,15 +1,15 @@
 // Verdure — the UI: one interface over local models (knowledge/18). The app
-// opens into chat (dictation is the mic button in it); the model picker and
-// Storage are the only other screens. Pure logic lives in format.ts, picker.ts
-// and updates.ts so it can be tested without booting the app. Copy is
-// jargon-free (skills/design.md, skills/copywriting.md).
+// opens into chat (dictation is the mic button in it); "Your model" and Storage
+// are the only other screens. Pure logic lives in format.ts, web.ts and
+// updates.ts so it can be tested without booting the app. Copy is jargon-free
+// (skills/design.md, skills/copywriting.md).
 
 import {
   startLiveTranscription,
   stopLiveTranscription,
   chatSend,
   type ChatTurn,
-  chatModelOptions,
+  chatModelPlan,
   listModels,
   removeModel,
   systemResources,
@@ -18,17 +18,17 @@ import {
   openStorageSettings,
   modelsDir,
   revealModelsDir,
-  type ChatModelOption,
   openThirdPartyNotices,
   networkState,
+  openUrl,
   prepareWebQuery,
   webSearch,
+  type ChatModelPlan,
   type WebContext,
 } from "./bridge";
 
 import {
   citedSources,
-  escapeHtml,
   fmtBytes,
   fmtSize,
   friendlyError,
@@ -36,6 +36,7 @@ import {
   micPermissionHelp,
   parseProgress,
   renderMarkdown,
+  shortfallMessage,
 } from "./format";
 import {
   WEB_DISCLOSURE,
@@ -43,11 +44,12 @@ import {
   looksTimeSensitive,
   markDisclosureSeen,
   searchGate,
+  setWebEnabled,
   setWebMode,
+  webEnabled,
   webMode,
   type WebMode,
 } from "./web";
-import { recommendedChoice } from "./picker";
 
 const WHISPER_MODEL_ID = "whisper-base-en";
 import {
@@ -61,23 +63,36 @@ import {
   type UpdateMode,
 } from "./updates";
 import "./styles.css";
-// The chat model the user picked (Small/Balanced/Powerful), by model id.
-const MODEL_CHOICE_KEY = "verdure.chat.modelId";
-// Plain-language tier names + one-line blurbs for the picker, keyed by model id
-// (design.md: the headline is the benefit; the model name is a demoted detail).
-// Order here is the display order (smallest → most capable).
+// Verdure picks the chat model (knowledge/21, 2026-10-21 — the user no longer
+// chooses a tier). The plan says what it picked and what more room would buy;
+// it is fetched fresh whenever a screen needs it, because free memory moves.
+let currentPlan: ChatModelPlan | null = null;
+async function refreshPlan(): Promise<ChatModelPlan | null> {
+  try {
+    currentPlan = await chatModelPlan();
+  } catch {
+    currentPlan = null;
+  }
+  return currentPlan;
+}
+// The one opt-in: the 27B experiment, on devices that offer it ([OQ-84]).
+const EXPERIMENT_KEY = "verdure.chat.experiment";
+const experimentOn = (): boolean => localStorage.getItem(EXPERIMENT_KEY) === "1";
+// The id handed to the backend: empty = Verdure picks; the experiment's id only
+// when it is on AND offered here (anything else is treated as empty anyway).
+const modelIdForChat = (): string =>
+  experimentOn() && currentPlan?.experiment ? currentPlan.experiment.id : "";
+// Plain-language tier names + one-line blurbs, keyed by model id (design.md: the
+// headline is the benefit; the model name is a demoted detail).
 const MODEL_TIERS: { id: string; tier: string; blurb: string }[] = [
-  { id: "qwen2.5-0.5b-instruct", tier: "Small", blurb: "Quick and light — runs on any device. Great for short questions." },
-  { id: "qwen3.5-2b-instruct", tier: "Balanced", blurb: "A capable all-rounder, and it remembers much more of the conversation." },
-  { id: "qwen3-4b-instruct-2507-byteshape", tier: "Powerful", blurb: "The most capable — richer answers, needs a little more room." },
-  // iPad experiment ([OQ-84]): the backend offers it, as an EXTRA choice, only on
-  // iOS devices with 16 GB of memory. Only offered options are drawn, so no other
-  // device sees it. Labelled as a test, not sold as a product (copywriting.md).
+  { id: "qwen2.5-0.5b-instruct", tier: "Small", blurb: "Quick and light — runs on any device. Best for short questions." },
+  { id: "qwen2.5-1.5b-instruct", tier: "Compact", blurb: "A little more capable than Small." },
+  { id: "qwen3.5-2b-instruct", tier: "Balanced", blurb: "A capable all-rounder that remembers much of the conversation." },
+  { id: "qwen3-4b-instruct-2507-byteshape", tier: "Powerful", blurb: "The most capable — richer, better-grounded answers." },
   { id: "qwen3.8-27b-byteshape", tier: "Experimental", blurb: "A much larger model we're still testing. A very big download, and it may be slow or fail to start." },
 ];
 const tierName = (id: string): string =>
   MODEL_TIERS.find((t) => t.id === id)?.tier ?? "Chat model";
-const chosenModelId = (): string => localStorage.getItem(MODEL_CHOICE_KEY) ?? "";
 
 // Keep the screen awake during a long download so an idle screen doesn't suspend
 // the app and kill the network mid-download (the big-model failure on Android).
@@ -290,256 +305,122 @@ function renderStorage(): void {
   void refresh();
 }
 
-// --- Choose your model: first-launch pick + change-anytime -------------------
-// The user picks Small / Balanced / Powerful, with each one's download size and
-// whether it fits this device (design.md: honest space, no jargon on the surface —
-// the model name is a demoted detail). `onboarding` = the first-run flow (no way
-// back until a choice is made); otherwise it's reached from chat, with a back.
-async function renderModelPicker(onboarding: boolean): Promise<void> {
+// --- Your model: what Verdure picked, and what more room would buy -----------
+// There is no choice to make here (knowledge/21): Verdure runs the most capable
+// model that fits this device right now. What the user gets instead is the
+// truth — which model, how big, and when closing apps or freeing space would
+// get them a better one — with a "Check again" that re-reads the device.
+async function renderYourModel(): Promise<void> {
   clearDrop();
   root.innerHTML = "";
   root.appendChild(brandBar());
-  if (!onboarding) root.appendChild(backButton(renderChat));
+  root.appendChild(backButton(renderChat));
 
   const panel = el("section", "panel");
-  panel.appendChild(el("h1", "title", "Choose your model"));
+  panel.appendChild(el("h1", "title", "Your model"));
   panel.appendChild(
     el(
       "p",
       "subtitle",
-      onboarding
-        ? "Verdure runs a chat model right on your device — nothing leaves it. Pick one to start; you can change it anytime. It downloads the first time you chat."
-        : "Switch the model Verdure uses to chat. The new one downloads the first time you use it.",
+      "Verdure runs the most capable model that fits your device, and tells you when more room would get you a better one.",
     ),
   );
-
-  // Live free-space readout (the transparency the founder liked from Storage),
-  // right where you're deciding what to download.
-  const freeEl = el("p", "picker-free", "");
-  panel.appendChild(freeEl);
-  const list = el("div", "model-picker");
-  panel.appendChild(list);
-  root.appendChild(panel);
-
-  // A stored id can name a tier that no longer exists (a model retired between
-  // versions — the [OQ-71] diagnostics were the first case). Fall back to the
-  // first tier so the picker always shows a real selection, matching what the
-  // backend already does with a stale choice (`chat_model_choice` auto-picks).
-  const stored = chosenModelId();
-  let selected = MODEL_TIERS.some((t) => t.id === stored) ? stored : MODEL_TIERS[0].id;
-  let options = await chatModelOptions().catch(() => [] as ChatModelOption[]);
-  // The backend's menu differs per device, so a selection it doesn't offer would
-  // be drawn as nothing at all. Fall back to its first offer.
-  if (options.length > 0 && !options.some((o) => o.id === selected)) selected = options[0].id;
-  // First run: pre-select the most capable standard model that fits, and say
-  // so, so the first screen is one obvious tap (design.md: zero configuration).
-  const STANDARD_IDS = MODEL_TIERS.filter((t) => t.tier !== "Experimental").map((t) => t.id);
-  const recommended = recommendedChoice(options, STANDARD_IDS);
-  if (!stored && recommended) selected = recommended;
-
-  // Which OS this is decides the honest way to help when a model doesn't fit the
-  // disk ([OQ-67]): Android can clear cached junk on request, the Mac has its own
-  // storage screen, the iPhone only has instructions. Learned async; re-render
-  // once known so the right help appears.
-  let os = "";
-  // Feedback from the last "make room" attempt — survives re-renders.
-  let spaceNote = "";
-  const fillFree = async () => {
-    try {
-      const r = await systemResources();
-      os = r.os;
-      freeEl.textContent = `${fmtSize(r.freeDiskMb)} free space · ${fmtSize(r.availableRamMb)} memory free`;
-    } catch {
-      freeEl.textContent = "";
-    }
-  };
-
-  const render = () => {
-    list.innerHTML = "";
-    // Show in tier order (small → powerful), pairing tier copy with device facts.
-    for (const t of MODEL_TIERS) {
-      const opt = options.find((o) => o.id === t.id);
-      // The backend's menu is per-platform (the iPad's Powerful slot differs), so
-      // once it has answered, draw only what it offers. Before that (or in a
-      // browser preview) there are no options and every tier shows.
-      if (options.length > 0 && !opt) continue;
-      const card = el("div", "pick" + (selected === t.id ? " selected" : ""));
-
-      const main = document.createElement("button");
-      main.className = "pick-main";
-      main.type = "button";
-      const fitsMem = !opt || opt.fitsMemory; // unknown (preview) → assume fine
-      const fitsDisk = !opt || opt.fitsDisk;
-      const sizeText = opt ? (opt.installed ? "Downloaded" : `${fmtSize(opt.downloadMb)} download`) : "";
-      let warn = "";
-      // Memory is a LIVE condition, not a blocker: downloading depends on disk,
-      // running depends on how much memory is free at that moment. Selecting is
-      // never prevented, and the backend explains it properly at load time. So
-      // this is a heads-up, phrased as something the user can act on — the old
-      // wording ("Not enough free memory") read as a refusal, directly under a
-      // line saying "7.0 GB free space", which looked like a contradiction
-      // unless you already knew "memory" meant RAM.
-      if (!fitsMem)
-        warn = `You'll need to close some apps to use this one — it wants about ${fmtSize(opt!.runtimeMb)} of free memory.`;
-      else if (!fitsDisk) {
-        warn = `Not enough free space to download (needs ${fmtSize(opt!.downloadMb)}). Remove a model to make room.`;
-        // iPhone/iPad: no API and no deep link — honest instructions are the help.
-        if (os === "ios")
-          warn +=
-            " Or free space in Settings → General → iPhone Storage — offloading apps you don't use is the quickest win.";
-      }
-      main.innerHTML = `
-        <span class="pick-radio" aria-hidden="true"></span>
-        <span class="pick-body">
-          <span class="pick-head">
-            <span class="pick-tier">${t.tier}</span>
-            <span class="pick-size">${escapeHtml(sizeText)}</span>
-          </span>
-          ${t.id === recommended ? `<span class="pick-rec">Recommended for this device</span>` : ""}
-          <span class="pick-blurb">${escapeHtml(t.blurb)}</span>
-          ${warn ? `<span class="pick-warn">${escapeHtml(warn)}</span>` : ""}
-        </span>`;
-      main.addEventListener("click", () => {
-        selected = t.id;
-        render();
-      });
-      card.appendChild(main);
-
-      // Platform-specific "make room" help, only where honest help exists
-      // ([OQ-67]). Android: the OS clears other apps' cached junk on request —
-      // one tap, nothing important touched. macOS: open the system's own
-      // storage screen. (iOS help is in the warn text above.)
-      if (opt && !opt.installed && !fitsDisk && (os === "android" || os === "macos")) {
-        const help = el("div", "pick-help");
-        const btn = document.createElement("button");
-        btn.className = "link";
-        btn.type = "button";
-        if (os === "android") {
-          btn.textContent = "Clear cached junk to make room";
-          btn.addEventListener("click", async () => {
-            btn.disabled = true;
-            btn.textContent = "Making room…";
-            spaceNote = "";
-            try {
-              // Ask for the download plus a little headroom, so a successful
-              // clear doesn't leave the disk a byte short mid-download.
-              await freeUpSpace((opt.downloadMb + 64) * 1_048_576);
-              options = await chatModelOptions().catch(() => options);
-            } catch (err) {
-              spaceNote = friendlyError(err);
-            }
-            await fillFree();
-            render(); // fresh fit flags — if it fits now, the warning simply goes away
-          });
-        } else {
-          btn.textContent = "See what's filling your disk (opens Mac settings)";
-          btn.addEventListener("click", () => {
-            void openStorageSettings().catch((err) => {
-              spaceNote = friendlyError(err);
-              render();
-            });
-          });
-        }
-        help.appendChild(btn);
-        if (spaceNote) help.appendChild(el("span", "pick-warn", spaceNote));
-        card.appendChild(help);
-      }
-
-      // Remove — only for downloaded models, so you can free space to fit another
-      // right here, no separate trip to Storage.
-      if (opt?.installed) {
-        const rm = document.createElement("button");
-        rm.className = "pick-remove";
-        rm.type = "button";
-        rm.textContent = "Remove";
-        rm.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          rm.disabled = true;
-          rm.textContent = "Removing…";
-          try {
-            await removeModel(t.id);
-            options = await chatModelOptions().catch(() => options);
-            void fillFree(); // space freed — refresh the readout + fit flags
-          } finally {
-            render();
-          }
-        });
-        card.appendChild(rm);
-      }
-      list.appendChild(card);
-    }
-    const go = document.createElement("button");
-    go.className = "primary";
-    go.type = "button";
-    go.textContent = onboarding ? "Start chatting" : "Use this model";
-    go.addEventListener("click", () => {
-      const prev = chosenModelId();
-      localStorage.setItem(MODEL_CHOICE_KEY, selected);
-      // Switching away from a downloaded model leaves it as redundant weight on
-      // a tight disk — offer its removal at the exact moment it stops being
-      // needed ([OQ-67]). Optional; never automatic (coming back = re-download).
-      const old =
-        prev && prev !== selected
-          ? options.find((o) => o.id === prev && o.installed)
-          : undefined;
-      if (old) renderFreeOldModel(old);
-      else renderChat();
-    });
-    list.appendChild(go);
-  };
-  render();
-  // The free-space readout — and which OS this is — arrive async; re-render so
-  // the platform's "make room" help shows up where relevant.
-  void fillFree().then(render);
-}
-
-// After a model switch: one optional tap to reclaim the old model's space.
-// Honest about the trade — it re-downloads if the user ever switches back.
-function renderFreeOldModel(old: ChatModelOption): void {
-  clearDrop();
-  root.innerHTML = "";
-  root.appendChild(brandBar());
-
-  const panel = el("section", "panel");
-  panel.appendChild(el("h1", "title", "Free up space?"));
-  panel.appendChild(
-    el(
-      "p",
-      "subtitle",
-      `The ${tierName(old.id)} model you were using is still on your device, taking ${fmtSize(old.downloadMb)}. ` +
-        "Remove it? If you ever switch back, it simply downloads again.",
-    ),
-  );
-
+  const box = el("div", "yourmodel");
+  panel.appendChild(box);
   const status = el("p", "status");
-  const removeLabel = `Remove it — free ${fmtSize(old.downloadMb)}`;
-  const remove = document.createElement("button");
-  remove.className = "primary";
-  remove.type = "button";
-  remove.textContent = removeLabel;
-  remove.addEventListener("click", async () => {
-    remove.disabled = true;
-    remove.textContent = "Removing…";
-    try {
-      await removeModel(old.id);
-      renderChat();
-    } catch (err) {
-      remove.disabled = false;
-      remove.textContent = removeLabel;
-      status.textContent = friendlyError(err);
-    }
-  });
-
-  const keep = document.createElement("button");
-  keep.className = "link";
-  keep.type = "button";
-  keep.textContent = "Keep both";
-  keep.addEventListener("click", renderChat);
-
-  panel.appendChild(remove);
-  panel.appendChild(keep);
   panel.appendChild(status);
   root.appendChild(panel);
+  // Which OS decides the honest "make room" help below; learned async.
+  let os = "";
+  void systemResources().then((r) => (os = r.os)).catch(() => {});
+
+  const paint = (plan: ChatModelPlan | null) => {
+    box.innerHTML = "";
+    if (!plan) {
+      box.appendChild(el("p", "subtitle", "Couldn't read your device just now. Try again in a moment."));
+      return;
+    }
+    const picked = experimentOn() && plan.experiment ? plan.experiment : plan.picked;
+    const head = el("div", "yourmodel-head");
+    head.appendChild(el("span", "yourmodel-tier", picked ? tierName(picked.id) : "No model fits right now"));
+    if (picked) {
+      head.appendChild(
+        el("span", "yourmodel-meta", `${picked.name} · ${picked.installed ? "downloaded" : `${fmtSize(picked.downloadMb)} download`}`),
+      );
+      const blurb = MODEL_TIERS.find((t) => t.id === picked.id)?.blurb;
+      if (blurb) head.appendChild(el("span", "yourmodel-blurb", blurb));
+    }
+    box.appendChild(head);
+
+    // The honest part: what stands between this device and the best model.
+    const note = shortfallMessage(
+      plan.picked ? tierName(plan.picked.id) : null,
+      tierName(plan.best.id),
+      plan.shortfall,
+    );
+    if (note) {
+      box.appendChild(el("p", "model-note", note));
+      const row = el("div", "web-row");
+      const check = document.createElement("button");
+      check.type = "button";
+      check.className = "update-choice preferred";
+      check.textContent = "Check again";
+      check.addEventListener("click", async () => {
+        check.disabled = true;
+        check.textContent = "Checking…";
+        paint(await refreshPlan());
+      });
+      row.appendChild(check);
+      // Platform-specific "make room" help for a STORAGE shortfall, only where
+      // honest help exists ([OQ-67]): Android can clear other apps' cached junk
+      // on request; the Mac has its own storage screen; iOS gets instructions.
+      if (plan.shortfall?.kind === "storage") {
+        const help = document.createElement("button");
+        help.type = "button";
+        help.className = "update-choice";
+        if (os === "android") {
+          help.textContent = "Clear cached junk to make room";
+          help.addEventListener("click", async () => {
+            help.disabled = true;
+            help.textContent = "Making room…";
+            try {
+              await freeUpSpace((plan.best.downloadMb + 64) * 1_048_576);
+            } catch (err) {
+              status.textContent = friendlyError(err);
+            }
+            paint(await refreshPlan());
+          });
+          row.appendChild(help);
+        } else if (os === "macos") {
+          help.textContent = "See what's filling your disk";
+          help.addEventListener("click", () => void openStorageSettings().catch((err) => (status.textContent = friendlyError(err))));
+          row.appendChild(help);
+        } else if (os === "ios") {
+          box.appendChild(el("p", "where-note", "Free space in Settings › General › iPhone Storage — offloading apps you don't use is the quickest win."));
+        }
+      }
+      box.appendChild(row);
+    } else if (!experimentOn()) {
+      box.appendChild(el("p", "yourmodel-ok", "This is the most capable model Verdure has for everyday use."));
+    }
+
+    // The experiment, where the device offers it: a labelled switch, never the
+    // default (copywriting.md — say what it is, not what sounds good).
+    if (plan.experiment) {
+      const ex = document.createElement("button");
+      ex.type = "button";
+      ex.className = "updates-mode" + (experimentOn() ? " selected" : "");
+      ex.setAttribute("aria-pressed", String(experimentOn()));
+      ex.textContent = `Try the experimental model (${plan.experiment.name}, ${fmtSize(plan.experiment.downloadMb)} download — may be slow or fail to start)`;
+      ex.addEventListener("click", () => {
+        localStorage.setItem(EXPERIMENT_KEY, experimentOn() ? "0" : "1");
+        paint(plan);
+      });
+      box.appendChild(ex);
+    }
+  };
+  paint(currentPlan);
+  paint(await refreshPlan());
 }
 
 // --- Chat: the conversational front door (knowledge/18) ---------------------
@@ -551,12 +432,23 @@ function renderChat(): void {
   const modelBtn = document.createElement("button");
   modelBtn.className = "model-chip";
   modelBtn.type = "button";
-  modelBtn.title = "Change the chat model";
-  modelBtn.setAttribute("aria-label", "Change the chat model");
-  modelBtn.textContent = tierName(chosenModelId());
-  modelBtn.addEventListener("click", () => void renderModelPicker(false));
+  modelBtn.title = "Your model — what Verdure picked for this device";
+  modelBtn.setAttribute("aria-label", "Your model — what Verdure picked for this device");
+  modelBtn.textContent = currentPlan?.picked ? tierName(currentPlan.picked.id) : "Your model";
+  modelBtn.addEventListener("click", () => void renderYourModel());
+  // The web switch (knowledge/24): the one consent, in view. On = the model is
+  // told it can check the web and searches run without a per-search tap; off =
+  // it is told it can't. What was searched always shows under the answer.
+  const webBtn = iconButton(ICON_GLOBE, "Web search", () => toggleWeb());
+  const paintWeb = () => {
+    const on = webEnabled();
+    webBtn.classList.toggle("on", on);
+    webBtn.setAttribute("aria-pressed", String(on));
+    webBtn.title = on ? "Web search is on — tap to switch off" : "Web search is off — tap to switch on";
+  };
+  paintWeb();
   root.appendChild(
-    brandBar([modelBtn, iconButton(ICON_STORAGE, "Storage & your computer", renderStorage)]),
+    brandBar([modelBtn, webBtn, iconButton(ICON_STORAGE, "Storage & your computer", renderStorage)]),
   );
 
   const panel = el("section", "panel");
@@ -565,15 +457,53 @@ function renderChat(): void {
     el(
       "p",
       "subtitle",
-      "Type to chat, or tap the microphone to turn speech into text. Everything runs on your device — private, no account. The first message downloads the chat model you picked.",
+      "Type to chat, or tap the microphone to turn speech into text. Everything runs on your device — private, no account. The first message downloads the chat model Verdure picked for it.",
     ),
   );
+
+  // When a smaller model is running than the device could with more room, say
+  // so here — the answer quality the user is about to see has a reason, and the
+  // reason has a number (design.md: honest numbers in human terms).
+  const modelNote = el("p", "model-note");
+  modelNote.hidden = true;
+  panel.appendChild(modelNote);
+  void refreshPlan().then((plan) => {
+    if (!plan) return;
+    modelBtn.textContent = plan.picked ? tierName(plan.picked.id) : "Your model";
+    const note = shortfallMessage(plan.picked ? tierName(plan.picked.id) : null, tierName(plan.best.id), plan.shortfall);
+    modelNote.textContent = note;
+    modelNote.hidden = !note;
+  });
 
   const thread = el("div", "chat-thread");
   panel.appendChild(thread);
 
   const status = el("p", "status");
   panel.appendChild(status);
+
+  // Switching web search on for the first time shows what leaves the device,
+  // once, where the user is looking; after that it lives in Storage.
+  const toggleWeb = () => {
+    const on = !webEnabled();
+    setWebEnabled(on);
+    paintWeb();
+    if (on && !disclosureSeen()) {
+      markDisclosureSeen();
+      const card = el("div", "msg ai web-offer");
+      card.appendChild(el("p", "", "Web search is on. What leaves your device:"));
+      card.appendChild(el("p", "disclose-text", WEB_DISCLOSURE));
+      const ok = document.createElement("button");
+      ok.type = "button";
+      ok.className = "update-choice preferred";
+      ok.textContent = "Got it";
+      ok.addEventListener("click", () => card.remove());
+      card.appendChild(ok);
+      thread.appendChild(card);
+      thread.scrollTop = thread.scrollHeight;
+    } else {
+      status.textContent = on ? "Web search is on." : "Web search is off.";
+    }
+  };
 
   const rowEl = el("div", "chat-input-row");
   const input = document.createElement("textarea");
@@ -752,11 +682,6 @@ function renderChat(): void {
   }
   thread.appendChild(examples);
 
-  // The chosen model's size + install state, for the one-time "installing" notice.
-  let chosen: ChatModelOption | undefined;
-  void chatModelOptions()
-    .then((opts) => (chosen = opts.find((o) => o.id === chosenModelId())))
-    .catch(() => {});
 
   // The conversation so far — this IS the chat's memory (knowledge/22). Only
   // completed exchanges go in: a question whose answer failed would otherwise
@@ -772,7 +697,17 @@ function renderChat(): void {
         ? (() => {
             const node = el("div", "msg ai");
             node.innerHTML = renderMarkdown(text, web?.sources.length ?? 0); // escaped inside renderMarkdown
-            if (web) node.appendChild(sourcesFooter(text, web));
+            if (web) {
+              // Wikipedia-style: the little number opens the source it names.
+              node.querySelectorAll<HTMLElement>("sup.cite").forEach((sup) => {
+                const src = web.sources[Number(sup.textContent) - 1];
+                if (!src) return;
+                sup.setAttribute("role", "link");
+                sup.title = src.domain;
+                sup.addEventListener("click", () => void openUrl(src.url).catch(() => {}));
+              });
+              node.appendChild(sourcesFooter(text, web));
+            }
             return node;
           })()
         : el("div", "msg user", text);
@@ -781,10 +716,11 @@ function renderChat(): void {
     return m;
   };
 
-  // Under a web-checked answer: what was searched, which sources it leaned on,
-  // and — the honest part — when it didn't lean on them at all (knowledge/24).
-  // Sources are listed by site, not linked: Verdure has no way to open a page
-  // yet, and a link that does nothing is worse than a name.
+  // Under a web-checked answer: the words that left the device, and the
+  // sources, each a tap from its page (knowledge/24). The ones the answer cited
+  // are highlighted; the rest are listed without a verdict — on `testflight-15`
+  // the 2B plainly used results it never numbered, and a badge that called that
+  // "from memory" was wrong more often than right.
   const sourcesFooter = (reply: string, web: WebContext): HTMLElement => {
     const box = el("div", "sources");
     if (web.unavailable) {
@@ -799,36 +735,18 @@ function renderChat(): void {
     }
     box.appendChild(el("span", "sources-query", `Searched the web for “${web.query}”`));
     const used = citedSources(reply, web.sources.length);
-    if (used.length === 0) {
-      box.appendChild(el("span", "badge", "Answered from memory — the results weren't used."));
-    }
     const list = el("ol", "sources-list");
     web.sources.forEach((s, i) => {
       const li = el("li", used.includes(i + 1) ? "cited" : "");
+      li.setAttribute("role", "link");
+      li.title = s.url;
       li.appendChild(el("span", "source-domain", s.domain));
       li.appendChild(el("span", "source-title", s.title));
+      li.addEventListener("click", () => void openUrl(s.url).catch(() => {}));
       list.appendChild(li);
     });
     box.appendChild(list);
     return box;
-  };
-
-  // The small, optional explanation of what leaves the device. Open on the very
-  // first search so nobody sends anything without having seen it; a tiny
-  // toggle thereafter. Native <details>: no script, works everywhere.
-  const disclosure = (): HTMLElement => {
-    const d = document.createElement("details");
-    d.className = "disclose";
-    d.open = !disclosureSeen();
-    const s = document.createElement("summary");
-    s.textContent = "What leaves your device?";
-    d.appendChild(s);
-    d.appendChild(el("p", "disclose-text", WEB_DISCLOSURE));
-    d.addEventListener("toggle", () => {
-      if (d.open) markDisclosureSeen();
-    });
-    if (d.open) markDisclosureSeen();
-    return d;
   };
 
   // An AI message that offers to run a capability — the human confirms before
@@ -869,44 +787,6 @@ function renderChat(): void {
     };
   };
 
-  // Offer a web check for a question that looks like it needs fresh facts
-  // (knowledge/24). The words that would be sent are shown — and editable —
-  // before anything leaves the device; a tap on "Check the web" is the approval.
-  const offerWebCheck = async (text: string) => {
-    const card = el("div", "msg ai web-offer");
-    card.appendChild(el("p", "", "This might need up-to-date information. Check the web for:"));
-    const q = document.createElement("input");
-    q.className = "web-query";
-    q.type = "text";
-    q.setAttribute("aria-label", "The search words that would be sent");
-    q.value = await prepareWebQuery(text);
-    card.appendChild(q);
-    const row = el("div", "web-row");
-    const go = document.createElement("button");
-    go.type = "button";
-    go.className = "update-choice preferred";
-    go.textContent = "Check the web";
-    const skip = document.createElement("button");
-    skip.type = "button";
-    skip.className = "update-choice";
-    skip.textContent = "Answer without it";
-    row.appendChild(go);
-    row.appendChild(skip);
-    card.appendChild(row);
-    card.appendChild(disclosure());
-    thread.appendChild(card);
-    thread.scrollTop = thread.scrollHeight;
-    go.addEventListener("click", () => {
-      const query = q.value.trim();
-      card.remove();
-      void runChat(text, query ? { query, sources: [], unavailable: null } : null);
-    });
-    skip.addEventListener("click", () => {
-      card.remove();
-      void runChat(text);
-    });
-  };
-
   // On mobile data with Wi-Fi only set (or when the device can't tell): ask,
   // once, to allow it — the answer is a setting, changeable from Storage. No
   // byte counts here; a search is a few kilobytes and the number is noise.
@@ -940,38 +820,45 @@ function renderChat(): void {
     thread.scrollTop = thread.scrollHeight;
   };
 
+  // Run a not-yet-run search through the data rule (knowledge/24). Returns the
+  // context to answer with, or ASKED when the mobile-data question was put to
+  // the user (its buttons re-enter `runChat`).
+  const ASKED = Symbol("asked");
+  const resolveWeb = async (text: string, web: WebContext | null): Promise<WebContext | null | typeof ASKED> => {
+    if (!web || web.sources.length > 0 || web.unavailable) return web;
+    const gate = searchGate(webMode(), await networkState().catch(() => "unknown" as const));
+    if (gate === "ask-mobile-data") {
+      askMobileData(text, web);
+      return ASKED;
+    }
+    if (gate === "offline") return { ...web, unavailable: "offline" };
+    status.textContent = "Checking the web…";
+    try {
+      const sources = await webSearch(web.query, modelIdForChat());
+      // Nothing came back — say so, rather than framing an empty source list.
+      return sources.length ? { ...web, sources } : { ...web, unavailable: "empty" };
+    } catch (err) {
+      // Couldn't reach the relay, or it answered badly: the model is told
+      // exactly that (not "offline"), and the user sees the same reason.
+      status.textContent = friendlyError(err);
+      return { ...web, unavailable: "failed" };
+    }
+  };
+
   // Run one chat turn for `text`. Split out from `submit` so the "Resume" button
   // can re-attempt (which resumes the download) without re-posting the question.
-  // `web` is an approved search to run first (knowledge/24).
+  // `web` is a search decided before asking the model (the time-word fast path).
   const runChat = async (text: string, web: WebContext | null = null) => {
-    if (web && web.sources.length === 0 && !web.unavailable) {
-      // Approved, not yet run: the data rule decides how.
-      const gate = searchGate(webMode(), await networkState().catch(() => "unknown" as const));
-      if (gate === "ask-mobile-data") return askMobileData(text, web);
-      if (gate === "off") web = null;
-      else if (gate === "offline") web = { ...web, unavailable: "offline" };
-      else {
-        status.textContent = "Checking the web…";
-        try {
-          web = { ...web, sources: await webSearch(web.query, chosenModelId()) };
-        } catch (err) {
-          // Couldn't reach the relay, or it answered badly: the model is told
-          // exactly that (not "offline"), and the user sees the same reason.
-          status.textContent = friendlyError(err);
-          web = { ...web, unavailable: "failed" };
-        }
-        if (web.sources.length === 0 && !web.unavailable) {
-          // Nothing came back — say so, rather than framing an empty source list.
-          web = { ...web, unavailable: "empty" };
-        }
-      }
-    }
+    const resolved = await resolveWeb(text, web);
+    if (resolved === ASKED) return;
+    web = resolved;
     busy = true;
     send.disabled = true;
-    const downloading = !!(chosen && !chosen.installed);
+    const picked = currentPlan?.picked ?? null;
+    const downloading = !!(picked && !picked.installed);
     let card: ReturnType<typeof makeInstallCard> | null = null;
     if (downloading) {
-      card = makeInstallCard(`Setting up your ${tierName(chosen!.id)} model — one-time ${fmtSize(chosen!.downloadMb)} download.`);
+      card = makeInstallCard(`Setting up your ${tierName(picked!.id)} model — one-time ${fmtSize(picked!.downloadMb)} download.`);
     }
     const onProgress = (msg: string) => {
       const p = parseProgress(msg);
@@ -980,14 +867,21 @@ function renderChat(): void {
     };
     status.textContent = "Thinking…";
     try {
+      const ask = () => chatSend(text, onProgress, modelIdForChat(), history, web, webEnabled());
       // Hold a screen wake lock while a (possibly large) model downloads.
-      const decision = downloading
-        ? await withScreenAwake(() => chatSend(text, onProgress, chosenModelId(), history, web))
-        : await chatSend(text, onProgress, chosenModelId(), history, web);
-      status.textContent = "";
+      let decision = downloading ? await withScreenAwake(ask) : await ask();
       card?.el.remove();
-      if (chosen) chosen.installed = true; // downloaded now — don't renotify
-      // Chat is a plain conversation now — just show the reply.
+      if (picked) picked.installed = true; // downloaded now — don't renotify
+      // The model asked to check the web (its one-line SEARCH: protocol, llm.rs):
+      // run the words through the data rule, then ask again with what came back.
+      if (decision.action === "search" && webEnabled() && !web) {
+        const asked = await resolveWeb(text, { query: decision.reply, sources: [], unavailable: null });
+        if (asked === ASKED) return;
+        web = asked;
+        status.textContent = "Thinking…";
+        decision = await ask();
+      }
+      status.textContent = "";
       const reply = decision.reply || "(no reply)";
       addMsg("ai", reply, web);
       // Only a completed exchange becomes memory (see `history`'s note).
@@ -1020,10 +914,11 @@ function renderChat(): void {
     input.value = "";
     examples.remove(); // empty-state examples make way for the conversation
     addMsg("user", text);
-    // Deciding whether to OFFER a search is local and deterministic; nothing is
-    // sent until the user taps the words they can read (knowledge/24).
-    if (webMode() !== "off" && looksTimeSensitive(text)) {
-      await offerWebCheck(text);
+    // With web search on, a question that plainly needs fresh facts is searched
+    // before the model is asked (its own words, scrubbed); everything else is
+    // the model's call through its SEARCH: line (knowledge/24).
+    if (webEnabled() && looksTimeSensitive(text)) {
+      await runChat(text, { query: await prepareWebQuery(text), sources: [], unavailable: null });
       return;
     }
     await runChat(text);
@@ -1068,6 +963,9 @@ function brandBar(actions?: HTMLElement[]): HTMLElement {
 // Lucide (github.com/lucide-icons/lucide, ISC) — clean, evenly-weighted paths.
 const ICON_MIC =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>';
+// Globe — the web search switch in the chat bar.
+const ICON_GLOBE =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>';
 // Hard-drive — reads as "storage / what's on your computer" more clearly than a gear.
 const ICON_STORAGE =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>';
@@ -1269,13 +1167,12 @@ function webSection(): HTMLElement {
     el(
       "p",
       "updates-status",
-      "For questions that need up-to-date answers, Verdure can offer to check the web. You see the search words first, and nothing is sent until you tap.",
+      "Switch web search on or off with the globe in the chat bar. While it's on, Verdure can check the web for up-to-date answers, using:",
     ),
   );
   const modes: { mode: WebMode; label: string }[] = [
-    { mode: "wifi", label: "On Wi-Fi only" },
-    { mode: "any", label: "On Wi-Fi and mobile data" },
-    { mode: "off", label: "Off — never offer to check the web" },
+    { mode: "wifi", label: "Wi-Fi only" },
+    { mode: "any", label: "Wi-Fi and mobile data" },
   ];
   const list = el("div", "updates-modes");
   const paint = () => {
@@ -1309,10 +1206,8 @@ function webSection(): HTMLElement {
 // --- boot -------------------------------------------------------------------
 async function boot(): Promise<void> {
   mountBuildStamp();
-  // First launch (no model chosen yet) → the "Choose your model" screen; otherwise
-  // straight into chat.
-  if (chosenModelId()) renderChat();
-  else void renderModelPicker(true);
+  // Straight into chat: there is nothing to choose first (knowledge/21).
+  renderChat();
   void runUpdateFlow();
 }
 
@@ -1321,16 +1216,14 @@ async function boot(): Promise<void> {
  * after device detection, so it never delays the app appearing — an update is
  * never more urgent than the thing the user opened Verdure to do.
  *
- * Ordering note: the question is deliberately held back until a model has been
- * chosen. On a true first launch the model picker is already on screen, and
- * stacking a second decision under it would make Verdure feel like a settings
- * wizard. They get asked the next time they land in chat.
+ * It is the only question on a first launch — there is no model to choose
+ * first — and it is a quiet bar, not a wall.
  */
 async function runUpdateFlow(): Promise<void> {
   if (!updatesSupported()) return; // iOS/Android update through their stores
   const host = document.querySelector<HTMLElement>(".panel");
   if (shouldAskAboutUpdates()) {
-    if (!chosenModelId() || !host) return; // ask once they're past onboarding
+    if (!host) return;
     host.prepend(updateConsentBar(() => void runUpdateFlow()));
     return;
   }

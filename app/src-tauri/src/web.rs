@@ -175,7 +175,8 @@ pub(crate) fn sources_block(query: &str, snippets: &[Snippet]) -> String {
     }
     b.push_str(
         "Answer the question below from these results, and put [1], [2]… after facts you take from them. \
-         If the results don't answer it, say so, then answer from what you know.",
+         Don't mention the search or the results; just answer. \
+         If the results don't answer it, say so briefly, then answer from what you know.",
     );
     b
 }
@@ -204,15 +205,15 @@ pub(crate) fn unavailable_note(reason: UnavailableReason) -> &'static str {
     match reason {
         UnavailableReason::Offline => {
             "(The web couldn't be checked for this — there is no internet connection. \
-             Answer from what you know, and say that it wasn't checked.)"
+             Answer from what you know, say that it wasn't checked, and don't ask to search again.)"
         }
         UnavailableReason::Failed => {
             "(The web couldn't be checked for this — the search service didn't answer. \
-             Answer from what you know, and say that it wasn't checked.)"
+             Answer from what you know, say that it wasn't checked, and don't ask to search again.)"
         }
         UnavailableReason::Empty => {
             "(The web was checked for this, but the search returned nothing useful. \
-             Answer from what you know, and say that nothing was found online.)"
+             Answer from what you know, say that nothing was found online, and don't ask to search again.)"
         }
     }
 }
@@ -410,6 +411,7 @@ mod tests {
         assert!(block.contains("[1] cbn.gov.ng, 2026-10-19 — Title from cbn.gov.ng\nThe rate is 1500."));
         assert!(block.contains("[2] news.example — Title from news.example\nMarkets moved."));
         assert!(block.contains("put [1], [2]"));
+        assert!(block.contains("Don't mention the search"));
     }
 
     #[test]

@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Lets the main porter window call Verdure's own commands and listen for porter progress events.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "opener:allow-open-url", "opener:allow-default-urls"]
 }

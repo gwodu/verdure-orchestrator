@@ -60,6 +60,10 @@ cpal = "0.15"
 # web search needed it on the Mac too, and the Mac build was re-verified locally.
 ureq = { version = "2", default-features = false, features = ["tls"] }
 
+# Open a web-search source in the system browser from its citation (knowledge/24).
+# URL opening only, every platform; the capability limits the schemes.
+tauri-plugin-opener = "2"
+
 # Self-update for the DESKTOP app only. iOS and Android get updates from their
 # stores, so the plugin is scoped to desktop targets — pulling it into the mobile
 # builds would add a code path that can never run there.

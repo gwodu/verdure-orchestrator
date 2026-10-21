@@ -10,32 +10,47 @@ export type ProgressFn = (msg: string) => void;
 export const inTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-/** The model's decision: answer, or invoke a tool (grammar-locked). */
-export type ChatDecision = { action: string; reply: string };
+/** The model's reply (`action: "answer"`), or — with web search on and no
+ *  results yet — its request for one (`action: "search"`, `reply` = the words). */
+export type ChatDecision = { action: "answer" | "search" | string; reply: string };
 
-/** One chat model as the picker needs it: size + whether it fits this device. */
-export type ChatModelOption = {
+/** A chat model as the UI shows it (model.rs `ModelSummary`). */
+export type ModelSummary = {
   id: string;
   name: string;
   downloadMb: number;
   runtimeMb: number;
   installed: boolean;
-  fitsMemory: boolean;
-  fitsDisk: boolean;
 };
 
-/** The chat models the user chooses from, with per-device fit flags. */
-export async function chatModelOptions(): Promise<ChatModelOption[]> {
+/** Why the best model isn't running, with the number the user can act on. */
+export type Shortfall = { kind: "memory" | "storage"; neededMb: number };
+
+/**
+ * Verdure's model choice for this device (knowledge/21): what it picked, the
+ * best it would pick with more room, and what stands between them.
+ */
+export type ChatModelPlan = {
+  picked: ModelSummary | null;
+  best: ModelSummary;
+  shortfall: Shortfall | null;
+  experiment: ModelSummary | null;
+};
+
+/** What Verdure will run here, and why. Fresh each call — memory moves. */
+export async function chatModelPlan(): Promise<ChatModelPlan> {
   if (!inTauri) {
-    // Browser preview: plausible options so the picker is reviewable.
-    return [
-      { id: "qwen2.5-0.5b-instruct", name: "Chat model (Qwen2.5 0.5B)", downloadMb: 469, runtimeMb: 1100, installed: false, fitsMemory: true, fitsDisk: true },
-      { id: "qwen3.5-2b-instruct", name: "Chat model (Qwen3.5 2B)", downloadMb: 1221, runtimeMb: 2500, installed: false, fitsMemory: true, fitsDisk: true },
-      { id: "qwen3-4b-instruct-2507-byteshape", name: "Chat model (Qwen3 4B)", downloadMb: 1336, runtimeMb: 2300, installed: false, fitsMemory: true, fitsDisk: true },
-    ];
+    // Browser preview: a tight machine, so the shortfall note is reviewable.
+    const best = { id: "qwen3-4b-instruct-2507-byteshape", name: "Chat model (Qwen3 4B)", downloadMb: 1336, runtimeMb: 2300, installed: false };
+    return {
+      picked: { id: "qwen3.5-2b-instruct", name: "Chat model (Qwen3.5 2B)", downloadMb: 1221, runtimeMb: 1800, installed: true },
+      best,
+      shortfall: { kind: "memory", neededMb: 700 },
+      experiment: null,
+    };
   }
   const { invoke } = await import("@tauri-apps/api/core");
-  return await invoke<ChatModelOption[]>("chat_model_options");
+  return await invoke<ChatModelPlan>("chat_model_plan");
 }
 
 /** One completed exchange, as the backend wants it for conversation memory. */
@@ -83,10 +98,18 @@ export async function chatSend(
   modelId = "",
   history: ChatTurn[] = [],
   web: WebContext | null = null,
+  webEnabled = false,
 ): Promise<ChatDecision> {
   if (!inTauri) {
     onProgress("Thinking…");
     await new Promise((r) => setTimeout(r, 800));
+    // Browser preview of the model asking for a search (knowledge/24).
+    if (webEnabled && !web && /who|members|party|election/i.test(message)) {
+      return { action: "search", reply: "Nigeria opposition coalition members 2027" };
+    }
+    if (!webEnabled && /search|online|web/i.test(message)) {
+      return { action: "answer", reply: "(Browser preview.) Web search is switched off, so I can't look that up." };
+    }
     // Browser preview: mimic the tool decision so the flow is reviewable.
     if (/dictat|transcri|record|voice note|audio|meeting/i.test(message)) {
       return {
@@ -124,6 +147,7 @@ export async function chatSend(
       webQuery: web?.query ?? null,
       webSources: web?.sources ?? null,
       webUnavailable: web?.unavailable ?? null,
+      webEnabled,
     });
   } finally {
     unlisten();
@@ -151,7 +175,18 @@ export async function prepareWebQuery(message: string): Promise<string> {
   return await invoke<string>("prepare_web_query", { message });
 }
 
-/** Run an approved search through Verdure's relay. */
+/** Open a web-search source in the system browser (the opener plugin; URL
+ *  schemes are limited by the capability file). */
+export async function openUrl(url: string): Promise<void> {
+  if (!inTauri) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  const { openUrl: open } = await import("@tauri-apps/plugin-opener");
+  await open(url);
+}
+
+/** Run a search through Verdure's relay. */
 export async function webSearch(query: string, modelId = ""): Promise<Snippet[]> {
   if (!inTauri) {
     await new Promise((r) => setTimeout(r, 600));

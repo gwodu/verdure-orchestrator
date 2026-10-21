@@ -60,9 +60,19 @@ const RESERVE_SLACK_TOKENS: usize = 48;
 /// Deliberately generous — undercounting overflows the window, overcounting only
 /// costs one turn of history.
 const TURN_MARKUP_TOKENS: usize = 12;
-// A concise chat reply is short; capping the budget keeps a worst-case generation
-// snappy on the CPU floor machine. EOG normally stops us well before this.
-const MAX_NEW_TOKENS: i32 = 256;
+// The reply budget. 256 was right for chat; a grounded answer (knowledge/24)
+// runs longer, and on `testflight-15` the 4B's web-checked answers were cut
+// off mid-sentence. 512 keeps a worst-case generation acceptable on the CPU
+// floor machine; EOG normally stops us well before this.
+const MAX_NEW_TOKENS: i32 = 512;
+/// The reply budget for a window: half of it, up to `MAX_NEW_TOKENS`. The floor
+/// window (512) keeps the old 256, so a tight device never loses prompt room to
+/// a reply it couldn't fit; a roomy one gets a whole grounded answer.
+pub(crate) fn reply_budget(n_ctx: u32) -> i32 {
+    (n_ctx / 2).min(MAX_NEW_TOKENS as u32).max(128) as i32
+}
+/// A search request is one short line; stop reading it there.
+const MAX_SEARCH_REQUEST_TOKENS: i32 = 40;
 // Fixed seed → the same message gives the same reply, which is reproducible and
 // easy to reason about. The sampler is lightly stochastic (temp), so this only
 // pins which of several good continuations we take.
@@ -101,6 +111,46 @@ pub(crate) struct ToolDecision {
 const SYSTEM: &str = "You are Verdure, a helpful personal AI running entirely on the user's own device. \
 Answer directly and concisely. \
 If you don't know something, say so instead of guessing.";
+
+/// Whether the web tool is switched on (knowledge/24). The model is TOLD either
+/// way, so it neither claims it can't search when it can, nor pretends it can
+/// when the user switched it off — `testflight-15` had it insisting "I cannot
+/// search the internet" while the tool sat one tap away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WebAccess {
+    Off,
+    On,
+}
+
+/// The line a model writes to ask for a search, and nothing else on it.
+const SEARCH_PREFIX: &str = "SEARCH:";
+
+/// The web tool's one-line protocol: no grammar sampler, no JSON (both are what
+/// made tool-calling crash or leak, knowledge/18), just a first line the app
+/// can recognise. Kept to two short sentences for the same reason `SYSTEM` is.
+const WEB_ON: &str = " You can check the web: if answering well needs current information you don't have, \
+reply with only one line, `SEARCH: ` followed by 3 to 8 search words, and you will be given results.";
+const WEB_OFF: &str = " You have no internet access; if asked to look something up online, say that web search is switched off.";
+
+/// The instruction for this turn, pure so it is tested.
+pub(crate) fn system_prompt(web: WebAccess) -> String {
+    match web {
+        WebAccess::Off => format!("{SYSTEM}{WEB_OFF}"),
+        WebAccess::On => format!("{SYSTEM}{WEB_ON}"),
+    }
+}
+
+/// If the reply is a search request, the query it asks for. Tolerant of the
+/// ways a small model bends the format (a leading space, lower case, back-ticks,
+/// a trailing full stop), strict about the one thing that matters: it must be
+/// the FIRST line, so a sentence that merely mentions "search:" isn't a request.
+pub(crate) fn search_request(reply: &str) -> Option<String> {
+    let first = reply.trim_start().lines().next()?.trim().trim_matches('`').trim();
+    let rest = first.get(..SEARCH_PREFIX.len()).filter(|h| h.eq_ignore_ascii_case(SEARCH_PREFIX))?;
+    let _ = rest;
+    let q = first[SEARCH_PREFIX.len()..].trim().trim_matches(|c| c == '"' || c == '`' || c == '.' || c == '\'').trim();
+    (!q.is_empty()).then(|| q.to_string())
+}
 
 /// One completed exchange. The conversation the user can see IS the memory —
 /// the frontend owns the transcript and passes back the part that still fits
@@ -141,7 +191,7 @@ pub(crate) fn spare_for_context_mb(available_mb: u64, runtime_mb: u32) -> u64 {
 pub(crate) fn max_prompt_tokens(n_ctx: u32) -> usize {
     // Leave the reply budget plus a couple of tokens of slack; never return 0,
     // or a prompt would be clamped out of existence.
-    (n_ctx as usize).saturating_sub(MAX_NEW_TOKENS as usize + 8).max(16)
+    (n_ctx as usize).saturating_sub(reply_budget(n_ctx) as usize + 8).max(16)
 }
 
 /// Which of the most recent turns fit — returns the index into `history` of the
@@ -177,7 +227,7 @@ pub(crate) fn first_kept_turn(
 /// the new message. Getting this wrong yields garbage, so the family travels with
 /// the model (`PromptStyle`) rather than being assumed. Turns are always whole —
 /// a dangling half-turn corrupts the structure the model relies on.
-fn format_chat_prompt(history: &[Turn], user: &str, style: PromptStyle) -> String {
+fn format_chat_prompt(history: &[Turn], user: &str, style: PromptStyle, system: &str) -> String {
     let mut p = String::new();
     match style {
         // ChatML — Qwen et al. No BOS (the tokenizer adds none for this family).
@@ -187,7 +237,7 @@ fn format_chat_prompt(history: &[Turn], user: &str, style: PromptStyle) -> Strin
         // (see `PromptStyle::ChatMlNoThink`). Sharing the body means history
         // framing can never drift between them.
         PromptStyle::ChatMl | PromptStyle::ChatMlNoThink => {
-            p.push_str(&format!("<|im_start|>system\n{SYSTEM}<|im_end|>\n"));
+            p.push_str(&format!("<|im_start|>system\n{system}<|im_end|>\n"));
             for t in history {
                 p.push_str(&format!(
                     "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n{}<|im_end|>\n",
@@ -208,12 +258,12 @@ fn format_chat_prompt(history: &[Turn], user: &str, style: PromptStyle) -> Strin
         // one when there's history, otherwise the new message itself.
         PromptStyle::Gemma => match history.split_first() {
             None => {
-                p.push_str(&format!("<start_of_turn>user\n{SYSTEM}\n\n{user}<end_of_turn>\n"));
+                p.push_str(&format!("<start_of_turn>user\n{system}\n\n{user}<end_of_turn>\n"));
                 p.push_str("<start_of_turn>model\n");
             }
             Some((first, rest)) => {
                 p.push_str(&format!(
-                    "<start_of_turn>user\n{SYSTEM}\n\n{}<end_of_turn>\n<start_of_turn>model\n{}<end_of_turn>\n",
+                    "<start_of_turn>user\n{system}\n\n{}<end_of_turn>\n<start_of_turn>model\n{}<end_of_turn>\n",
                     first.user, first.assistant
                 ));
                 for t in rest {
@@ -382,8 +432,10 @@ pub(crate) fn decide(
     style: PromptStyle,
     n_ctx: u32,
     grounding: Option<Grounding<'_>>,
+    web: WebAccess,
 ) -> Result<ToolDecision, String> {
     let user_message = &compose_user_turn(user_message, grounding);
+    let system = system_prompt(web);
     let model = &resident.model;
     let ctx_params = LlamaContextParams::default()
         .with_n_ctx(NonZeroU32::new(n_ctx.max(MIN_CONTEXT)))
@@ -403,9 +455,10 @@ pub(crate) fn decide(
     };
     // Reserve = the reply budget + what the instruction actually costs on THIS
     // model's tokenizer + slack. Measured, not assumed.
-    let reserved = MAX_NEW_TOKENS as usize + cost(SYSTEM) + RESERVE_SLACK_TOKENS;
+    let max_new = reply_budget(n_ctx);
+    let reserved = max_new as usize + cost(&system) + RESERVE_SLACK_TOKENS;
     let keep_from = first_kept_turn(history, user_message, n_ctx, reserved, &cost);
-    let prompt = format_chat_prompt(&history[keep_from..], user_message, style);
+    let prompt = format_chat_prompt(&history[keep_from..], user_message, style, &system);
     let mut tokens = model
         .str_to_token(&prompt, add_bos_for(style))
         .map_err(|e| format!("couldn't read the message: {e}"))?;
@@ -468,7 +521,7 @@ pub(crate) fn decide(
     // holds only the final prefill chunk, so its length is no longer the count of
     // everything decoded. `pos` tracked that across the chunks.
     let mut n_cur = pos;
-    for _ in 0..MAX_NEW_TOKENS {
+    for _ in 0..max_new {
         let token = sampler.sample(&ctx, batch.n_tokens() - 1);
         sampler.accept(token);
         if model.is_eog_token(token) {
@@ -476,6 +529,13 @@ pub(crate) fn decide(
         }
         if let Ok(piece) = model.token_to_piece(token, &mut utf8, true, None) {
             reply.push_str(&piece);
+        }
+        // A search request is one line: stop at its end (or at a sane length)
+        // rather than letting the model continue into a guessed answer.
+        if reply.trim_start().starts_with(SEARCH_PREFIX)
+            && (reply.contains('\n') || n_cur - pos >= MAX_SEARCH_REQUEST_TOKENS)
+        {
+            break;
         }
         batch.clear();
         batch
@@ -489,7 +549,13 @@ pub(crate) fn decide(
         }
     }
 
-    // The generated text is the reply — shown verbatim. No JSON, no tool routing.
+    // A search request (web on, no grounding yet) goes back as an action for
+    // the UI to run through the data rule; otherwise the text IS the reply.
+    if web == WebAccess::On && grounding.is_none() {
+        if let Some(query) = search_request(&reply) {
+            return Ok(ToolDecision { action: "search".to_string(), reply: query });
+        }
+    }
     Ok(ToolDecision {
         action: "answer".to_string(),
         reply: reply.trim().to_string(),
@@ -534,7 +600,7 @@ mod tests {
         for n_ctx in [MIN_CONTEXT, 1024, 2048, MAX_CONTEXT] {
             let cap = max_prompt_tokens(n_ctx);
             assert!(
-                cap + MAX_NEW_TOKENS as usize <= n_ctx as usize,
+                cap + reply_budget(n_ctx) as usize <= n_ctx as usize,
                 "n_ctx={n_ctx} cap={cap} leaves no room to reply"
             );
             assert!(cap > 0, "n_ctx={n_ctx} clamped the prompt out of existence");
@@ -613,7 +679,7 @@ mod tests {
     #[test]
     fn prompt_carries_prior_turns_in_order() {
         let history = vec![turn("my name is Ada", "Nice to meet you, Ada.")];
-        let p = format_chat_prompt(&history, "what is my name?", PromptStyle::ChatMl);
+        let p = format_chat_prompt(&history, "what is my name?", PromptStyle::ChatMl, SYSTEM);
         assert!(p.contains("my name is Ada"), "history missing: {p}");
         assert!(p.contains("Nice to meet you, Ada."));
         // The new question comes last, and the model is cued to answer it.
@@ -629,7 +695,7 @@ mod tests {
     #[test]
     fn gemma_prompt_carries_history_without_a_system_role() {
         let history = vec![turn("my name is Ada", "Nice to meet you, Ada.")];
-        let p = format_chat_prompt(&history, "what is my name?", PromptStyle::Gemma);
+        let p = format_chat_prompt(&history, "what is my name?", PromptStyle::Gemma, SYSTEM);
         assert!(p.contains("my name is Ada"));
         assert!(p.contains("Nice to meet you, Ada."));
         // The instruction rides the FIRST user turn (Gemma has no system role),
@@ -689,7 +755,7 @@ mod tests {
         let resident = ensure_resident(&mut slot, info, path).expect("model loads");
 
         // Fixed window so context size is not a variable in this experiment.
-        let out = decide(resident, &[], "How do the northern lights work?", style, 1024, None)
+        let out = decide(resident, &[], "How do the northern lights work?", style, 1024, None, WebAccess::Off)
             .expect("generation succeeds");
 
         eprintln!("--- reply ---\n{}\n-------------", out.reply);
@@ -704,7 +770,7 @@ mod tests {
         assert!(composed.ends_with("Question: what is x?"));
         // And the history is framed WITHOUT it: sources belong to one answer.
         let hist = [turn("earlier", "reply")];
-        let p = format_chat_prompt(&hist, &composed, PromptStyle::ChatMl);
+        let p = format_chat_prompt(&hist, &composed, PromptStyle::ChatMl, SYSTEM);
         assert_eq!(p.matches("Web search results").count(), 1);
         assert!(p.contains("<|im_start|>user\nearlier<|im_end|>"));
     }
@@ -717,8 +783,37 @@ mod tests {
     }
 
     #[test]
+    fn the_reply_budget_scales_with_the_window() {
+        assert_eq!(reply_budget(MIN_CONTEXT), 256, "the floor keeps its old budget");
+        assert_eq!(reply_budget(1024), 512);
+        assert_eq!(reply_budget(MAX_CONTEXT), MAX_NEW_TOKENS);
+    }
+
+    #[test]
+    fn the_model_is_told_whether_it_has_the_web() {
+        let on = system_prompt(WebAccess::On);
+        let off = system_prompt(WebAccess::Off);
+        assert!(on.starts_with(SYSTEM) && off.starts_with(SYSTEM));
+        assert!(on.contains("SEARCH: "));
+        assert!(off.contains("web search is switched off"));
+        assert!(!off.contains("SEARCH"));
+        let p = format_chat_prompt(&[], "hi", PromptStyle::ChatMl, &on);
+        assert!(p.contains("<|im_start|>system\n") && p.contains("SEARCH: "));
+    }
+
+    #[test]
+    fn a_search_request_is_the_first_line_and_nothing_else() {
+        assert_eq!(search_request("SEARCH: naira dollar rate today").as_deref(), Some("naira dollar rate today"));
+        assert_eq!(search_request("  search: AFCON final result\nThen I'd answer.").as_deref(), Some("AFCON final result"));
+        assert_eq!(search_request("`SEARCH: fuel price Accra.`").as_deref(), Some("fuel price Accra"));
+        assert_eq!(search_request("SEARCH:"), None, "an empty request is not one");
+        assert_eq!(search_request("I would search: for it, but I can't."), None);
+        assert_eq!(search_request("Here is the answer.\nSEARCH: x"), None, "only the first line counts");
+    }
+
+    #[test]
     fn chatml_prompt_frames_the_turn() {
-        let p = format_chat_prompt(&[], "hi", PromptStyle::ChatMl);
+        let p = format_chat_prompt(&[], "hi", PromptStyle::ChatMl, SYSTEM);
         assert!(p.contains("<|im_start|>system"));
         assert!(p.contains("<|im_start|>user\nhi<|im_end|>"));
         assert!(p.trim_end().ends_with("<|im_start|>assistant"));
@@ -733,12 +828,12 @@ mod tests {
         // hundreds of tokens of scratchpad and the answer never arrives — measured
         // on-device 2026-09-10, and invisible to any test that only checks that a
         // reply is non-empty.
-        let p = format_chat_prompt(&[], "hi", PromptStyle::ChatMlNoThink);
+        let p = format_chat_prompt(&[], "hi", PromptStyle::ChatMlNoThink, SYSTEM);
         assert!(p.trim_end().ends_with("</think>"), "no-think block missing: {p}");
         assert!(p.contains("<|im_start|>assistant\n<think>\n\n</think>"));
         // Everything else must match plain ChatML exactly — the two arms share a
         // body precisely so history framing cannot drift between them.
-        let plain = format_chat_prompt(&[], "hi", PromptStyle::ChatMl);
+        let plain = format_chat_prompt(&[], "hi", PromptStyle::ChatMl, SYSTEM);
         assert_eq!(p.strip_suffix("<think>\n\n</think>\n\n").unwrap(), plain);
         assert_eq!(add_bos_for(PromptStyle::ChatMlNoThink), AddBos::Never);
     }
@@ -756,7 +851,7 @@ mod tests {
 
     #[test]
     fn gemma_prompt_uses_turn_markers_not_chatml() {
-        let p = format_chat_prompt(&[], "hi", PromptStyle::Gemma);
+        let p = format_chat_prompt(&[], "hi", PromptStyle::Gemma, SYSTEM);
         assert!(p.contains("<start_of_turn>user"));
         assert!(p.contains("hi<end_of_turn>"));
         assert!(p.trim_end().ends_with("<start_of_turn>model"));
