@@ -16,6 +16,13 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 - Rust 67 passed + 1 ignored, zero warnings; app vitest 50; website 25; tsc clean on both.
 - **`testflight-13` failed at Xcode's link step** (~3.5 min wall, ≈35 billable): `_SCNetworkReachabilityCreateWithName` / `_SCNetworkReachabilityGetFlags` undefined for arm64. The crate's build script emits `cargo:rustc-link-lib=framework=SystemConfiguration`, which only reaches cargo's own link line; on iOS Tauri hands Xcode a static library, so the framework must be declared in `tauri.conf.json` (`bundle.iOS.frameworks`) to land in the generated project.yml. Neither `cargo test` here nor `ci.yml`'s iOS `cargo check` links an iOS binary, so nothing local or in CI could have caught it. Fixed; the real-context integration test still builds with the new key (Rust 67).
 
+### 2026-10-21 — Context store (`context.rs`)
+
+- 13 new Rust tests (see the feature log for the list); Rust 86 passed + 1 ignored, zero warnings (the module carries `#![allow(dead_code)]` until step 2 wires it — noted at its top).
+- **Caught:** `deleting_a_thread_forgets_it_everywhere` failed on the first design — an FTS5 table declared `content=''` (contentless) refuses `DELETE … WHERE rowid IN (…)`; it needs the special `'delete'` insert with the original values, which we no longer have after the row is gone. Fixed by letting the index keep its own copy of the text.
+- **Notices guard caught** the new crates (`rusqlite`, `libsqlite3-sys`, `regex` and friends); regenerated.
+- **Not tested:** anything on a device, the backup-exclusion rule (no Android build has the file yet), SQLCipher.
+
 ### 2026-10-21 — `testflight-16` on the iPad; citation style
 
 - **On the iPad (founder, three screenshots):** the globe switch, the off-state reply ("Web search is switched off…"), the fast-path search with four BBC/Punch/Reuters sources, tappable superscripts — all as designed. **Found:** citations as nouns ("¹ and ³ confirm that…"); "Therefore, based on the information available:" / "Final answer:" narration; one current-events question (NYT on Trump) answered from stale 2023 memory with no search; a dictated sentence sent verbatim as the query.

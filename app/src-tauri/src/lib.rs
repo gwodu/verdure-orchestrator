@@ -7,6 +7,7 @@
 //! list, so they cannot drift apart.
 
 mod audio;
+mod context;
 mod device;
 mod live;
 mod llm;

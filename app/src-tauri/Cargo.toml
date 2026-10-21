@@ -60,6 +60,15 @@ cpal = "0.15"
 # web search needed it on the Mac too, and the Mac build was re-verified locally.
 ureq = { version = "2", default-features = false, features = ["tls"] }
 
+# The personal context store (knowledge/25): one SQLite file in the app's private
+# folder holding what Verdure has seen (messages first), searched with FTS5.
+# `bundled` compiles SQLite into the binary (no system library to differ per
+# platform; FTS5 on), and is the configuration Tauri's own SQL plugin uses.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# Parsing the lines of a WhatsApp chat export (context.rs) — the one place a
+# hand-rolled parser would be longer and less readable than a pattern.
+regex = "1"
+
 # Open a web-search source in the system browser from its citation (knowledge/24).
 # URL opening only, every platform; the capability limits the schemes.
 tauri-plugin-opener = "2"

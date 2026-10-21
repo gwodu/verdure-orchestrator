@@ -21,5 +21,5 @@ This deepens the mission (`18`: cheapest/safest/easiest way to use AI in daily l
 This is a large, multi-quarter vision. We earn it one CI-verified increment at a time, never overpromising — same discipline as the rest of the build. The reframe sets direction; it does not authorize building it all at once. Autonomous/agentic action still respects the "trust + reliability first" line (`17`) — grammar-locked tools + a confirm step keep the human in the loop.
 
 ## Open questions
-- [OQ-56] The personal context store: what it holds, on-disk shape, how models read/write it, privacy model (`06`), and how it stays user-owned and portable.
+- [OQ-56] The personal context store: what it holds, on-disk shape, how models read/write it, privacy model (`06`), and how it stays user-owned and portable. **→ `25-personal-context.md` (2026-10-21): the store exists; messages are source one.**
 - [OQ-57] AI-first dictation: a system-wide dictation/command button (accessibility surface) that feeds both transcription→context and commands→Verdure. Builds on tool-calling (`[OQ-55]`) + context (`[OQ-56]`).
