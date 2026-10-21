@@ -173,9 +173,16 @@ pub(crate) fn sources_block(query: &str, snippets: &[Snippet]) -> String {
         }
         b.push_str(&format!(" — {}\n{}\n", s.title, s.text.trim()));
     }
+    // Citation style = Wikipedia's footnotes (knowledge/24): the marker follows
+    // the claim, the sentence reads whole without it, and a number is never a
+    // noun. `testflight-16` wrote "[1] and [3] confirm that…", which is what
+    // this rules out. One example beats three rules for a small model.
     b.push_str(
-        "Answer the question below from these results, and put [1], [2]… after facts you take from them. \
-         Don't mention the search or the results; just answer. \
+        "Answer the question below in plain sentences that read on their own. \
+         When a sentence uses a fact from a result, put that result's number in square brackets at the end of the sentence, \
+         like a footnote: The rate closed at 1,480 naira to the dollar on Monday [1]. \
+         Never start a sentence with a number or write \"[1] says\" — the numbers are footnotes, not names. \
+         Don't mention the search or the results, and don't add headings like \"Final answer\". \
          If the results don't answer it, say so briefly, then answer from what you know.",
     );
     b
@@ -410,8 +417,11 @@ mod tests {
         assert!(block.starts_with("Web search results for \"naira rate\""));
         assert!(block.contains("[1] cbn.gov.ng, 2026-10-19 — Title from cbn.gov.ng\nThe rate is 1500."));
         assert!(block.contains("[2] news.example — Title from news.example\nMarkets moved."));
-        assert!(block.contains("put [1], [2]"));
+        // Footnote style (knowledge/24): an example, the "not a noun" rule, no narration.
+        assert!(block.contains("on Monday [1]."));
+        assert!(block.contains("footnotes, not names"));
         assert!(block.contains("Don't mention the search"));
+        assert!(block.contains("Final answer"));
     }
 
     #[test]
