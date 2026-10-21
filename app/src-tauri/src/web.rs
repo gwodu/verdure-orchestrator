@@ -17,12 +17,18 @@
 use std::io::Read;
 use std::time::Duration;
 
-/// Where the approved query goes. One hostname, compiled in — the same address
-/// the desktop updater already trusts (knowledge/23). `VERDURE_SEARCH_RELAY` at
+/// Where the approved query goes. One hostname, compiled in — the same site the
+/// desktop updater already trusts (knowledge/23). `VERDURE_SEARCH_RELAY` at
 /// build time overrides it for a developer pointing a local build at a dev relay.
+///
+/// The `www.` is load-bearing: the apex `verdureai.com` answers every request
+/// with a 307 to `www.`, and a POST is not replayed across a redirect (ureq
+/// follows 307s only for GET/HEAD, which is what the HTTP spec asks of a
+/// client that can't know the body is safe to resend). `testflight-14`
+/// learned this the hard way: the reply was a "Redirecting..." page.
 pub(crate) const RELAY_URL: &str = match option_env!("VERDURE_SEARCH_RELAY") {
     Some(url) => url,
-    None => "https://verdureai.com/api/search",
+    None => "https://www.verdureai.com/api/search",
 };
 
 /// A fixed, generic User-Agent: it identifies the app's major version and
@@ -174,12 +180,41 @@ pub(crate) fn sources_block(query: &str, snippets: &[Snippet]) -> String {
     b
 }
 
+/// Why an approved search produced no sources. The UI decides this (it ran
+/// the data rule and the call) and the model is told the SAME reason, so the
+/// answer and the badge under it can never disagree — `testflight-14` told the
+/// model "the device is offline" when the relay had merely answered badly, and
+/// the model dutifully repeated the false reason to the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum UnavailableReason {
+    /// No connection at all (the data rule, before any call).
+    Offline,
+    /// The relay couldn't be reached or didn't answer usably.
+    Failed,
+    /// The search ran and returned nothing usable.
+    Empty,
+}
+
 /// What the model is told when the user wanted the web checked and it couldn't
 /// be. Honesty is the product here: a confident answer that quietly skipped
-/// the check is exactly the failure the feature exists to prevent.
-pub(crate) fn unavailable_note() -> &'static str {
-    "(The web couldn't be checked for this — the device is offline. \
-     Answer from what you know, and say that it wasn't checked.)"
+/// the check is exactly the failure the feature exists to prevent — and so is
+/// a confident WRONG reason, so the note states only what the UI knows.
+pub(crate) fn unavailable_note(reason: UnavailableReason) -> &'static str {
+    match reason {
+        UnavailableReason::Offline => {
+            "(The web couldn't be checked for this — there is no internet connection. \
+             Answer from what you know, and say that it wasn't checked.)"
+        }
+        UnavailableReason::Failed => {
+            "(The web couldn't be checked for this — the search service didn't answer. \
+             Answer from what you know, and say that it wasn't checked.)"
+        }
+        UnavailableReason::Empty => {
+            "(The web was checked for this, but the search returned nothing useful. \
+             Answer from what you know, and say that nothing was found online.)"
+        }
+    }
 }
 
 /// The relay's reply. `query` echoes what was searched so the UI can show the
@@ -210,6 +245,13 @@ pub(crate) fn search(relay_url: &str, query: &str, max_tokens: u32) -> Result<Ve
             eprintln!("web search relay error: {e}");
             "Couldn't reach the web right now. Check your connection and try again.".to_string()
         })?;
+    // ureq hands back 2xx and (unfollowed) 3xx as Ok. Only a 200 carries
+    // snippets; anything else is the relay or its host saying something else
+    // — a redirect page, an HTML error — and parsing it would only mislead.
+    if response.status() != 200 {
+        eprintln!("web search relay answered {}", response.status());
+        return Err("The search service answered unexpectedly. Please try again later.".to_string());
+    }
     let mut raw = String::new();
     response
         .into_reader()
@@ -395,6 +437,23 @@ mod tests {
         assert_eq!(net_state_from(true, true, false), NetState::Offline);
         assert_eq!(net_state_from(true, false, true), NetState::Cellular);
         assert_eq!(net_state_from(true, false, false), NetState::Wifi);
+    }
+
+    #[test]
+    fn the_relay_is_addressed_at_the_canonical_host_not_the_redirecting_apex() {
+        // A POST isn't replayed across the apex's 307 (see RELAY_URL's note).
+        if option_env!("VERDURE_SEARCH_RELAY").is_none() {
+            assert!(RELAY_URL.starts_with("https://www.verdureai.com/"), "{RELAY_URL}");
+        }
+    }
+
+    #[test]
+    fn the_model_is_told_only_the_reason_the_ui_knows() {
+        assert!(unavailable_note(UnavailableReason::Offline).contains("no internet connection"));
+        let failed = unavailable_note(UnavailableReason::Failed);
+        assert!(failed.contains("didn't answer"));
+        assert!(!failed.contains("offline"), "a relay failure must not be blamed on the connection");
+        assert!(unavailable_note(UnavailableReason::Empty).contains("nothing useful"));
     }
 
     #[test]

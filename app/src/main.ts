@@ -788,7 +788,13 @@ function renderChat(): void {
   const sourcesFooter = (reply: string, web: WebContext): HTMLElement => {
     const box = el("div", "sources");
     if (web.unavailable) {
-      box.appendChild(el("span", "badge", "Couldn't check the web — no connection. Answered from memory."));
+      // The same reason the model was given — never a guess about the cause.
+      const why = {
+        offline: "Couldn't check the web — no connection. Answered from memory.",
+        failed: "Couldn't check the web — the search service didn't answer. Answered from memory.",
+        empty: "Checked the web — nothing useful came back. Answered from memory.",
+      }[web.unavailable];
+      box.appendChild(el("span", "badge", why));
       return box;
     }
     box.appendChild(el("span", "sources-query", `Searched the web for “${web.query}”`));
@@ -893,7 +899,7 @@ function renderChat(): void {
     go.addEventListener("click", () => {
       const query = q.value.trim();
       card.remove();
-      void runChat(text, query ? { query, sources: [], unavailable: false } : null);
+      void runChat(text, query ? { query, sources: [], unavailable: null } : null);
     });
     skip.addEventListener("click", () => {
       card.remove();
@@ -943,19 +949,20 @@ function renderChat(): void {
       const gate = searchGate(webMode(), await networkState().catch(() => "unknown" as const));
       if (gate === "ask-mobile-data") return askMobileData(text, web);
       if (gate === "off") web = null;
-      else if (gate === "offline") web = { ...web, unavailable: true };
+      else if (gate === "offline") web = { ...web, unavailable: "offline" };
       else {
         status.textContent = "Checking the web…";
         try {
           web = { ...web, sources: await webSearch(web.query, chosenModelId()) };
         } catch (err) {
-          // Couldn't reach the relay: the model is told, and the user sees why.
+          // Couldn't reach the relay, or it answered badly: the model is told
+          // exactly that (not "offline"), and the user sees the same reason.
           status.textContent = friendlyError(err);
-          web = { ...web, unavailable: true };
+          web = { ...web, unavailable: "failed" };
         }
         if (web.sources.length === 0 && !web.unavailable) {
           // Nothing came back — say so, rather than framing an empty source list.
-          web = { ...web, unavailable: true };
+          web = { ...web, unavailable: "empty" };
         }
       }
     }

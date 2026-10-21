@@ -83,7 +83,8 @@ fn chat_model_options<R: Runtime>(
 ///
 /// `web_query` + `web_sources` carry this turn's approved web search and its
 /// results (knowledge/24); `web_unavailable` says the user wanted the check and
-/// the device was offline, so the model is told rather than left to guess.
+/// why there are no sources (offline / failed / empty), so the model is told
+/// the same reason the user sees rather than left to guess.
 #[tauri::command]
 async fn chat<R: Runtime>(
     app: AppHandle<R>,
@@ -92,7 +93,7 @@ async fn chat<R: Runtime>(
     history: Vec<llm::Turn>,
     web_query: Option<String>,
     web_sources: Option<Vec<web::Snippet>>,
-    web_unavailable: Option<bool>,
+    web_unavailable: Option<web::UnavailableReason>,
 ) -> Result<llm::ToolDecision, String> {
     let data_dir = app
         .path()
@@ -156,10 +157,10 @@ async fn chat<R: Runtime>(
             .filter(|s| !s.is_empty())
             .map(|s| web::fit_snippets(s, web::snippet_budget_tokens(n_ctx), web::MAX_SOURCES))
             .map(|s| web::sources_block(web_query.as_deref().unwrap_or(""), &s));
-        let grounding = match (&block, web_unavailable.unwrap_or(false)) {
+        let grounding = match (&block, web_unavailable) {
             (Some(b), _) => Some(llm::Grounding::Sources(b)),
-            (None, true) => Some(llm::Grounding::Unavailable(web::unavailable_note())),
-            (None, false) => None,
+            (None, Some(reason)) => Some(llm::Grounding::Unavailable(web::unavailable_note(reason))),
+            (None, None) => None,
         };
         llm::decide(resident, &history, &message, style, n_ctx, grounding)
     })

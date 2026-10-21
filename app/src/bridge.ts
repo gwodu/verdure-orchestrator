@@ -51,14 +51,20 @@ export type Snippet = {
 };
 
 /**
+ * Why an approved search produced no sources (web.rs `UnavailableReason`).
+ * The model is told the same reason the badge shows, so they can't disagree.
+ */
+export type UnavailableReason = "offline" | "failed" | "empty";
+
+/**
  * This turn's web context (knowledge/24): the approved query and what came
- * back, or `unavailable` when the user wanted the check and there was no
- * connection — the model is told, so it says so.
+ * back, or `unavailable` when the user wanted the check and it produced
+ * nothing — the model is told why, so it says so.
  */
 export type WebContext = {
   query: string;
   sources: Snippet[];
-  unavailable: boolean;
+  unavailable: UnavailableReason | null;
 };
 
 /**
@@ -95,7 +101,7 @@ export async function chatSend(
       };
     }
     if (web?.unavailable) {
-      return { action: "answer", reply: "(Browser preview.) I couldn't check the web — you're offline. From memory, …" };
+      return { action: "answer", reply: `(Browser preview.) I couldn't check the web (${web.unavailable}). From memory, …` };
     }
     // Echo the memory back so the preview shows history is actually flowing.
     return {
@@ -117,7 +123,7 @@ export async function chatSend(
       history,
       webQuery: web?.query ?? null,
       webSources: web?.sources ?? null,
-      webUnavailable: web?.unavailable ?? false,
+      webUnavailable: web?.unavailable ?? null,
     });
   } finally {
     unlisten();
