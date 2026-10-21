@@ -16,6 +16,12 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 - Rust 67 passed + 1 ignored, zero warnings; app vitest 50; website 25; tsc clean on both.
 - **`testflight-13` failed at Xcode's link step** (~3.5 min wall, ≈35 billable): `_SCNetworkReachabilityCreateWithName` / `_SCNetworkReachabilityGetFlags` undefined for arm64. The crate's build script emits `cargo:rustc-link-lib=framework=SystemConfiguration`, which only reaches cargo's own link line; on iOS Tauri hands Xcode a static library, so the framework must be declared in `tauri.conf.json` (`bundle.iOS.frameworks`) to land in the generated project.yml. Neither `cargo test` here nor `ci.yml`'s iOS `cargo check` links an iOS binary, so nothing local or in CI could have caught it. Fixed; the real-context integration test still builds with the new key (Rust 67).
 
+### 2026-10-21 — Context store rework (entity layer, lookups)
+
+- 18 tests in the module now (5 new, several rewritten); Rust 91 passed + 1 ignored, zero warnings.
+- **Caught:** `aliases_normalise_case_spacing_punctuation_and_diacritics` failed on "Ọlá-Ṣẹ́gun" → "ola se gun": the acute on ẹ́ is a *combining* code point, which the normaliser treated as a word separator. Combining marks (U+0300–U+036F) are now dropped. Yoruba names are the floor market's names; this would have split every one of them.
+- **Research claims re-verified before relying on them:** arXiv:2603.11513 (exists; figures as quoted, stronger: 42–100 %); arXiv:2601.07790 (4B 95.64 % with RAG confirmed; the 1.7B figure not on the abstract page — marked unverified in `25`); Android reference's low-RAM ≤10 listener exclusion (found on the official page and mirrors); Android 15 OTP redaction (official behaviour-changes page); `model2vec-rs` crate and `potion-base-8M` (30.2 MB, MIT).
+
 ### 2026-10-21 — Context store (`context.rs`)
 
 - 13 new Rust tests (see the feature log for the list); Rust 86 passed + 1 ignored, zero warnings (the module carries `#![allow(dead_code)]` until step 2 wires it — noted at its top).
