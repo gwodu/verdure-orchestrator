@@ -16,6 +16,11 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 - Rust 67 passed + 1 ignored, zero warnings; app vitest 50; website 25; tsc clean on both.
 - **`testflight-13` failed at Xcode's link step** (~3.5 min wall, ≈35 billable): `_SCNetworkReachabilityCreateWithName` / `_SCNetworkReachabilityGetFlags` undefined for arm64. The crate's build script emits `cargo:rustc-link-lib=framework=SystemConfiguration`, which only reaches cargo's own link line; on iOS Tauri hands Xcode a static library, so the framework must be declared in `tauri.conf.json` (`bundle.iOS.frameworks`) to land in the generated project.yml. Neither `cargo test` here nor `ci.yml`'s iOS `cargo check` links an iOS binary, so nothing local or in CI could have caught it. Fixed; the real-context integration test still builds with the new key (Rust 67).
 
+### 2026-10-21 — `testflight-16` on the iPad; citation style
+
+- **On the iPad (founder, three screenshots):** the globe switch, the off-state reply ("Web search is switched off…"), the fast-path search with four BBC/Punch/Reuters sources, tappable superscripts — all as designed. **Found:** citations as nouns ("¹ and ³ confirm that…"); "Therefore, based on the information available:" / "Final answer:" narration; one current-events question (NYT on Trump) answered from stale 2023 memory with no search; a dictated sentence sent verbatim as the query.
+- **Prompt (`web.rs::sources_block`):** Wikipedia footnote style with one worked example, the "footnotes, not names" rule, and a ban on "Final answer" headings. Test asserts the example sentence, the rule and the ban are present. Rust 73. Not yet on a device.
+
 ### 2026-10-21 — Web search v2 + Your model
 
 - **On the iPad (`testflight-15`, founder, six screenshots):** grounded answers landed (naira ≈1,384, rupee 94.93, the Iran timeline, the 2027 opposition parley) — the 4B cited `[n]`, the 2B used the figures without numbering them, the 0.5B/1.5B answered from 2024 memory. **Defects found:** the "results weren't used" badge fired on answers that plainly used them (removed — it was a citation count, not a usage check); the 4B's answers were cut at 256 tokens mid-sentence (reply budget now scales with the window); "members of the new opposition party" got no offer (no time-word) and the model denied it could search (the switch + `SEARCH:` protocol).
