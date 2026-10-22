@@ -30,7 +30,8 @@ Run: `cargo test --workspace` at the repo root (no models, seconds). CI: the `sd
 - **Caught by reading, not by a test (no Android toolchain here):** Kotlin `n.flags and FLAG != 0` parses as `flags and (FLAG != 0)` — parenthesised; `catch (_: Throwable)` needs a newer Kotlin than the template guarantees — named. The `cfg(android)` JNI paths (network probe, listener state, settings intent) compile only in CI's `porter-android` job or an `android-build-N`; they follow the already-shipped `free_up_space` bridge line for line.
 - **Patch script:** run twice against a fixture `gen/android` (Gradle, manifest, `MainActivity.kt`): idempotent; the manifest parses as XML; `ACCESS_NETWORK_STATE`, both backup-rule attributes, the rules files and the listener service are present after the second run.
 - **Frontend:** `tsc` clean (one unused import caught and removed), Vite build, vitest 50. Screenshots: `c1-recall-chat.png` (direct answer + footer + model-grounded answer + "Which Jackson?"), `c2-thread-sheet.png`, `c3-what-verdure-knows.png`; the footer's ISO date was the one visual defect, now "21 Oct".
-- **Not tested:** anything on a device. The listener's `MessagingStyle` parsing, the JNI probes and the backup rules are verified on the Pixel 8a with `android-build-11`.
+- **`android-build-11` (2026-10-22): green in 14 min** (Linux, 1×, cold cache). The `cfg(android)` JNI paths compiled, the Kotlin listener compiled, and the APK carries `ACCESS_NETWORK_STATE`, `fullBackupContent` and `dataExtractionRules` (asserted by `aapt2`).
+- **Not tested:** anything on a device. The listener's `MessagingStyle` parsing, the JNI probes' answers and the backup rules' effect are what the Pixel 8a run must show.
 
 ### 2026-10-22 — Context store reshaped to `knowledge/27` (events, places, participation, one observation table)
 
