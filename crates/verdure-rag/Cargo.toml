@@ -1,0 +1,15 @@
+[package]
+name = "verdure-rag"
+description = "Local retrieval over device-resident corpora: chunker, SQLite FTS5, embeddings, fused ranking."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+verdure-core.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

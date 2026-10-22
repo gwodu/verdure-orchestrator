@@ -1,0 +1,16 @@
+[package]
+name = "verdure-asr"
+description = "Speech → text on the device: segmentation, resampling, keyterms/replacements; whisper.cpp engine (feature)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# whisper.cpp compiled in (the engine proven on macOS/iOS/Android in app/).
+whisper = ["dep:whisper-rs"]
+
+[dependencies]
+verdure-core.workspace = true
+whisper-rs = { version = "0.16", default-features = false, optional = true }

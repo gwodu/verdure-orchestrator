@@ -20,7 +20,7 @@ Before starting any task, identify which skills apply and load them. A typical t
 
 This table is the canonical routing. `../CLAUDE.md`'s Skills section summarizes it for the always-loaded context; when they differ, this table wins — keep them in sync.
 
-- Writing or editing Rust code → `architecture` + `testing` + (`refactoring` if touching existing code)
+- Writing or editing Rust code → `architecture` + `testing` + (`refactoring` if touching existing code); SDK crates also `knowledge/26` (the rules for adding to the crates)
 - Writing or editing UI → `design` + `testing`
 - Writing any user-facing text (website, app, emails, error messages) → `copywriting` + `design`
 - Updating knowledge files → `documentation`

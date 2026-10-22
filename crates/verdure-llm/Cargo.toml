@@ -1,0 +1,19 @@
+[package]
+name = "verdure-llm"
+description = "Local text generation: prompt framing, context arithmetic; llama.cpp engine (feature)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# llama.cpp compiled in, pinned to the version the app has verified on three
+# platforms. `common` brings the samplers.
+llama = ["dep:llama-cpp-2", "dep:encoding_rs"]
+
+[dependencies]
+verdure-core.workspace = true
+verdure-grammar.workspace = true
+llama-cpp-2 = { version = "=0.1.154", default-features = false, features = ["common"], optional = true }
+encoding_rs = { workspace = true, optional = true }

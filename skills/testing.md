@@ -71,7 +71,7 @@ Verdure is a monorepo over one brain (the shared decider, `packages/decider`), s
 - **Desktop porter** (macOS runner, PR/manual only): its remaining reason to exist is the **iOS** cross-compile check, which this Mac cannot do. It also runs the frontend build, `cargo test`, the x86_64 check, and the model-URL reachability check — all of which now duplicate free local work. Triggers on `app/**` or `packages/decider/**`.
 - **App checks** (Linux, ~2 billable min): the app's frontend tests (vitest), the release-script tests (`python3 -B -m unittest discover -s app/scripts`; Python stdlib `unittest`, files named `test_*.py` next to the script they test), and `actionlint` over every workflow. Triggers on `app/src/**`, `app/scripts/**` or `.github/workflows/**`.
 - **Android compile check** (Linux): `cargo check --target aarch64-linux-android`, so an Android-only `cfg` branch can't break silently. Triggers on `app/**`.
-- The long-term Rust core (`src/`/`tests/`) has **no job yet** — it's a scaffold with a malformed manifest; it gets one when it becomes real.
+- **SDK** (Linux, `crates/**`): `cargo test --workspace` (the pure suite, no models) and `cargo check -p verdure-ffi --features llama,whisper`, which compiles llama.cpp + whisper.cpp on the runner — the only place those feature builds are verified while the founder's Mac lacks the disk for a second engine build (`knowledge/26`, `[OQ-112]`).
 
 Never merge red. When CI fails, the fix lives in the same change.
 
@@ -98,7 +98,7 @@ CI minutes are a real budget on a private repo, and **macOS runners bill at 10×
 
 **A known gap this creates, tracked honestly:** the macOS CI job is gated to PRs and manual runs, so on a long-lived branch that never opens a PR, the **iOS and x86_64 cross-compile checks effectively never run**. iOS can therefore break silently until a `testflight-N` tag fails. Before tagging iOS after a long gap, trigger CI manually (`workflow_dispatch`) — that path is not gated to PRs and compile-checks iOS for ~40 billable minutes instead of discovering it inside a 57-minute signed build.
 
-When you add a new component, add its CI job in the same change that adds the component. A component without CI is unprotected. The known remaining CI gaps are the FFI sanitizer net (`[OQ-63]`) and a job for the long-term `src/` core once it's real. When you add a downloaded model to `model.rs`, add its URL to the porter job's resolve check in the same change (so a rotted release URL fails in CI, not on a user's machine).
+When you add a new component, add its CI job in the same change that adds the component. A component without CI is unprotected. The known remaining CI gaps are the FFI sanitizer net (`[OQ-63]`) and the network-denied sandbox run the SDK promises (`knowledge/26`, privacy section). When you add a downloaded model to `model.rs`, add its URL to the porter job's resolve check in the same change (so a rotted release URL fails in CI, not on a user's machine).
 
 ## Verifying artifacts, not intentions
 
@@ -147,4 +147,4 @@ verifier written to prevent it. Check for the artifact, or check `${PIPESTATUS[0
 - If this is UI: has Claude actually looked at the screenshot?
 - If a future Claude refactors the internals, will these tests still pass?
 - Has `TEST_REPORT.md` been updated with what was tested and any edge cases caught?
-- Are `cargo test`, the frontend build/tests and the decider suite green **locally**, before pushing? (A push runs no CI.) Is CI green on the PR before merge?
+- Are `cargo test` (app), `cargo test --workspace` (SDK), the frontend build/tests and the decider suite green **locally**, before pushing? (A push runs no CI.) Is CI green on the PR before merge?

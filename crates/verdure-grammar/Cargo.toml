@@ -1,0 +1,11 @@
+[package]
+name = "verdure-grammar"
+description = "JSON Schema → GBNF grammar, and a validator over the same schema subset (pure)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+thiserror.workspace = true

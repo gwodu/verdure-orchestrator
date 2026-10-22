@@ -1,0 +1,16 @@
+[package]
+name = "verdure-hw"
+description = "Honest device readings (RAM, disk, cores, GPU class) → verdure-core's DeviceProfile."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+verdure-core.workspace = true
+
+[target.'cfg(any(target_os = "ios", target_os = "android", target_os = "linux"))'.dependencies]
+libc.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+sysinfo = "0.33"

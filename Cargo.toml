@@ -1,8 +1,57 @@
+# The Verdure SDK — the long-term pure-Rust core, now real (knowledge/26).
+#
+# One runtime, many surfaces: the crates below are the brain that the Verdure
+# app (`app/`, its own workspace for now) and vendors' apps (through
+# `verdure-ffi`'s generated bindings) both sit on. Layout follows the
+# hexagon in skills/architecture.md: `verdure-core` is pure (no I/O, no FFI,
+# compiles for every target); the I/O crates implement its ports; `verdure-ffi`
+# is the single public surface.
+#
+# `app/src-tauri` keeps its own `[workspace]` and is NOT a member here — it
+# depends on compiled engines whose debug build is ~6 GB on this Mac, and the
+# migration of the app onto these crates is a recorded next step (knowledge/26).
+
 [workspace]
-name = "verdure"
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
+license = "UNLICENSED"
+publish = false
+repository = "https://github.com/gwodu/verdure-orchestrator"
 
-[[bin]]
-name = "verdure"
-path = "src/main.rs"
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+sha2 = "0.10"
+base64 = "0.22"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+getrandom = "0.3"
+aes-gcm = "0.10"
+rusqlite = { version = "0.40", features = ["bundled"] }
+ureq = { version = "2", default-features = false, features = ["tls"] }
+libc = "0.2"
+encoding_rs = "0.8"
+uniffi = "0.29"
+tempfile = "3"
+
+verdure-core = { path = "crates/verdure-core" }
+verdure-grammar = { path = "crates/verdure-grammar" }
+verdure-hw = { path = "crates/verdure-hw" }
+verdure-download = { path = "crates/verdure-download" }
+verdure-vault = { path = "crates/verdure-vault" }
+verdure-rag = { path = "crates/verdure-rag" }
+verdure-asr = { path = "crates/verdure-asr" }
+verdure-llm = { path = "crates/verdure-llm" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.dev]
+# No incremental artefacts: this is a library workspace built on a disk-tight Mac;
+# incremental caches cost ~300 MB for a few seconds of rebuild time.
+incremental = false

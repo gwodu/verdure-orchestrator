@@ -22,6 +22,10 @@ It is paired with `03-model-matrix.md`, which answers: **given a tier, what mode
 
 **Tier P3 — aspirational.** 6–8 GB RAM, MediaTek Dimensity 6300 or Snapdragon mid-range. Redmi Note 14C, Samsung Galaxy A06 5G. The ceiling we respect; not the primary target.
 
+## The SDK uses these names (2026-10-21)
+
+The SDK spec (`26-sdk.md`) arrived with its own labels — T0/T1 for phones, L0/L1/L2 for laptops. The code and this file share one vocabulary, so the names here win: T0 → P1, T1 → P2/P3, L0 → L1, L1 → L2, L2 → L3. `crates/verdure-core/src/tier.rs` classifies a probed device into these tiers by RAM and form factor, lifting an Apple-Silicon phone one tier (an iPhone 12 at 4 GB behaves like a P2). That classifier is the Phase-1 "probe" path this file promised.
+
 ## Why we target down
 
 Following the RAM crisis (see `01-thesis.md`), the device floor is moving down through 2026–2027. Verdure designed for 4 GB is aligned with the trend. A product that only works well at 8 GB+ is fighting where the market is going.

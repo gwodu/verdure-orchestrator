@@ -1,29 +1,29 @@
-//! The personal context store (knowledge/25): what Verdure has seen, kept on
-//! the device so it can answer "what did Tunde say about the rent?" the way it
-//! answers from the web — from retrieved sources, cited, tappable.
+//! The personal context store (knowledge/25, shaped by knowledge/27): what
+//! Verdure has seen, kept on the device so it can answer "what did Tunde say
+//! about the rent?" or "when did I last see Ada?" the way it answers from the
+//! web — from retrieved sources, cited, tappable.
 //!
-//! One SQLite file in the app's private folder. Not a "notifications table":
-//! a notification is a transport, and what it carried is an **item** — a
-//! message from a person in a thread at a time — the same shape whether it
-//! arrived as an Android notification, an SMS, or a chat export the user
-//! shared in.
+//! One SQLite file in the app's private folder. **Four nouns and one link**
+//! (knowledge/27): a *person*, a *place*, an *event* (a time span with a
+//! title, a place and an origin), an *observation* (anything recorded at a
+//! time — a message, a call, a photo's metadata, a visit, a note), and
+//! *participation* (this person was at this event, in this role). A message is
+//! one kind of observation; it also carries its thread, sender and direction.
+//! One observation table means one time axis — "what happened on the 25th"
+//! is one query across every source — and one delete path.
 //!
-//! The store is **entity-centric and structured first** (knowledge/25, from
-//! the founder's storage research): people are rows, every item points at the
-//! person who sent it, and the questions that matter most — "the last thing
-//! Tunde said", "what did Ada send last week" — are indexed lookups, not
-//! retrieval. Keyword search (FTS5) is the second tier, for "the rent"; vectors
-//! are a later, optional third. Small models ignore or are misled by retrieved
-//! text far more than they are helped by it (Pandey et al. 2026, arXiv
-//! 2603.11513), so the fewer and more exact the records, the better.
+//! The store is **entity-centric and structured first** (knowledge/25): people
+//! are rows, every observation points at the person it came from, and the
+//! questions that matter most — "the last thing Tunde said", "events with
+//! Ada" — are indexed lookups, not retrieval. Keyword search (FTS5) is the
+//! second tier; vectors are a later, optional third. Small models ignore or
+//! are misled by retrieved text far more than they are helped by it (Pandey
+//! et al. 2026, arXiv 2603.11513), so the fewer and more exact the records,
+//! the better.
 //!
 //! Nothing here leaves the device. There is no sync, no relay, no server. The
-//! file is excluded from cloud backup by the platform build (knowledge/25 —
-//! the rule that keeps the promise), and the user can see and delete all of
-//! it from "What Verdure knows".
-//!
-//! Wired into chat and the UI in step 2 of knowledge/25; until then this is
-//! the store, its lookups and search, and the export parser, all tested here.
+//! file is excluded from cloud backup by the platform build (knowledge/25),
+//! and the user can see and delete all of it from "What Verdure knows".
 #![allow(dead_code)]
 
 use std::path::Path;
@@ -33,18 +33,53 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use crate::web::Snippet;
 
-/// Schema version. This is the first version that has ever existed on a
-/// device; from here on, migrations are appended with a version check and
-/// never edited in place — a store on a phone has to survive every version of
-/// this schema that ever shipped.
+/// Schema version. Version 1 was redefined on 2026-10-22 (knowledge/27) before
+/// any build shipped the file; from the first shipped build on, migrations are
+/// appended with a version check and never edited in place — a store on a
+/// phone has to survive every version of this schema that ever shipped.
 const SCHEMA_VERSION: i64 = 1;
 
-/// Where an item came from. Strings, not an enum, because new sources are
-/// added by the platform code that produces them, not by this module.
+/// Where an observation came from. Strings, not an enum, because new sources
+/// are added by the platform code that produces them, not by this module.
 pub(crate) mod source {
     pub const NOTIFICATION: &str = "notification";
     pub const SMS: &str = "sms";
     pub const CHAT_EXPORT: &str = "chat_export";
+    pub const CALENDAR: &str = "calendar";
+    pub const PHOTOS: &str = "photos";
+    pub const CALL_LOG: &str = "call_log";
+    pub const USER: &str = "user";
+}
+
+/// What kind of thing an observation is (knowledge/27's map).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Kind {
+    Message,
+    Call,
+    Photo,
+    Visit,
+    Note,
+}
+
+impl Kind {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Kind::Message => "message",
+            Kind::Call => "call",
+            Kind::Photo => "photo",
+            Kind::Visit => "visit",
+            Kind::Note => "note",
+        }
+    }
+    fn parse(s: &str) -> Kind {
+        match s {
+            "call" => Kind::Call,
+            "photo" => Kind::Photo,
+            "visit" => Kind::Visit,
+            "note" => Kind::Note,
+            _ => Kind::Message,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,9 +106,45 @@ impl Direction {
     }
 }
 
+/// Where an event came from: the calendar said so, or Verdure worked it out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Origin {
+    Given,
+    Inferred,
+}
+
+impl Origin {
+    fn as_str(self) -> &'static str {
+        match self {
+            Origin::Given => "given",
+            Origin::Inferred => "inferred",
+        }
+    }
+}
+
+/// How a person relates to an event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Role {
+    Organiser,
+    Invited,
+    Attended,
+    Mentioned,
+}
+
+impl Role {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Role::Organiser => "organiser",
+            Role::Invited => "invited",
+            Role::Attended => "attended",
+            Role::Mentioned => "mentioned",
+        }
+    }
+}
+
 /// One message as a source hands it in.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct NewItem {
+pub(crate) struct NewMessage {
     pub source: String,
     /// The app's package (`com.whatsapp`) or a well-known name (`sms`).
     pub app: String,
@@ -95,27 +166,81 @@ pub(crate) struct NewItem {
     pub text: String,
 }
 
-/// What `ingest` did. Notifications re-post the whole conversation every
-/// time they update, so most calls are duplicates — that is normal, not an error.
+/// Any other observation — a call, a photo's metadata, a visit, a note — as a
+/// source hands it in. Messages go through `NewMessage` because they carry a
+/// thread.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NewObservation {
+    pub kind: Kind,
+    pub source: String,
+    pub app: String,
+    /// The source's own id for this record (a MediaStore id, a call-log row
+    /// id); part of the dedupe key so a rescan stores nothing twice.
+    pub source_key: String,
+    pub at_ms: i64,
+    /// What there is to say about it ("Missed call", a note's words); may be
+    /// empty for a photo.
+    pub text: String,
+    /// The person it came from or is about, if known.
+    pub person_id: Option<i64>,
+    /// A place name, resolved to a `place` row on the way in.
+    pub place: Option<String>,
+    pub event_id: Option<i64>,
+}
+
+/// A calendar entry or an inferred event, as a source hands it in.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NewEvent {
+    pub title: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub place: Option<String>,
+    pub origin: Origin,
+    /// Which calendar app (for a given event); empty for an inferred one.
+    pub app: String,
+    /// The OS's id for the entry, so it can be re-read; empty for an inferred
+    /// event, which then dedupes on its title and start.
+    pub source_key: String,
+}
+
+/// What `ingest`/`record` did. Notifications re-post the whole conversation
+/// every time they update, so most calls are duplicates — normal, not an error.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Ingest {
     Inserted(i64),
     Duplicate,
 }
 
-/// A stored item, as the UI and the prompt see it.
+/// A stored observation, as the UI and the prompt see it.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Item {
+pub(crate) struct Observation {
     pub id: i64,
-    pub thread_id: i64,
+    pub kind: &'static str,
     pub app: String,
+    pub at_ms: i64,
+    pub text: String,
+    /// Messages only.
+    pub thread_id: Option<i64>,
     pub thread_title: String,
     pub sender: String,
     pub sender_person_id: Option<i64>,
     pub direction: &'static str,
-    pub at_ms: i64,
-    pub text: String,
+    pub place: Option<String>,
+    pub event_id: Option<i64>,
+}
+
+/// An event, as the UI and the prompt see it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Event {
+    pub id: i64,
+    pub title: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub place: Option<String>,
+    pub origin: &'static str,
+    pub app: String,
 }
 
 /// One conversation, for the "What Verdure knows" list.
@@ -137,8 +262,16 @@ pub(crate) struct ThreadSummary {
 pub(crate) struct Person {
     pub id: i64,
     pub display_name: String,
-    /// How many items they sent.
+    /// How many observations came from them.
     pub items: i64,
+}
+
+/// A person at an event.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Participant {
+    pub person: Person,
+    pub role: String,
 }
 
 /// How much Verdure holds per app — the transparency number.
@@ -163,6 +296,11 @@ pub(crate) enum PersonMatch {
 pub(crate) struct Store {
     conn: Connection,
 }
+
+const OBSERVATION_COLUMNS: &str = "o.id, o.kind, o.app, o.at_ms, o.text, o.thread_id, COALESCE(t.title, ''), o.sender,
+     o.sender_person_id, o.direction, p.name, o.event_id";
+
+const OBSERVATION_FROM: &str = "FROM observation o LEFT JOIN threads t ON t.id = o.thread_id LEFT JOIN place p ON p.id = o.place_id";
 
 impl Store {
     /// Open (creating if needed) the store at `path`.
@@ -209,9 +347,8 @@ impl Store {
                         added_at_ms INTEGER NOT NULL,
                         PRIMARY KEY (kind, app)
                     );
-                    -- The entity layer: a person, the names they go by, and the
-                    -- per-app keys that are them. Two tables with foreign keys
-                    -- are the whole 'knowledge graph' v1 needs.
+                    -- People: a person, the names they go by, and the per-app
+                    -- keys that are them (knowledge/25).
                     CREATE TABLE IF NOT EXISTS person (
                         id INTEGER PRIMARY KEY,
                         display_name TEXT NOT NULL,
@@ -229,6 +366,40 @@ impl Store {
                         person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
                         PRIMARY KEY (app, source_key)
                     ) WITHOUT ROWID;
+                    -- Places: named once, reused by events and observations.
+                    CREATE TABLE IF NOT EXISTS place (
+                        id INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        name_norm TEXT NOT NULL UNIQUE,
+                        lat REAL,
+                        lon REAL,
+                        address TEXT
+                    );
+                    -- Events: a span with a title, a place and an origin
+                    -- (given by a calendar, or inferred). A given event keeps
+                    -- the OS's id so the OS stays the truth (knowledge/27).
+                    CREATE TABLE IF NOT EXISTS event (
+                        id INTEGER PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        start_ms INTEGER NOT NULL,
+                        end_ms INTEGER NOT NULL,
+                        place_id INTEGER REFERENCES place(id) ON DELETE SET NULL,
+                        origin TEXT NOT NULL,
+                        app TEXT NOT NULL,
+                        source_key TEXT NOT NULL,
+                        dedupe_key TEXT NOT NULL UNIQUE
+                    );
+                    CREATE INDEX IF NOT EXISTS event_start ON event(start_ms);
+                    -- The link: this person was at this event, in this role.
+                    CREATE TABLE IF NOT EXISTS participation (
+                        event_id INTEGER NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+                        person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
+                        role TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        PRIMARY KEY (event_id, person_id)
+                    ) WITHOUT ROWID;
+                    CREATE INDEX IF NOT EXISTS participation_person ON participation(person_id);
+                    -- Threads: where a message lives.
                     CREATE TABLE IF NOT EXISTS threads (
                         id INTEGER PRIMARY KEY,
                         app TEXT NOT NULL,
@@ -238,33 +409,41 @@ impl Store {
                         last_at_ms INTEGER NOT NULL DEFAULT 0,
                         UNIQUE (app, thread_key)
                     );
-                    CREATE TABLE IF NOT EXISTS items (
+                    -- Observations: one table, one time axis, every kind.
+                    -- The message-only columns are null for the other kinds.
+                    CREATE TABLE IF NOT EXISTS observation (
                         id INTEGER PRIMARY KEY,
-                        thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+                        kind TEXT NOT NULL,
                         source TEXT NOT NULL,
-                        sender TEXT NOT NULL,
-                        sender_person_id INTEGER REFERENCES person(id) ON DELETE SET NULL,
-                        direction TEXT NOT NULL,
+                        app TEXT NOT NULL,
                         at_ms INTEGER NOT NULL,
                         text TEXT NOT NULL,
+                        place_id INTEGER REFERENCES place(id) ON DELETE SET NULL,
+                        event_id INTEGER REFERENCES event(id) ON DELETE SET NULL,
+                        thread_id INTEGER REFERENCES threads(id) ON DELETE CASCADE,
+                        sender TEXT NOT NULL DEFAULT '',
+                        sender_person_id INTEGER REFERENCES person(id) ON DELETE SET NULL,
+                        direction TEXT NOT NULL DEFAULT 'in',
                         dedupe_key TEXT NOT NULL UNIQUE
                     );
-                    CREATE INDEX IF NOT EXISTS items_thread_at ON items(thread_id, at_ms);
-                    CREATE INDEX IF NOT EXISTS items_sender_at ON items(sender_person_id, at_ms);
-                    CREATE INDEX IF NOT EXISTS items_at ON items(at_ms);
+                    CREATE INDEX IF NOT EXISTS observation_at ON observation(at_ms);
+                    CREATE INDEX IF NOT EXISTS observation_kind_at ON observation(kind, at_ms);
+                    CREATE INDEX IF NOT EXISTS observation_thread_at ON observation(thread_id, at_ms);
+                    CREATE INDEX IF NOT EXISTS observation_person_at ON observation(sender_person_id, at_ms);
+                    CREATE INDEX IF NOT EXISTS observation_event ON observation(event_id);
                     -- Keyword tier. The index keeps its own copy of the text:
                     -- a contentless FTS5 table can't delete by rowid, and
-                    -- messages are small (the double-storage concern in the
-                    -- research is an email-scale one).
-                    CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
-                        text, sender, thread_title,
+                    -- records are small. `who` is the sender or the person;
+                    -- `where_` is the thread title, the place, or the event.
+                    CREATE VIRTUAL TABLE IF NOT EXISTS observation_fts USING fts5(
+                        text, who, where_,
                         tokenize='unicode61 remove_diacritics 2'
                     );
                     -- Extracted later, while charging; every fact points at
-                    -- its item, and facts are invalidated, not deleted.
+                    -- its observation, and facts are invalidated, not deleted.
                     CREATE TABLE IF NOT EXISTS facts (
                         id INTEGER PRIMARY KEY,
-                        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                        observation_id INTEGER NOT NULL REFERENCES observation(id) ON DELETE CASCADE,
                         subject_person_id INTEGER REFERENCES person(id) ON DELETE SET NULL,
                         kind TEXT NOT NULL,
                         value TEXT NOT NULL,
@@ -284,16 +463,13 @@ impl Store {
         Ok(())
     }
 
-    /// Store one item, or recognise it as already stored. The thread and the
-    /// sender's person row are created on first sight.
-    pub(crate) fn ingest(&mut self, item: &NewItem) -> Result<Ingest, String> {
-        let key = dedupe_key(&item.app, &item.thread_key, &item.sender_key, item.at_ms, &item.text);
-        let exists: Option<i64> = self
-            .conn
-            .query_row("SELECT id FROM items WHERE dedupe_key = ?1", params![key], |r| r.get(0))
-            .optional()
-            .map_err(|e| e.to_string())?;
-        if exists.is_some() {
+    // ----- writing -----------------------------------------------------------
+
+    /// Store one message, or recognise it as already stored. The thread and
+    /// the sender's person row are created on first sight.
+    pub(crate) fn ingest(&mut self, m: &NewMessage) -> Result<Ingest, String> {
+        let key = dedupe_key(&m.app, &m.thread_key, &m.sender_key, m.at_ms, &m.text);
+        if self.has_observation(&key)? {
             return Ok(Ingest::Duplicate);
         }
         let tx = self.conn.transaction().map_err(|e| e.to_string())?;
@@ -303,40 +479,143 @@ impl Store {
                title = CASE WHEN excluded.title != '' THEN excluded.title ELSE title END,
                is_group = MAX(is_group, excluded.is_group),
                last_at_ms = MAX(last_at_ms, excluded.last_at_ms)",
-            params![item.app, item.thread_key, item.thread_title, item.is_group as i64, item.at_ms],
+            params![m.app, m.thread_key, m.thread_title, m.is_group as i64, m.at_ms],
         )
         .map_err(|e| e.to_string())?;
         let thread_id: i64 = tx
             .query_row(
                 "SELECT id FROM threads WHERE app = ?1 AND thread_key = ?2",
-                params![item.app, item.thread_key],
+                params![m.app, m.thread_key],
                 |r| r.get(0),
             )
             .map_err(|e| e.to_string())?;
-        let person_id = match item.direction {
+        let person_id = match m.direction {
             Direction::Out => None,
-            Direction::In => Some(resolve_person(&tx, &item.app, &item.sender_key, &item.sender)?),
+            Direction::In => Some(resolve_person(&tx, &m.app, &m.sender_key, &m.sender)?),
         };
         tx.execute(
-            "INSERT INTO items (thread_id, source, sender, sender_person_id, direction, at_ms, text, dedupe_key)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![thread_id, item.source, item.sender, person_id, item.direction.as_str(), item.at_ms, item.text, key],
+            "INSERT INTO observation (kind, source, app, at_ms, text, thread_id, sender, sender_person_id, direction, dedupe_key)
+             VALUES ('message', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![m.source, m.app, m.at_ms, m.text, thread_id, m.sender, person_id, m.direction.as_str(), key],
         )
         .map_err(|e| e.to_string())?;
         let id = tx.last_insert_rowid();
         tx.execute(
-            "INSERT INTO items_fts (rowid, text, sender, thread_title) VALUES (?1, ?2, ?3, ?4)",
-            params![id, item.text, item.sender, item.thread_title],
+            "INSERT INTO observation_fts (rowid, text, who, where_) VALUES (?1, ?2, ?3, ?4)",
+            params![id, m.text, m.sender, m.thread_title],
         )
         .map_err(|e| e.to_string())?;
-        tx.execute(
-            "INSERT INTO sources (kind, app, added_at_ms) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING",
-            params![item.source, item.app, item.at_ms],
-        )
-        .map_err(|e| e.to_string())?;
+        note_source(&tx, &m.source, &m.app, m.at_ms)?;
         tx.commit().map_err(|e| e.to_string())?;
         Ok(Ingest::Inserted(id))
     }
+
+    /// Store any other kind of observation (a call, a photo, a visit, a
+    /// note), or recognise it as already stored.
+    pub(crate) fn record(&mut self, o: &NewObservation) -> Result<Ingest, String> {
+        let key = dedupe_key(&o.app, o.kind.as_str(), &o.source_key, o.at_ms, &o.text);
+        if self.has_observation(&key)? {
+            return Ok(Ingest::Duplicate);
+        }
+        let tx = self.conn.transaction().map_err(|e| e.to_string())?;
+        let place_id = match &o.place {
+            Some(name) => Some(place_id(&tx, name)?),
+            None => None,
+        };
+        let who: String = match o.person_id {
+            Some(p) => tx
+                .query_row("SELECT display_name FROM person WHERE id = ?1", params![p], |r| r.get(0))
+                .optional()
+                .map_err(|e| e.to_string())?
+                .unwrap_or_default(),
+            None => String::new(),
+        };
+        tx.execute(
+            "INSERT INTO observation (kind, source, app, at_ms, text, place_id, event_id, sender, sender_person_id, dedupe_key)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![o.kind.as_str(), o.source, o.app, o.at_ms, o.text, place_id, o.event_id, who, o.person_id, key],
+        )
+        .map_err(|e| e.to_string())?;
+        let id = tx.last_insert_rowid();
+        tx.execute(
+            "INSERT INTO observation_fts (rowid, text, who, where_) VALUES (?1, ?2, ?3, ?4)",
+            params![id, o.text, who, o.place.clone().unwrap_or_default()],
+        )
+        .map_err(|e| e.to_string())?;
+        note_source(&tx, &o.source, &o.app, o.at_ms)?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(Ingest::Inserted(id))
+    }
+
+    fn has_observation(&self, key: &str) -> Result<bool, String> {
+        self.conn
+            .query_row("SELECT 1 FROM observation WHERE dedupe_key = ?1", params![key], |_| Ok(()))
+            .optional()
+            .map(|r| r.is_some())
+            .map_err(|e| e.to_string())
+    }
+
+    /// Store a given (calendar) or inferred event, or update the one already
+    /// stored for the same OS id — a re-read of the calendar must not
+    /// duplicate. Returns the event's id.
+    pub(crate) fn upsert_event(&mut self, e: &NewEvent) -> Result<i64, String> {
+        let key = if e.source_key.is_empty() {
+            dedupe_key("event", &normalize_alias(&e.title), "", e.start_ms, "")
+        } else {
+            dedupe_key("event", &e.app, &e.source_key, 0, "")
+        };
+        let tx = self.conn.transaction().map_err(|e| e.to_string())?;
+        let place_id = match &e.place {
+            Some(name) => Some(place_id(&tx, name)?),
+            None => None,
+        };
+        tx.execute(
+            "INSERT INTO event (title, start_ms, end_ms, place_id, origin, app, source_key, dedupe_key)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(dedupe_key) DO UPDATE SET
+               title = excluded.title, start_ms = excluded.start_ms, end_ms = excluded.end_ms,
+               place_id = COALESCE(excluded.place_id, place_id)",
+            params![e.title, e.start_ms, e.end_ms, place_id, e.origin.as_str(), e.app, e.source_key, key],
+        )
+        .map_err(|e| e.to_string())?;
+        let id: i64 = tx
+            .query_row("SELECT id FROM event WHERE dedupe_key = ?1", params![key], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(id)
+    }
+
+    /// This person was at this event. A second call for the same pair
+    /// updates the role.
+    pub(crate) fn add_participant(&mut self, event_id: i64, person_id: i64, role: Role, source: &str) -> Result<(), String> {
+        self.conn
+            .execute(
+                "INSERT INTO participation (event_id, person_id, role, source) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(event_id, person_id) DO UPDATE SET role = excluded.role, source = excluded.source",
+                params![event_id, person_id, role.as_str(), source],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// A person known only by name (a calendar attendee, a contact): find or
+    /// create them, keyed by `app` + `key` like any sender.
+    pub(crate) fn person_for(&mut self, app: &str, key: &str, name: &str) -> Result<i64, String> {
+        let tx = self.conn.transaction().map_err(|e| e.to_string())?;
+        let id = resolve_person(&tx, app, key, name)?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(id)
+    }
+
+    /// Tie an observation to an event ("this photo was at the wedding").
+    pub(crate) fn attach_to_event(&mut self, observation_id: i64, event_id: i64) -> Result<(), String> {
+        self.conn
+            .execute("UPDATE observation SET event_id = ?1 WHERE id = ?2", params![event_id, observation_id])
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    // ----- people ------------------------------------------------------------
 
     /// Who is `who`? Exact normalised alias first; then an alias that starts
     /// with it ("tunde" → "tunde bakare"); then a word of an alias ("bakare").
@@ -355,13 +634,13 @@ impl Store {
         for (cond, arg) in tiers {
             let sql = format!(
                 "SELECT DISTINCT p.id, p.display_name,
-                        (SELECT COUNT(*) FROM items WHERE sender_person_id = p.id)
+                        (SELECT COUNT(*) FROM observation WHERE sender_person_id = p.id)
                  FROM person p JOIN person_alias a ON a.person_id = p.id
                  WHERE {cond} AND p.is_self = 0 ORDER BY 3 DESC, p.id"
             );
             let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
             let people: Vec<Person> = stmt
-                .query_map(params![arg], |r| Ok(Person { id: r.get(0)?, display_name: r.get(1)?, items: r.get(2)? }))
+                .query_map(params![arg], row_to_person)
                 .map_err(|e| e.to_string())?
                 .collect::<Result<_, _>>()
                 .map_err(|e| e.to_string())?;
@@ -374,66 +653,172 @@ impl Store {
         Ok(PersonMatch::None)
     }
 
-    /// "The last thing Tunde said": the newest `limit` items this person sent,
-    /// newest first. An indexed lookup, no search involved (knowledge/25).
-    pub(crate) fn last_from(&self, person_id: i64, limit: usize) -> Result<Vec<Item>, String> {
-        self.query_items(
-            "WHERE i.sender_person_id = ?1 ORDER BY i.at_ms DESC LIMIT ?2",
+    /// Everyone Verdure has heard from, most talkative first.
+    pub(crate) fn people(&self) -> Result<Vec<Person>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT p.id, p.display_name, (SELECT COUNT(*) FROM observation WHERE sender_person_id = p.id) AS n
+                 FROM person p WHERE p.is_self = 0 ORDER BY n DESC, p.display_name",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], row_to_person).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// The user says two rows are one person ("Tunde" on WhatsApp is "Tunde
+    /// Bakare" in SMS): `other`'s aliases, identities, observations and
+    /// participations move to `keep`. Merging is the user's call, never
+    /// guessed (knowledge/25).
+    pub(crate) fn merge_people(&mut self, keep: i64, other: i64) -> Result<(), String> {
+        if keep == other {
+            return Ok(());
+        }
+        let tx = self.conn.transaction().map_err(|e| e.to_string())?;
+        for sql in [
+            "UPDATE OR IGNORE person_alias SET person_id = ?1 WHERE person_id = ?2",
+            "UPDATE OR IGNORE identity SET person_id = ?1 WHERE person_id = ?2",
+            "UPDATE OR IGNORE participation SET person_id = ?1 WHERE person_id = ?2",
+            "UPDATE observation SET sender_person_id = ?1 WHERE sender_person_id = ?2",
+            "UPDATE facts SET subject_person_id = ?1 WHERE subject_person_id = ?2",
+            "DELETE FROM person WHERE id = ?1 AND ?2 = ?2",
+        ] {
+            let args: [i64; 2] = if sql.starts_with("DELETE") { [other, keep] } else { [keep, other] };
+            tx.execute(sql, params![args[0], args[1]]).map_err(|e| e.to_string())?;
+        }
+        tx.commit().map_err(|e| e.to_string())
+    }
+
+    // ----- lookups (structured first) ---------------------------------------
+
+    /// "The last thing Tunde said": the newest `limit` observations from this
+    /// person, newest first. An indexed lookup, no search involved.
+    pub(crate) fn last_from(&self, person_id: i64, limit: usize) -> Result<Vec<Observation>, String> {
+        self.query_observations(
+            "WHERE o.sender_person_id = ?1 ORDER BY o.at_ms DESC LIMIT ?2",
             params![person_id, limit as i64],
         )
     }
 
-    /// Items in `[start_ms, end_ms)`, optionally from one person, newest first.
-    /// The caller resolves "last week" into the range (temporal parsing is a
-    /// rule in Rust, never the model's job).
-    pub(crate) fn in_range(&self, start_ms: i64, end_ms: i64, person_id: Option<i64>, limit: usize) -> Result<Vec<Item>, String> {
+    /// Observations in `[start_ms, end_ms)`, optionally from one person,
+    /// newest first — every kind on one timeline. The caller resolves "last
+    /// week" into the range (temporal parsing is a rule in Rust, never the
+    /// model's job).
+    pub(crate) fn in_range(&self, start_ms: i64, end_ms: i64, person_id: Option<i64>, limit: usize) -> Result<Vec<Observation>, String> {
         match person_id {
-            Some(p) => self.query_items(
-                "WHERE i.at_ms >= ?1 AND i.at_ms < ?2 AND i.sender_person_id = ?3 ORDER BY i.at_ms DESC LIMIT ?4",
+            Some(p) => self.query_observations(
+                "WHERE o.at_ms >= ?1 AND o.at_ms < ?2 AND o.sender_person_id = ?3 ORDER BY o.at_ms DESC LIMIT ?4",
                 params![start_ms, end_ms, p, limit as i64],
             ),
-            None => self.query_items(
-                "WHERE i.at_ms >= ?1 AND i.at_ms < ?2 ORDER BY i.at_ms DESC LIMIT ?3",
+            None => self.query_observations(
+                "WHERE o.at_ms >= ?1 AND o.at_ms < ?2 ORDER BY o.at_ms DESC LIMIT ?3",
                 params![start_ms, end_ms, limit as i64],
             ),
         }
+    }
+
+    /// Events overlapping `[start_ms, end_ms)`, soonest first — "what am I
+    /// doing on the 25th".
+    pub(crate) fn events_in_range(&self, start_ms: i64, end_ms: i64, limit: usize) -> Result<Vec<Event>, String> {
+        self.query_events(
+            "WHERE e.start_ms < ?2 AND e.end_ms >= ?1 ORDER BY e.start_ms LIMIT ?3",
+            params![start_ms, end_ms, limit as i64],
+        )
+    }
+
+    /// Events this person was at, newest first — "when did I last see Ada".
+    pub(crate) fn events_with(&self, person_id: i64, limit: usize) -> Result<Vec<Event>, String> {
+        self.query_events(
+            "JOIN participation pa ON pa.event_id = e.id WHERE pa.person_id = ?1 ORDER BY e.start_ms DESC LIMIT ?2",
+            params![person_id, limit as i64],
+        )
+    }
+
+    /// Events whose title contains every content word of `words`, newest first.
+    pub(crate) fn events_titled(&self, words: &str, limit: usize) -> Result<Vec<Event>, String> {
+        let terms = content_words(words);
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conds: Vec<String> = terms.iter().map(|_| "LOWER(e.title) LIKE ?".to_string()).collect();
+        let sql = format!(
+            "SELECT e.id, e.title, e.start_ms, e.end_ms, p.name, e.origin, e.app
+             FROM event e LEFT JOIN place p ON p.id = e.place_id
+             WHERE {} ORDER BY e.start_ms DESC LIMIT {}",
+            conds.join(" AND "),
+            limit
+        );
+        let args: Vec<String> = terms.iter().map(|t| format!("%{}%", like_escape(t))).collect();
+        let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(args.iter()), row_to_event)
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// Who was at an event.
+    pub(crate) fn people_at(&self, event_id: i64) -> Result<Vec<Participant>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT p.id, p.display_name, (SELECT COUNT(*) FROM observation WHERE sender_person_id = p.id), pa.role
+                 FROM participation pa JOIN person p ON p.id = pa.person_id
+                 WHERE pa.event_id = ?1 ORDER BY p.display_name",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![event_id], |r| Ok(Participant { person: row_to_person(r)?, role: r.get(3)? }))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// What was recorded at an event, oldest first.
+    pub(crate) fn at_event(&self, event_id: i64, limit: usize) -> Result<Vec<Observation>, String> {
+        self.query_observations("WHERE o.event_id = ?1 ORDER BY o.at_ms LIMIT ?2", params![event_id, limit as i64])
     }
 
     /// Keyword search over everything stored: FTS5 ranked, ties to the newest,
     /// optionally scoped to one person. The question is turned into an OR of
     /// its content words (`fts_query`), so "what did Tunde say about the rent"
     /// finds messages about rent without the model writing a query first.
-    pub(crate) fn search(&self, question: &str, person_id: Option<i64>, limit: usize) -> Result<Vec<Item>, String> {
+    pub(crate) fn search(&self, question: &str, person_id: Option<i64>, limit: usize) -> Result<Vec<Observation>, String> {
         let q = fts_query(question);
         if q.is_empty() {
             return Ok(Vec::new());
         }
-        let scope = if person_id.is_some() { "AND i.sender_person_id = ?3" } else { "AND ?3 IS NULL" };
+        let scope = if person_id.is_some() { "AND o.sender_person_id = ?3" } else { "AND ?3 IS NULL" };
         let sql = format!(
-            "SELECT i.id, i.thread_id, t.app, t.title, i.sender, i.sender_person_id, i.direction, i.at_ms, i.text
-             FROM items_fts f
-             JOIN items i ON i.id = f.rowid
-             JOIN threads t ON t.id = i.thread_id
-             WHERE items_fts MATCH ?1 {scope}
-             ORDER BY bm25(items_fts, 3.0, 2.0, 1.0), i.at_ms DESC
+            "SELECT {OBSERVATION_COLUMNS} FROM observation_fts f JOIN observation o ON o.id = f.rowid
+             LEFT JOIN threads t ON t.id = o.thread_id LEFT JOIN place p ON p.id = o.place_id
+             WHERE observation_fts MATCH ?1 {scope}
+             ORDER BY bm25(observation_fts, 3.0, 2.0, 1.0), o.at_ms DESC
              LIMIT ?2"
         );
         let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
-            .query_map(params![q, limit as i64, person_id], row_to_item)
+            .query_map(params![q, limit as i64, person_id], row_to_observation)
             .map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
-    fn query_items(&self, tail: &str, args: &[&dyn rusqlite::ToSql]) -> Result<Vec<Item>, String> {
-        let sql = format!(
-            "SELECT i.id, i.thread_id, t.app, t.title, i.sender, i.sender_person_id, i.direction, i.at_ms, i.text
-             FROM items i JOIN threads t ON t.id = i.thread_id {tail}"
-        );
+    fn query_observations(&self, tail: &str, args: &[&dyn rusqlite::ToSql]) -> Result<Vec<Observation>, String> {
+        let sql = format!("SELECT {OBSERVATION_COLUMNS} {OBSERVATION_FROM} {tail}");
         let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(args, row_to_item).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(args, row_to_observation).map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
+
+    fn query_events(&self, tail: &str, args: &[&dyn rusqlite::ToSql]) -> Result<Vec<Event>, String> {
+        let sql = format!(
+            "SELECT e.id, e.title, e.start_ms, e.end_ms, p.name, e.origin, e.app
+             FROM event e LEFT JOIN place p ON p.id = e.place_id {tail}"
+        );
+        let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(args, row_to_event).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    // ----- what Verdure knows -----------------------------------------------
 
     /// Conversations, most recent first.
     pub(crate) fn threads(&self, limit: usize) -> Result<Vec<ThreadSummary>, String> {
@@ -441,8 +826,8 @@ impl Store {
             .conn
             .prepare(
                 "SELECT t.id, t.app, t.title, t.is_group, t.last_at_ms,
-                        (SELECT COUNT(*) FROM items WHERE thread_id = t.id),
-                        COALESCE((SELECT text FROM items WHERE thread_id = t.id ORDER BY at_ms DESC LIMIT 1), '')
+                        (SELECT COUNT(*) FROM observation WHERE thread_id = t.id),
+                        COALESCE((SELECT text FROM observation WHERE thread_id = t.id ORDER BY at_ms DESC LIMIT 1), '')
                  FROM threads t ORDER BY t.last_at_ms DESC LIMIT ?1",
             )
             .map_err(|e| e.to_string())?;
@@ -462,55 +847,24 @@ impl Store {
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
-    /// One conversation, oldest first, the last `limit` items.
-    pub(crate) fn thread_items(&self, thread_id: i64, limit: usize) -> Result<Vec<Item>, String> {
-        let mut items = self.query_items(
-            "WHERE i.thread_id = ?1 ORDER BY i.at_ms DESC LIMIT ?2",
+    /// One conversation, oldest first, the last `limit` messages.
+    pub(crate) fn thread_items(&self, thread_id: i64, limit: usize) -> Result<Vec<Observation>, String> {
+        let mut items = self.query_observations(
+            "WHERE o.thread_id = ?1 ORDER BY o.at_ms DESC LIMIT ?2",
             params![thread_id, limit as i64],
         )?;
         items.reverse();
         Ok(items)
     }
 
-    /// Everyone Verdure has heard from, most talkative first.
-    pub(crate) fn people(&self) -> Result<Vec<Person>, String> {
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT p.id, p.display_name, (SELECT COUNT(*) FROM items WHERE sender_person_id = p.id) AS n
-                 FROM person p WHERE p.is_self = 0 ORDER BY n DESC, p.display_name",
-            )
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |r| Ok(Person { id: r.get(0)?, display_name: r.get(1)?, items: r.get(2)? }))
-            .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
-    }
-
-    /// The user says two rows are one person ("Tunde" on WhatsApp is "Tunde
-    /// Bakare" in SMS): `other`'s aliases, identities and items move to `keep`.
-    /// Merging is the user's call, never guessed (knowledge/25).
-    pub(crate) fn merge_people(&mut self, keep: i64, other: i64) -> Result<(), String> {
-        if keep == other {
-            return Ok(());
-        }
-        let tx = self.conn.transaction().map_err(|e| e.to_string())?;
-        tx.execute("UPDATE OR IGNORE person_alias SET person_id = ?1 WHERE person_id = ?2", params![keep, other]).map_err(|e| e.to_string())?;
-        tx.execute("UPDATE OR IGNORE identity SET person_id = ?1 WHERE person_id = ?2", params![keep, other]).map_err(|e| e.to_string())?;
-        tx.execute("UPDATE items SET sender_person_id = ?1 WHERE sender_person_id = ?2", params![keep, other]).map_err(|e| e.to_string())?;
-        tx.execute("UPDATE facts SET subject_person_id = ?1 WHERE subject_person_id = ?2", params![keep, other]).map_err(|e| e.to_string())?;
-        tx.execute("DELETE FROM person WHERE id = ?1", params![other]).map_err(|e| e.to_string())?;
-        tx.commit().map_err(|e| e.to_string())
-    }
-
-    /// What is held, per app — shown on "What Verdure knows".
+    /// What is held, per app — shown on "What Verdure knows". Every kind of
+    /// observation counts; threads only exist for messages.
     pub(crate) fn counts(&self) -> Result<Vec<AppCount>, String> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT t.app, COUNT(i.id), COUNT(DISTINCT t.id)
-                 FROM threads t LEFT JOIN items i ON i.thread_id = t.id
-                 GROUP BY t.app ORDER BY COUNT(i.id) DESC",
+                "SELECT o.app, COUNT(o.id), COUNT(DISTINCT o.thread_id)
+                 FROM observation o GROUP BY o.app ORDER BY COUNT(o.id) DESC",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
@@ -519,38 +873,75 @@ impl Store {
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
-    /// Forget one conversation entirely — items, their index entries, facts.
+    // ----- forgetting ----------------------------------------------------------
+
+    /// Forget one conversation entirely — messages, their index entries, facts.
     pub(crate) fn delete_thread(&mut self, thread_id: i64) -> Result<(), String> {
         let tx = self.conn.transaction().map_err(|e| e.to_string())?;
         tx.execute(
-            "DELETE FROM items_fts WHERE rowid IN (SELECT id FROM items WHERE thread_id = ?1)",
+            "DELETE FROM observation_fts WHERE rowid IN (SELECT id FROM observation WHERE thread_id = ?1)",
             params![thread_id],
         )
         .map_err(|e| e.to_string())?;
-        tx.execute("DELETE FROM threads WHERE id = ?1", params![thread_id])
-            .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM threads WHERE id = ?1", params![thread_id]).map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())
     }
 
-    /// Forget one person: their items (and index entries) and the person row.
+    /// Forget one person: everything from them (and index entries), their
+    /// participations, and the person row.
     pub(crate) fn delete_person(&mut self, person_id: i64) -> Result<(), String> {
         let tx = self.conn.transaction().map_err(|e| e.to_string())?;
         tx.execute(
-            "DELETE FROM items_fts WHERE rowid IN (SELECT id FROM items WHERE sender_person_id = ?1)",
+            "DELETE FROM observation_fts WHERE rowid IN (SELECT id FROM observation WHERE sender_person_id = ?1)",
             params![person_id],
         )
         .map_err(|e| e.to_string())?;
-        tx.execute("DELETE FROM items WHERE sender_person_id = ?1", params![person_id]).map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM observation WHERE sender_person_id = ?1", params![person_id]).map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM person WHERE id = ?1", params![person_id]).map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())
+    }
+
+    /// Forget one event: its participations go with it; observations that
+    /// pointed at it stay, unlinked.
+    pub(crate) fn delete_event(&mut self, event_id: i64) -> Result<(), String> {
+        self.conn
+            .execute("DELETE FROM event WHERE id = ?1", params![event_id])
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     /// Forget everything. The user's one-tap exit from the whole feature.
     pub(crate) fn delete_all(&mut self) -> Result<(), String> {
         self.conn
-            .execute_batch("DELETE FROM items_fts; DELETE FROM threads; DELETE FROM person; DELETE FROM sources;")
+            .execute_batch(
+                "DELETE FROM observation_fts; DELETE FROM observation; DELETE FROM threads; DELETE FROM event;
+                 DELETE FROM place; DELETE FROM person; DELETE FROM sources;",
+            )
             .map_err(|e| e.to_string())
     }
+}
+
+fn note_source(tx: &Transaction<'_>, source: &str, app: &str, at_ms: i64) -> Result<(), String> {
+    tx.execute(
+        "INSERT INTO sources (kind, app, added_at_ms) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING",
+        params![source, app, at_ms],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
+/// A place row for this name, created on first sight. Names are matched in
+/// their normalised form, so "The Wheatbaker" and "the wheatbaker" are one.
+fn place_id(tx: &Transaction<'_>, name: &str) -> Result<i64, String> {
+    let norm = normalize_alias(name);
+    let norm = if norm.is_empty() { name.trim().to_lowercase() } else { norm };
+    tx.execute(
+        "INSERT INTO place (name, name_norm) VALUES (?1, ?2) ON CONFLICT(name_norm) DO NOTHING",
+        params![name.trim(), norm],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.query_row("SELECT id FROM place WHERE name_norm = ?1", params![norm], |r| r.get(0))
+        .map_err(|e| e.to_string())
 }
 
 /// The identity rule on ingest: the app's key for this sender if we've seen
@@ -644,28 +1035,49 @@ fn like_escape(s: &str) -> String {
     s.replace('%', "").replace('_', "")
 }
 
-fn row_to_item(r: &rusqlite::Row<'_>) -> rusqlite::Result<Item> {
-    let direction: String = r.get(6)?;
-    Ok(Item {
+fn row_to_person(r: &rusqlite::Row<'_>) -> rusqlite::Result<Person> {
+    Ok(Person { id: r.get(0)?, display_name: r.get(1)?, items: r.get(2)? })
+}
+
+fn row_to_event(r: &rusqlite::Row<'_>) -> rusqlite::Result<Event> {
+    let origin: String = r.get(5)?;
+    Ok(Event {
         id: r.get(0)?,
-        thread_id: r.get(1)?,
-        app: r.get(2)?,
-        thread_title: r.get(3)?,
-        sender: r.get(4)?,
-        sender_person_id: r.get(5)?,
-        direction: Direction::parse(&direction).as_str(),
-        at_ms: r.get(7)?,
-        text: r.get(8)?,
+        title: r.get(1)?,
+        start_ms: r.get(2)?,
+        end_ms: r.get(3)?,
+        place: r.get(4)?,
+        origin: if origin == "inferred" { "inferred" } else { "given" },
+        app: r.get(6)?,
     })
 }
 
-/// A stable identity for one message, so a re-posted notification or a
-/// re-imported export never stores it twice. FNV-1a rather than `DefaultHasher`
-/// because the latter is not promised stable across Rust versions, and this key
-/// lives in a file on a phone for years.
-pub(crate) fn dedupe_key(app: &str, thread_key: &str, sender_key: &str, at_ms: i64, text: &str) -> String {
+fn row_to_observation(r: &rusqlite::Row<'_>) -> rusqlite::Result<Observation> {
+    let kind: String = r.get(1)?;
+    let direction: String = r.get(9)?;
+    Ok(Observation {
+        id: r.get(0)?,
+        kind: Kind::parse(&kind).as_str(),
+        app: r.get(2)?,
+        at_ms: r.get(3)?,
+        text: r.get(4)?,
+        thread_id: r.get(5)?,
+        thread_title: r.get(6)?,
+        sender: r.get(7)?,
+        sender_person_id: r.get(8)?,
+        direction: Direction::parse(&direction).as_str(),
+        place: r.get(10)?,
+        event_id: r.get(11)?,
+    })
+}
+
+/// A stable identity for one record, so a re-posted notification, a
+/// re-imported export or a re-read calendar never stores it twice. FNV-1a
+/// rather than `DefaultHasher` because the latter is not promised stable
+/// across Rust versions, and this key lives in a file on a phone for years.
+pub(crate) fn dedupe_key(app: &str, scope: &str, key: &str, at_ms: i64, text: &str) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for chunk in [app.as_bytes(), b"\0", thread_key.as_bytes(), b"\0", sender_key.as_bytes(), b"\0", at_ms.to_string().as_bytes(), b"\0", text.as_bytes()] {
+    for chunk in [app.as_bytes(), b"\0", scope.as_bytes(), b"\0", key.as_bytes(), b"\0", at_ms.to_string().as_bytes(), b"\0", text.as_bytes()] {
         for &b in chunk {
             h ^= b as u64;
             h = h.wrapping_mul(0x0000_0100_0000_01b3);
@@ -685,10 +1097,9 @@ const STOPWORDS: &[&str] = &[
     "coming", "soon", "recently", "last", "again", "just", "know", "think", "like", "get", "got", "yes", "no",
 ];
 
-/// Turn a question into an FTS5 query: its content words, each a prefix
-/// match, OR-ed. Prefixes let "rent" find "rental" and "Tunde" find "Tunde's".
-/// Nothing a user can type reaches FTS5 unquoted, so its syntax can't break.
-pub(crate) fn fts_query(question: &str) -> String {
+/// The content words of a question: lower-cased, stopwords and one-letter
+/// fragments dropped, each once.
+fn content_words(question: &str) -> Vec<String> {
     let mut words: Vec<String> = Vec::new();
     for raw in question.split(|c: char| !c.is_alphanumeric() && c != '\'') {
         let w = raw.trim_matches('\'').to_lowercase();
@@ -698,30 +1109,87 @@ pub(crate) fn fts_query(question: &str) -> String {
         words.push(w);
     }
     words
+}
+
+/// Turn a question into an FTS5 query: its content words, each a prefix
+/// match, OR-ed. Prefixes let "rent" find "rental" and "Tunde" find "Tunde's".
+/// Nothing a user can type reaches FTS5 unquoted, so its syntax can't break.
+pub(crate) fn fts_query(question: &str) -> String {
+    content_words(question)
         .iter()
         .map(|w| format!("\"{}\"*", w.replace('"', "\"\"")))
         .collect::<Vec<_>>()
         .join(" OR ")
 }
 
-/// Stored items as the prompt's sources (knowledge/24's block, reused): the
-/// sender and thread stand where a page title stood, the app where the domain
-/// did, and the "url" is Verdure's own thread link for the footer to open.
-pub(crate) fn items_as_snippets(items: &[Item]) -> Vec<Snippet> {
+/// Stored observations as the prompt's sources (knowledge/24's block, reused):
+/// the sender and thread stand where a page title stood, the app where the
+/// domain did, and the "url" is Verdure's own link for the footer to open.
+pub(crate) fn observations_as_snippets(items: &[Observation]) -> Vec<Snippet> {
     items
         .iter()
-        .map(|i| Snippet {
-            title: if i.direction == "out" {
-                format!("You, in {}", i.thread_title)
-            } else if i.thread_title == i.sender || i.thread_title.is_empty() {
-                i.sender.clone()
-            } else {
-                format!("{} in {}", i.sender, i.thread_title)
-            },
-            url: format!("verdure://thread/{}", i.thread_id),
-            domain: app_label(&i.app).to_string(),
-            date: Some(format_date(i.at_ms)),
-            text: i.text.clone(),
+        .map(|o| {
+            let title = match (o.kind, o.direction) {
+                ("message", "out") => format!("You, in {}", o.thread_title),
+                ("message", _) if o.thread_title == o.sender || o.thread_title.is_empty() => o.sender.clone(),
+                ("message", _) => format!("{} in {}", o.sender, o.thread_title),
+                ("call", _) if !o.sender.is_empty() => format!("Call with {}", o.sender),
+                ("photo", _) => match &o.place {
+                    Some(p) => format!("Photo at {p}"),
+                    None => "Photo".to_string(),
+                },
+                ("visit", _) => match &o.place {
+                    Some(p) => format!("At {p}"),
+                    None => "A visit".to_string(),
+                },
+                (k, _) => {
+                    let mut s = k.to_string();
+                    if let Some(c) = s.get_mut(0..1) {
+                        c.make_ascii_uppercase();
+                    }
+                    s
+                }
+            };
+            let url = match o.thread_id {
+                Some(t) => format!("verdure://thread/{t}"),
+                None => format!("verdure://observation/{}", o.id),
+            };
+            Snippet {
+                title,
+                url,
+                domain: app_label(&o.app).to_string(),
+                date: Some(format_date(o.at_ms)),
+                text: o.text.clone(),
+            }
+        })
+        .collect()
+}
+
+/// Events as the prompt's sources: "Tunde's wedding, 2026-12-25, at The
+/// Wheatbaker — with Tunde, Ada".
+pub(crate) fn events_as_snippets(events: &[(Event, Vec<Participant>)]) -> Vec<Snippet> {
+    events
+        .iter()
+        .map(|(e, people)| {
+            let mut text = String::new();
+            if let Some(p) = &e.place {
+                text.push_str(&format!("At {p}. "));
+            }
+            if !people.is_empty() {
+                text.push_str("With ");
+                text.push_str(&people.iter().map(|p| p.person.display_name.as_str()).collect::<Vec<_>>().join(", "));
+                text.push('.');
+            }
+            if format_date(e.start_ms) != format_date(e.end_ms) {
+                text.push_str(&format!(" Until {}.", format_date(e.end_ms)));
+            }
+            Snippet {
+                title: e.title.clone(),
+                url: format!("verdure://event/{}", e.id),
+                domain: if e.app.is_empty() { "Calendar".to_string() } else { app_label(&e.app).to_string() },
+                date: Some(format_date(e.start_ms)),
+                text: text.trim().to_string(),
+            }
         })
         .collect()
 }
@@ -736,6 +1204,8 @@ pub(crate) fn app_label(app: &str) -> &str {
         "com.snapchat.android" => "Snapchat",
         "com.twitter.android" => "X",
         "sms" | "com.google.android.apps.messaging" => "Messages",
+        "com.google.android.calendar" | "calendar" => "Calendar",
+        "photos" | "com.google.android.apps.photos" => "Photos",
         other => other,
     }
 }
@@ -769,7 +1239,7 @@ pub(crate) fn to_unix_ms(y: i64, m: i64, d: i64, hh: i64, mm: i64, ss: i64) -> i
     (days * 86_400 + hh * 3600 + mm * 60 + ss) * 1000
 }
 
-/// Parse a WhatsApp "Export chat" text file into items — the one-time,
+/// Parse a WhatsApp "Export chat" text file into messages — the one-time,
 /// user-driven way to give Verdure a conversation's past (knowledge/25).
 ///
 /// Handles the Android form (`12/05/2026, 21:41 - Tunde: hi`), the iOS form
@@ -782,7 +1252,7 @@ pub(crate) fn to_unix_ms(y: i64, m: i64, d: i64, hh: i64, mm: i64, ss: i64) -> i
 /// Dates: exports carry no timezone and the day/month order follows the
 /// phone's locale. A day above 12 anywhere in the file settles the order for
 /// the whole file; otherwise day-first is assumed (`[OQ-99]`).
-pub(crate) fn parse_whatsapp_export(text: &str, thread_title: &str, me: &str) -> Vec<NewItem> {
+pub(crate) fn parse_whatsapp_export(text: &str, thread_title: &str, me: &str) -> Vec<NewMessage> {
     let header = Regex::new(
         r"^\[?(?P<a>\d{1,2})/(?P<b>\d{1,2})/(?P<y>\d{2,4}),?\s+(?P<h>\d{1,2}):(?P<mi>\d{2})(?::(?P<s>\d{2}))?\s?(?P<ap>[AaPp][Mm])?\]?\s?-?\s?(?P<rest>.*)$",
     )
@@ -812,7 +1282,7 @@ pub(crate) fn parse_whatsapp_export(text: &str, thread_title: &str, me: &str) ->
     let is_group = senders.len() > 1;
     let month_first = month_first && !day_first;
     let thread_key = format!("export:{}", thread_title.trim().to_lowercase());
-    let mut items: Vec<NewItem> = Vec::new();
+    let mut items: Vec<NewMessage> = Vec::new();
     for raw in text.lines() {
         let line = raw.trim_start_matches('\u{200e}');
         let Some(c) = header.captures(line) else {
@@ -848,7 +1318,7 @@ pub(crate) fn parse_whatsapp_export(text: &str, thread_title: &str, me: &str) ->
             };
         }
         let mine = who == me;
-        items.push(NewItem {
+        items.push(NewMessage {
             source: source::CHAT_EXPORT.to_string(),
             app: "com.whatsapp".to_string(),
             thread_key: thread_key.clone(),
@@ -868,8 +1338,8 @@ pub(crate) fn parse_whatsapp_export(text: &str, thread_title: &str, me: &str) ->
 mod tests {
     use super::*;
 
-    fn msg(app: &str, thread: &str, sender: &str, at_ms: i64, text: &str) -> NewItem {
-        NewItem {
+    fn msg(app: &str, thread: &str, sender: &str, at_ms: i64, text: &str) -> NewMessage {
+        NewMessage {
             source: source::NOTIFICATION.to_string(),
             app: app.to_string(),
             thread_key: thread.to_lowercase(),
@@ -880,6 +1350,18 @@ mod tests {
             direction: if sender.is_empty() { Direction::Out } else { Direction::In },
             at_ms,
             text: text.to_string(),
+        }
+    }
+
+    fn calendar(title: &str, start_ms: i64, end_ms: i64, place: Option<&str>, key: &str) -> NewEvent {
+        NewEvent {
+            title: title.to_string(),
+            start_ms,
+            end_ms,
+            place: place.map(str::to_string),
+            origin: Origin::Given,
+            app: "com.google.android.calendar".to_string(),
+            source_key: key.to_string(),
         }
     }
 
@@ -907,6 +1389,7 @@ mod tests {
         let v: i64 = s.conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
         assert_eq!(v, 1);
         assert!(s.search("anything", None, 5).unwrap().is_empty());
+        assert!(s.events_in_range(0, i64::MAX, 5).unwrap().is_empty());
     }
 
     #[test]
@@ -917,7 +1400,7 @@ mod tests {
         // A notification update re-posts the same message: not stored again.
         assert_eq!(s.ingest(&m).unwrap(), Ingest::Duplicate);
         // The same words at a different time ARE a new message.
-        let later = NewItem { at_ms: 5_000, ..m.clone() };
+        let later = NewMessage { at_ms: 5_000, ..m.clone() };
         assert!(matches!(s.ingest(&later).unwrap(), Ingest::Inserted(_)));
         assert_eq!(s.counts().unwrap()[0].items, 2);
     }
@@ -928,6 +1411,7 @@ mod tests {
         let tunde = one(s.find_person("Tunde").unwrap());
         let last = s.last_from(tunde.id, 1).unwrap();
         assert_eq!(last[0].text, "See you Friday then");
+        assert_eq!(last[0].kind, "message");
         // The user's own replies are not "what Tunde said".
         assert!(s.last_from(tunde.id, 10).unwrap().iter().all(|i| i.direction == "in"));
         assert_eq!(tunde.items, 2);
@@ -966,9 +1450,13 @@ mod tests {
         s.ingest(&msg("sms", "+234111", "Ada Obi", 3_000, "sms")).unwrap();
         assert_eq!(s.people().unwrap().len(), 2);
         let full = one(s.find_person("Ada Obi").unwrap());
+        // Participation follows the merge too.
+        let ev = s.upsert_event(&calendar("Lunch", 10_000, 11_000, None, "ev-1")).unwrap();
+        s.add_participant(ev, full.id, Role::Invited, source::CALENDAR).unwrap();
         s.merge_people(ada.id, full.id).unwrap();
         assert_eq!(s.people().unwrap().len(), 1);
         assert_eq!(s.last_from(ada.id, 10).unwrap().len(), 3);
+        assert_eq!(s.events_with(ada.id, 5).unwrap().len(), 1);
         // After the merge the SMS key is this person's too: new SMS lands on it.
         s.ingest(&msg("sms", "+234111", "Ada Obi", 4_000, "again")).unwrap();
         assert_eq!(s.last_from(ada.id, 10).unwrap().len(), 4);
@@ -982,6 +1470,144 @@ mod tests {
         let tunde = one(s.find_person("Tunde").unwrap());
         let his = s.in_range(0, 10_000, Some(tunde.id), 10).unwrap();
         assert_eq!(his.len(), 2);
+    }
+
+    #[test]
+    fn every_kind_shares_one_timeline() {
+        let mut s = seeded();
+        let tunde = one(s.find_person("Tunde").unwrap());
+        let call = NewObservation {
+            kind: Kind::Call,
+            source: source::CALL_LOG.to_string(),
+            app: "com.google.android.dialer".to_string(),
+            source_key: "call-77".to_string(),
+            at_ms: 3_500,
+            text: "Missed call".to_string(),
+            person_id: Some(tunde.id),
+            place: None,
+            event_id: None,
+        };
+        assert!(matches!(s.record(&call).unwrap(), Ingest::Inserted(_)));
+        assert_eq!(s.record(&call).unwrap(), Ingest::Duplicate, "a rescan of the call log stores nothing");
+        let photo = NewObservation {
+            kind: Kind::Photo,
+            source: source::PHOTOS.to_string(),
+            app: "photos".to_string(),
+            source_key: "media-123".to_string(),
+            at_ms: 4_500,
+            text: String::new(),
+            person_id: None,
+            place: Some("The Wheatbaker".to_string()),
+            event_id: None,
+        };
+        s.record(&photo).unwrap();
+        // One query, every kind, in time order.
+        let all = s.in_range(3_000, 5_000, None, 10).unwrap();
+        assert_eq!(all.iter().map(|o| o.kind).collect::<Vec<_>>(), ["photo", "message", "call", "message"]);
+        assert_eq!(all[0].place.as_deref(), Some("The Wheatbaker"));
+        // The call is "from Tunde" like a message is.
+        assert_eq!(s.last_from(tunde.id, 1).unwrap()[0].text, "See you Friday then");
+        assert!(s.last_from(tunde.id, 10).unwrap().iter().any(|o| o.kind == "call"));
+        // A photo with no words is still findable by where it was taken.
+        let hits = s.search("wheatbaker", None, 5).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].kind, "photo");
+        // The snippets describe each kind in words.
+        let snips = observations_as_snippets(&all);
+        assert_eq!(snips[0].title, "Photo at The Wheatbaker");
+        assert_eq!(snips[2].title, "Call with Tunde");
+        assert!(snips[0].url.starts_with("verdure://observation/"));
+        // Every kind is counted for transparency; threads only for messages.
+        let counts = s.counts().unwrap();
+        assert_eq!(counts.iter().find(|c| c.app == "photos").unwrap().threads, 0);
+    }
+
+    #[test]
+    fn events_link_people_to_a_time_and_a_place() {
+        let mut s = seeded();
+        let tunde = one(s.find_person("Tunde").unwrap());
+        let ada = one(s.find_person("Ada").unwrap());
+        let wedding = s
+            .upsert_event(&calendar("Tunde's wedding", 20_000, 30_000, Some("The Wheatbaker"), "cal-9"))
+            .unwrap();
+        s.add_participant(wedding, tunde.id, Role::Organiser, source::CALENDAR).unwrap();
+        s.add_participant(wedding, ada.id, Role::Invited, source::CALENDAR).unwrap();
+        // A second read of the calendar updates, never duplicates.
+        let again = s
+            .upsert_event(&calendar("Tunde's wedding (moved)", 21_000, 30_000, None, "cal-9"))
+            .unwrap();
+        assert_eq!(again, wedding);
+        let on_the_day = s.events_in_range(25_000, 26_000, 5).unwrap();
+        assert_eq!(on_the_day.len(), 1);
+        assert_eq!(on_the_day[0].title, "Tunde's wedding (moved)");
+        assert_eq!(on_the_day[0].start_ms, 21_000);
+        assert_eq!(on_the_day[0].place.as_deref(), Some("The Wheatbaker"), "a missing place on re-read keeps the old one");
+        assert!(s.events_in_range(31_000, 40_000, 5).unwrap().is_empty());
+        // Who was there, and what each person was at.
+        let people = s.people_at(wedding).unwrap();
+        assert_eq!(people.iter().map(|p| (p.person.display_name.as_str(), p.role.as_str())).collect::<Vec<_>>(),
+                   [("Ada", "invited"), ("Tunde", "organiser")]);
+        assert_eq!(s.events_with(ada.id, 5).unwrap()[0].id, wedding);
+        assert_eq!(s.events_titled("wedding", 5).unwrap().len(), 1);
+        assert!(s.events_titled("the of", 5).unwrap().is_empty());
+        // A message tied to the event shows up under it.
+        let said = s.last_from(tunde.id, 1).unwrap()[0].id;
+        s.attach_to_event(said, wedding).unwrap();
+        assert_eq!(s.at_event(wedding, 5).unwrap()[0].text, "See you Friday then");
+        // The prompt sees the event in words.
+        let snips = events_as_snippets(&[(on_the_day[0].clone(), people)]);
+        assert_eq!(snips[0].domain, "Calendar");
+        assert_eq!(snips[0].text, "At The Wheatbaker. With Ada, Tunde.");
+        assert_eq!(snips[0].url, format!("verdure://event/{wedding}"));
+    }
+
+    #[test]
+    fn an_inferred_event_dedupes_on_its_title_and_start() {
+        let mut s = Store::open_in_memory().unwrap();
+        let inferred = NewEvent {
+            title: "Dinner at Ada's".to_string(),
+            start_ms: 1_000,
+            end_ms: 2_000,
+            place: Some("Ada's".to_string()),
+            origin: Origin::Inferred,
+            app: String::new(),
+            source_key: String::new(),
+        };
+        let a = s.upsert_event(&inferred).unwrap();
+        let b = s.upsert_event(&NewEvent { title: "dinner at ADA'S".to_string(), ..inferred.clone() }).unwrap();
+        assert_eq!(a, b);
+        let c = s.upsert_event(&NewEvent { start_ms: 9_000, ..inferred.clone() }).unwrap();
+        assert_ne!(a, c);
+        assert_eq!(s.events_in_range(0, 10_000, 5).unwrap()[0].origin, "inferred");
+    }
+
+    #[test]
+    fn deleting_an_event_forgets_who_was_there_but_not_the_people() {
+        let mut s = seeded();
+        let ada = one(s.find_person("Ada").unwrap());
+        let ev = s.upsert_event(&calendar("Lunch", 1_000, 2_000, None, "ev-2")).unwrap();
+        s.add_participant(ev, ada.id, Role::Attended, source::USER).unwrap();
+        let note_id = match s.record(&NewObservation {
+            kind: Kind::Note,
+            source: source::USER.to_string(),
+            app: "verdure".to_string(),
+            source_key: "n1".to_string(),
+            at_ms: 1_500,
+            text: "Ada paid".to_string(),
+            person_id: None,
+            place: None,
+            event_id: Some(ev),
+        }) {
+            Ok(Ingest::Inserted(id)) => id,
+            other => panic!("{other:?}"),
+        };
+        s.delete_event(ev).unwrap();
+        assert!(s.events_with(ada.id, 5).unwrap().is_empty());
+        assert_eq!(s.find_person("Ada").unwrap(), PersonMatch::One(ada));
+        // The note survives, unlinked.
+        let note = s.in_range(1_500, 1_501, None, 1).unwrap();
+        assert_eq!(note[0].id, note_id);
+        assert_eq!(note[0].event_id, None);
     }
 
     #[test]
@@ -1048,10 +1674,12 @@ mod tests {
         s.delete_person(ada.id).unwrap();
         assert_eq!(s.find_person("Ada").unwrap(), PersonMatch::None);
         assert!(s.search("visa", None, 5).unwrap().is_empty());
+        s.upsert_event(&calendar("Lunch", 1, 2, Some("Somewhere"), "x")).unwrap();
         s.delete_all().unwrap();
         assert!(s.threads(10).unwrap().is_empty());
         assert!(s.people().unwrap().is_empty());
         assert!(s.counts().unwrap().is_empty());
+        assert!(s.events_in_range(0, 10, 5).unwrap().is_empty());
     }
 
     #[test]
@@ -1072,10 +1700,10 @@ mod tests {
     }
 
     #[test]
-    fn items_become_sources_the_prompt_already_understands() {
+    fn observations_become_sources_the_prompt_already_understands() {
         let s = seeded();
         let hits = s.search("rent", None, 5).unwrap();
-        let snippets = items_as_snippets(&hits);
+        let snippets = observations_as_snippets(&hits);
         assert_eq!(snippets[0].domain, "WhatsApp");
         assert_eq!(snippets[0].title, "Tunde");
         assert_eq!(snippets[0].date.as_deref(), Some("1970-01-01"));

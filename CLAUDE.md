@@ -14,7 +14,7 @@ Verdure is a single private monorepo — surfaces over one brain:
 
 - `app/` — **the MVP: Verdure, one interface over local models** (Tauri v2 = Rust backend + Vite/TS web UI). Chat and live dictation run whisper.cpp and llama.cpp compiled in; it ships on macOS, iOS (TestFlight) and Android. Current state: `knowledge/21-handoff.md`. (The pre-pivot "porter" that installed separate OSS apps was removed 2026-10-20; the name survives only in identifiers, `[OQ-60]`.)
 - `packages/decider/` — **the matching brain as a shared package** (`@verdure/decider`): `tiers`, `modality`, `matrix` (`decide()`), `intent`, `recommend`. Imported by `website/` (the app's only use of it was removed with the pre-pivot screens, 2026-10-20). This is the single source of truth for recommendation logic.
-- `src/`, `tests/`, `Cargo.toml` — the **long-term** pure-Rust core + adapter seams (the multi-caller daemon, `knowledge/14-architecture.md`). *Not* the MVP; the porter grows toward it.
+- `crates/`, `Cargo.toml` (root workspace) — **the Verdure SDK: the long-term pure-Rust core, real since 2026-10-21** (`knowledge/26-sdk.md`). One runtime vendors embed (speech → transcript → schema-validated JSON, offline, vendor-controlled fallback), built as `knowledge/14`'s hexagon: `verdure-core` is pure, the I/O crates implement its ports, `verdure-ffi` is the one public surface, `verdure-cli` the developer tool. `cargo test --workspace` runs in seconds with no models; the engines are features. The app (`app/`) is a separate workspace that will migrate onto these crates.
 - `website/` — the Phase 0 recommendation website (Next.js + TypeScript), deployed at verdureai.com. The decider/funnel, exposed publicly; imports `@verdure/decider`.
 - `knowledge/` — the propositional knowledge base, **shared by both**. The website's recommendation engine is this knowledge operationalized in code.
 - `skills/` — procedural skills (how to work), shared by both.
@@ -49,7 +49,7 @@ Skills live in `skills/`. Each is a procedural file describing how to approach a
 
 Routing:
 
-- Writing or editing Rust code → `skills/architecture.md` + `skills/testing.md` + (`skills/refactoring.md` if touching existing code)
+- Writing or editing Rust code → `skills/architecture.md` + `skills/testing.md` + (`skills/refactoring.md` if touching existing code); SDK crates also `knowledge/26` (the rules for adding to the crates)
 - Writing or editing UI → `skills/design.md` + `skills/testing.md`
 - Writing any user-facing text (website copy, app text, emails, error messages) → `skills/copywriting.md` + `skills/design.md`
 - Updating knowledge files → `skills/documentation.md`

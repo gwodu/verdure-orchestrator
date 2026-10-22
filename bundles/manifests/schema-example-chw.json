@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "visit_date": { "type": ["string", "null"], "description": "ISO date if stated" },
+    "client_name": { "type": "string" },
+    "pregnant": { "type": "boolean" },
+    "weeks_pregnant": { "type": ["integer", "null"], "minimum": 0, "maximum": 45 },
+    "blood_pressure_systolic": { "type": ["integer", "null"], "minimum": 60, "maximum": 260 },
+    "blood_pressure_diastolic": { "type": ["integer", "null"], "minimum": 30, "maximum": 160 },
+    "danger_signs": { "type": "array", "items": { "enum": ["bleeding", "severe_headache", "blurred_vision", "fever", "convulsions", "swelling"] } },
+    "referred": { "type": "boolean" },
+    "notes": { "type": ["string", "null"] }
+  },
+  "required": ["client_name", "pregnant", "danger_signs", "referred"],
+  "additionalProperties": false
+}

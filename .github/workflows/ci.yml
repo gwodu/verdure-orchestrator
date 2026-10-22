@@ -47,9 +47,12 @@ concurrency:
 #                  decider change. (Pre-pivot this also ran `brew install --cask
 #                  buzz`; the app now runs models in-app, so that step is gone.)
 #
-# The long-term Rust core (src/) is a scaffold with a malformed manifest and
-# intentionally has NO job yet; it gets one when it becomes real
-# (skills/testing.md "add its CI job in the same change that adds the component").
+#   - sdk:         the Verdure SDK workspace at the repo root (crates/, knowledge/26):
+#                  the pure suite (`cargo test --workspace`, seconds, no models) and a
+#                  compile-check of the engine features, which builds llama.cpp and
+#                  whisper.cpp on the Linux runner. That check is the only place the
+#                  feature builds are verified: a second engine build does not fit the
+#                  founder's Mac ([OQ-112]). Linux = 1x billing.
 
 jobs:
   changes:
@@ -60,6 +63,7 @@ jobs:
       decider_web: ${{ steps.filter.outputs.decider_web }}
       porter: ${{ steps.filter.outputs.porter }}
       app_checks: ${{ steps.filter.outputs.app_checks }}
+      sdk: ${{ steps.filter.outputs.sdk }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -98,6 +102,12 @@ jobs:
               - 'app/scripts/**'
               - 'app/package.json'
               - '.github/workflows/**'
+            sdk:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'crates/**'
+              - 'bundles/**'
+              - '.github/workflows/ci.yml'
 
   decider-web:
     name: Decider + website
@@ -276,3 +286,47 @@ jobs:
       - name: Android compile check
         working-directory: app/src-tauri
         run: cargo check --target aarch64-linux-android
+
+  sdk:
+    name: SDK crates (Linux)
+    needs: changes
+    if: ${{ needs.changes.outputs.sdk == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: sdk-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: sdk-cargo-
+      - name: Build tools for the engines (cmake, clang)
+        run: sudo apt-get update -q && sudo apt-get install -y -q cmake clang
+      - name: The pure suite (no models)
+        run: cargo test --workspace --locked
+      - name: Formatting
+        run: cargo fmt --all --check
+      - name: Compile-check the engine features (llama.cpp + whisper.cpp)
+        # check-only: the C++ is compiled by the sys crates' build scripts, nothing
+        # is linked into a final binary. This is [OQ-112]'s answer until the app
+        # migrates onto these crates.
+        run: cargo check -p verdure-ffi --features llama,whisper --locked
+      - name: The developer CLI round-trips a licence and a manifest
+        run: |
+          set -euo pipefail
+          cargo build -q -p verdure-cli
+          V=target/debug/verdure
+          PUB=$($V license keygen --out "$RUNNER_TEMP/issuer.key" 2>/dev/null)
+          TOKEN=$($V license issue --key "$RUNNER_TEMP/issuer.key" --vendor ci --days 1)
+          $V license verify --public "$PUB" "$TOKEN" | grep -q '"vendor_id": "ci"'
+          cp bundles/manifests/example.json "$RUNNER_TEMP/m.json"
+          $V manifest sign --key "$RUNNER_TEMP/issuer.key" "$RUNNER_TEMP/m.json" >/dev/null
+          $V manifest verify --public "$PUB" "$RUNNER_TEMP/m.json"
+          $V recommend --manifest bundles/manifests/example.json --task chw --tier P1 --ram 2400 --disk 4000 | grep -q chw-forms-P1
+          $V grammar bundles/manifests/schema-example-chw.json | grep -q '^root ::='

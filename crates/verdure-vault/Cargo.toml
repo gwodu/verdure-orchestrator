@@ -1,0 +1,16 @@
+[package]
+name = "verdure-vault"
+description = "Encryption at rest for transcripts, indexes and caches; crypto-shred delete."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+verdure-core.workspace = true
+aes-gcm.workspace = true
+getrandom.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

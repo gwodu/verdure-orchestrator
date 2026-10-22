@@ -1,0 +1,38 @@
+[package]
+name = "verdure-ffi"
+description = "The Verdure SDK's public surface — one Rust API, generated bindings for every platform (UniFFI)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "verdure"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[features]
+default = []
+bindgen = ["uniffi/cli"]
+whisper = ["verdure-asr/whisper"]
+llama = ["verdure-llm/llama"]
+
+[dependencies]
+verdure-core.workspace = true
+verdure-grammar.workspace = true
+verdure-hw.workspace = true
+verdure-download.workspace = true
+verdure-vault.workspace = true
+verdure-rag.workspace = true
+verdure-asr.workspace = true
+verdure-llm.workspace = true
+uniffi.workspace = true
+thiserror.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

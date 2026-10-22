@@ -2,9 +2,41 @@
 
 Living record of features built across the Verdure monorepo — the **Verdure desktop app** (`app/`), the shared decider package (`packages/decider/`), the Phase 0 website (`website/`), and the long-term Rust core (`src/`, `tests/`). Newest first. The knowledge base (`knowledge/`) is the shared brain for all of them.
 
+## Verdure SDK (`crates/`) — one runtime, vendors' surfaces
+
+> Started 2026-10-21 from the founder's nine-vendor teardown and build spec (`knowledge/26`). The long-term Rust core, real: `verdure-core` pure, I/O crates behind its ports, `verdure-ffi` the public surface. Three users in every decision: the end user who never sees Verdure, the developer with an afternoon, the customer's compliance team.
+
+### 2026-10-21 — The SDK workspace: core, grammar, hw, download, vault, rag, asr/llm pure halves, UniFFI surface, CLI (`knowledge/26`)
+
+**What:** the root `src/` scaffold became a nine-crate workspace plus a CLI, green locally with no model on disk. `verdure-core`: `Policy` whose default is `06` as data; `02`'s tiers with a classifier; `Manifest`/`Bundle`/`resolve()` that walks a device's tier down and gives the vendor one sentence per bundle it passed over; offline Ed25519 licence tokens (`Issuer`/`Verifier`); the engine ports; `extract()` — schema in the prompt, JSON found in the reply, optional nulls stripped, validated, one repair retry with the violations as plain sentences. `verdure-grammar`: JSON Schema → GBNF with every declared property emitted in order and optional ones nullable, plus a validator over the same subset. `verdure-hw`: the app's measured probes per OS. `verdure-download`: the only socket — signed manifests, resumable range downloads hashed whole, atomic rename, cancellation that keeps the part file. `verdure-vault`: AES-256-GCM with the entry name authenticated, crypto-shred. `verdure-rag`: boundary-aware chunker, FTS5 BM25 + cosine over stored embeddings, reciprocal-rank fusion. `verdure-asr`/`verdure-llm`: the segmenter (now with timestamps), resampling, keyterms and whole-word replacements, non-speech cleanup; prompt framing for ChatML/no-think/Gemma and the context arithmetic — lifted from the app, with whisper.cpp and llama.cpp adapters behind features. `verdure-ffi`: `Verdure.start → capabilities → recommend → download → load → transcribe/chat/extract/index/query/delete`, with `ProgressListener`, `TokenSink` and `CloudFallback` as vendor-implemented callbacks. `verdure-cli`: `capabilities`, `license keygen/issue/verify`, `manifest check/sign/verify`, `recommend`, `grammar`.
+
+**What problem it solves:** the scribe, education and CHW vendors run speech → transcript → structured output in someone else's cloud; their users' devices (Windows, Android, older Macs, 4 GB phones) are where that fails. One embeddable runtime with one install line and the vendor's own schema is the product (`26`, Part 3).
+
+**Decisions recorded rather than slipped past (`26`, "Reconciliations"):** `02`'s tier names over the spec's; the memory rule `× 1.5 + 400` because the spec's `× 1.3 + 300` would have admitted the model the app measured (`memory.rs` tests the measurement); whisper.cpp first, sherpa-onnx second (`[OQ-107]`); the grammar sampler built but off (`[OQ-108]`); synchronous calls over `async fn`.
+
+**Simpler or more complex for the user?** For the end user, nothing visible; what reaches them is the vendor's app working offline. For the developer, the whole surface is one object with twelve methods and three callbacks, and every error names what to do. For the project, nine crates is more structure than one — justified by the three rules a flat crate cannot enforce: no socket outside `verdure-download`, no engine type above a port, one public surface.
+
+**User impact statement:** After this change, a vendor's engineer can verify a licence, read the device honestly, pick the bundle that fits, download it verified and resumable, and extract schema-valid JSON — with the engines the only piece not yet proven in a build.
+
+**Tests:** 84 across the workspace (core 27, grammar 14, hw 4, download 7 against an in-process HTTP server, vault 5, rag 6, asr 9, llm 7, ffi 5). CLI smoke-run on the Mac: keygen → issue → verify, manifest check/sign/verify, `recommend` refusing honestly on this 8 GB machine and picking the P1 bundle for a simulated phone, the CHW schema's grammar. **Not verified:** the `llama`/`whisper` feature builds (`[OQ-112]`), anything on a device, any gate (`[OQ-113]`).
+
 ## Verdure desktop app (`app/`) — unified interface (post-pivot)
 
 > Pivoted 2026-06-18 (`knowledge/18`) from "install separate apps" to **one interface that runs models in-app**, then to **Verdure as the personal AI** (`knowledge/20`). The "porter" naming in code/below is legacy; see `knowledge/21-handoff.md` for current state + next steps.
+
+### 2026-10-22 — The information map, and the store reshaped around events (`knowledge/27`, `25`)
+
+**What:** the founder asked for the inventory before the feed — "map out all the types of information we can get from the user's phone… mark things by events, and know that this person is associated with this event at this time." `knowledge/27` is that map: eleven sources, where each is reachable on Android vs iOS, its permission and trust cost, and when Verdure takes it. Five of them contribute people-and-time (messages, calendar, contacts, photos, location) and they decide the shape: **person, place, event, observation, participation.** `context.rs` was rewritten to it: one `observation` table for every kind (`message` / `call` / `photo` / `visit` / `note`) on one time axis, with the message-only columns (thread, sender, direction) null for the rest; `event` with an origin (`given` by a calendar, with the OS id so a re-read updates instead of duplicating; or `inferred`, deduped on title + start) and an optional place; `participation` (person × event × role × source); `place` (unique in normalised form). New lookups: `events_in_range`, `events_with`, `events_titled`, `people_at`, `at_event`, `record` (any non-message observation), `upsert_event`, `add_participant`, `attach_to_event`, `person_for`, `delete_event`; `events_as_snippets` renders an event for the prompt ("At The Wheatbaker. With Ada, Tunde."). Everything from 2026-10-21 (people, aliases, identities, merge, `find_person` with ambiguity, `last_from`, `in_range`, person-scoped FTS5, the export parser) is unchanged in behaviour.
+
+**What problem it solves:** the first store was shaped by its first source, a message table. Most of what a phone knows is not a message, and the questions that matter most ("when did I last see Ada", "what happened at the wedding", "what am I doing on the 25th") cut across sources. Reshaping now costs nothing — no device has the file; after the Pixel listener fills it, it would be a migration on a phone.
+
+**Decision recorded:** one observation table with a kind column over one table per kind (design-it-twice, `skills/architecture.md`): the time index, the search index, the event link and the deletes are written once; the cost is nullable columns on a message row. `25`'s "calendar is never copied" softened to "a thin row with the OS id; the OS stays the truth" because a participation link needs a stable row to point at. Contacts still live-only.
+
+**Simpler or more complex for the user?** Invisible today. It is what makes "whose birthday is coming up" and "events with Tunde" one query later instead of a feature per source.
+
+**User impact statement:** nothing visible yet; the foundation that the Pixel-first build (`21`, item 0) stands on.
+
+**Tests:** 24 in `context.rs` (6 new: one timeline across kinds with the photo found by its place; events link people to a time and a place with a re-read updating not duplicating; inferred events dedupe on title + start; deleting an event forgets participation but not people, and unlinks the note; participation follows a merge; `delete_all` clears events). Full app suite green, zero warnings.
 
 ### 2026-10-21 — Context store reworked: structured first, entity-centric (`knowledge/25`)
 
