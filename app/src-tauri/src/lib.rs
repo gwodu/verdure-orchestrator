@@ -12,6 +12,7 @@ mod device;
 mod live;
 mod llm;
 mod model;
+mod recall;
 mod transcribe;
 mod web;
 
@@ -43,6 +44,34 @@ struct ChatState(Mutex<Option<llm::ResidentModel>>);
 struct LiveHandle {
     stop: Arc<AtomicBool>,
     thread: JoinHandle<()>,
+}
+
+/// The personal context store (knowledge/25), opened on first use and kept
+/// open: one connection, serialised behind the lock, which is what a single
+/// user's phone wants. Lives at `app_data_dir()/context.sqlite`, beside the
+/// models — the folder the Android build excludes from cloud backup.
+#[derive(Default)]
+struct MemoryState(Mutex<Option<context::Store>>);
+
+/// Run `f` against the open store (opening it on first use).
+fn with_store<R: Runtime, T>(
+    app: &AppHandle<R>,
+    f: impl FnOnce(&mut context::Store, &std::path::Path) -> Result<T, String>,
+) -> Result<T, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| format!("couldn't create the app's data folder: {e}"))?;
+    let state = app.state::<MemoryState>();
+    let mut slot = state
+        .0
+        .lock()
+        .map_err(|_| "Verdure's memory is in a bad state — please restart Verdure.".to_string())?;
+    if slot.is_none() {
+        *slot = Some(context::Store::open(&data_dir.join(context::STORE_FILE))?);
+    }
+    f(slot.as_mut().expect("opened above"), &data_dir)
 }
 
 /// A LIVE snapshot of free resources (available RAM, free disk, low-power) — the
@@ -95,6 +124,7 @@ async fn chat<R: Runtime>(
     web_sources: Option<Vec<web::Snippet>>,
     web_unavailable: Option<web::UnavailableReason>,
     web_enabled: Option<bool>,
+    memory_label: Option<String>,
 ) -> Result<llm::ToolDecision, String> {
     let data_dir = app
         .path()
@@ -154,10 +184,15 @@ async fn chat<R: Runtime>(
         let resident = llm::ensure_resident(&mut slot, info, &path)?;
         // Fit the sources to THIS window (the relay sized them for it already;
         // this is the guarantee) and frame them for the model.
+        // `memory_label` marks the sources as the user's own records (recall.rs)
+        // rather than web results: same block, different heading (knowledge/25).
         let block = web_sources
             .filter(|s| !s.is_empty())
-            .map(|s| web::fit_snippets(s, web::snippet_budget_tokens(n_ctx), web::MAX_SOURCES))
-            .map(|s| web::sources_block(web_query.as_deref().unwrap_or(""), &s));
+            .map(|s| web::fit_snippets(s, web::snippet_budget_tokens(n_ctx), context::MAX_RECALL_SOURCES))
+            .map(|s| match &memory_label {
+                Some(label) => web::sources_block_under(&recall::sources_heading(label), &s, "these records or where they came from"),
+                None => web::sources_block(web_query.as_deref().unwrap_or(""), &s),
+            });
         let grounding = match (&block, web_unavailable) {
             (Some(b), _) => Some(llm::Grounding::Sources(b)),
             (None, Some(reason)) => Some(llm::Grounding::Unavailable(web::unavailable_note(reason))),
@@ -635,6 +670,210 @@ mod notices_tests {
     }
 }
 
+// ----- Verdure's memory: the personal context store (knowledge/25, 27) -------
+
+/// What "What Verdure knows" shows: how much is held, from which apps, the
+/// people and conversations, the next events, and whether the Android
+/// listener is on. Nothing here leaves the device.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryOverview {
+    counts: Vec<context::AppCount>,
+    people: Vec<context::Person>,
+    threads: Vec<context::ThreadSummary>,
+    events: Vec<context::Event>,
+    /// `on` / `off` (Android: notification access granted or not),
+    /// `unsupported` elsewhere.
+    listener: &'static str,
+    /// The apps the listener records (packages).
+    apps: Vec<String>,
+    /// Every app it could record, with its everyday name.
+    known_apps: Vec<(String, String)>,
+    /// What the last spool drain brought in.
+    drained: context::Drained,
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Bring in whatever the listener spooled, then describe what is held.
+#[tauri::command]
+fn memory_overview<R: Runtime>(app: AppHandle<R>) -> Result<MemoryOverview, String> {
+    with_store(&app, |store, dir| {
+        let drained = context::drain_spool(store, dir)?;
+        let now = now_ms();
+        Ok(MemoryOverview {
+            counts: store.counts()?,
+            people: store.people()?,
+            threads: store.threads(50)?,
+            events: store.events_in_range(now, now + 90 * 86_400_000, 10)?,
+            listener: listener_state(),
+            apps: context::read_apps(dir),
+            known_apps: context::DEFAULT_APPS.iter().map(|a| (a.to_string(), context::app_label(a).to_string())).collect(),
+            drained,
+        })
+    })
+}
+
+/// Answer a question from the store by rules (recall.rs), after draining the
+/// spool so the newest messages count. `tz_offset_min` is minutes east of
+/// UTC, so "today" is the user's today.
+#[tauri::command]
+fn memory_recall<R: Runtime>(app: AppHandle<R>, question: String, tz_offset_min: i32) -> Result<recall::Recall, String> {
+    with_store(&app, |store, dir| {
+        let _ = context::drain_spool(store, dir)?;
+        recall::recall(store, &question, recall::Clock { now_ms: now_ms(), tz_offset_min })
+    })
+}
+
+/// One conversation, oldest first — what a tapped source opens.
+#[tauri::command]
+fn memory_thread<R: Runtime>(app: AppHandle<R>, thread_id: i64) -> Result<Vec<context::Observation>, String> {
+    with_store(&app, |store, _| store.thread_items(thread_id, 200))
+}
+
+/// Forget a conversation, a person, an event, or everything (knowledge/25:
+/// visible and deletable).
+#[tauri::command]
+fn memory_forget<R: Runtime>(app: AppHandle<R>, what: String, id: i64) -> Result<(), String> {
+    with_store(&app, |store, dir| match what.as_str() {
+        "thread" => store.delete_thread(id),
+        "person" => store.delete_person(id),
+        "event" => store.delete_event(id),
+        "all" => {
+            // Anything spooled but not yet drained goes too.
+            let _ = std::fs::remove_file(dir.join(context::SPOOL_FILE));
+            let _ = std::fs::remove_file(dir.join(format!("{}.draining", context::SPOOL_FILE)));
+            store.delete_all()
+        }
+        other => Err(format!("nothing called {other:?} to forget")),
+    })
+}
+
+/// Import a WhatsApp "Export chat" file the user shared in. `me` is their
+/// own name as the export shows it; `title` the chat's name.
+#[tauri::command]
+fn memory_import_whatsapp<R: Runtime>(app: AppHandle<R>, text: String, title: String, me: String) -> Result<usize, String> {
+    with_store(&app, |store, _| {
+        let mut inserted = 0;
+        for m in context::parse_whatsapp_export(&text, &title, &me) {
+            if matches!(store.ingest(&m)?, context::Ingest::Inserted(_)) {
+                inserted += 1;
+            }
+        }
+        Ok(inserted)
+    })
+}
+
+/// The apps the listener records — the per-app opt-in (knowledge/25).
+#[tauri::command]
+fn memory_set_apps<R: Runtime>(app: AppHandle<R>, apps: Vec<String>) -> Result<(), String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    context::write_apps(&data_dir, &apps)
+}
+
+/// Android: open the system's notification-access screen, where the user
+/// grants (or revokes) Verdure's listener. The grant is the OS's, never ours.
+#[tauri::command]
+fn open_notification_access() -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        android_open_notification_access()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Err("Reading messages from notifications is an Android feature.".to_string())
+    }
+}
+
+/// Whether the listener is granted: Android reads the OS's own list.
+fn listener_state() -> &'static str {
+    #[cfg(target_os = "android")]
+    {
+        if android_listener_enabled() {
+            "on"
+        } else {
+            "off"
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        "unsupported"
+    }
+}
+
+/// Android: is Verdure in `Settings.Secure.enabled_notification_listeners`?
+/// Same JNI bridge as the storage and network probes (ownership: every
+/// JObject is a local ref for the duration of the attached call).
+#[cfg(target_os = "android")]
+fn android_listener_enabled() -> bool {
+    use jni::objects::{JObject, JValue};
+    let ctx = ndk_context::android_context();
+    // SAFETY: as in `android_free_up_space` — the VM pointer and the global
+    // Context ref were stored by initAudioContext for the life of the process.
+    let Ok(vm) = (unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }) else { return false };
+    let Ok(mut env) = vm.attach_current_thread() else { return false };
+    let context = unsafe { JObject::from_raw(ctx.context() as jni::sys::jobject) };
+    let probe = |env: &mut jni::JNIEnv| -> jni::errors::Result<bool> {
+        let pkg: jni::objects::JString = env.call_method(&context, "getPackageName", "()Ljava/lang/String;", &[])?.l()?.into();
+        let pkg: String = env.get_string(&pkg)?.into();
+        let resolver = env.call_method(&context, "getContentResolver", "()Landroid/content/ContentResolver;", &[])?.l()?;
+        let key: JObject = env.new_string("enabled_notification_listeners")?.into();
+        let listeners = env
+            .call_static_method(
+                "android/provider/Settings$Secure",
+                "getString",
+                "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;",
+                &[JValue::Object(&resolver), JValue::Object(&key)],
+            )?
+            .l()?;
+        if listeners.is_null() {
+            return Ok(false);
+        }
+        let listeners: String = env.get_string(&listeners.into())?.into();
+        Ok(listeners.split(':').any(|c| c.starts_with(&format!("{pkg}/"))))
+    };
+    match probe(&mut *env) {
+        Ok(v) => v,
+        Err(_) => {
+            let _ = env.exception_clear();
+            false
+        }
+    }
+}
+
+/// Android: `startActivity(Intent(ACTION_NOTIFICATION_LISTENER_SETTINGS))`.
+#[cfg(target_os = "android")]
+fn android_open_notification_access() -> Result<(), String> {
+    use jni::objects::{JObject, JValue};
+    let friendly = "Couldn't open the notification settings. Look for \"Notification access\" in your phone's Settings.";
+    let ctx = ndk_context::android_context();
+    // SAFETY: see `android_listener_enabled`.
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.map_err(|_| friendly.to_string())?;
+    let mut env = vm.attach_current_thread().map_err(|_| friendly.to_string())?;
+    let context = unsafe { JObject::from_raw(ctx.context() as jni::sys::jobject) };
+    let open = |env: &mut jni::JNIEnv| -> jni::errors::Result<()> {
+        let action: JObject = env.new_string("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")?.into();
+        let intent = env.new_object("android/content/Intent", "(Ljava/lang/String;)V", &[JValue::Object(&action)])?;
+        // FLAG_ACTIVITY_NEW_TASK: we start from the Application context.
+        env.call_method(&intent, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(0x1000_0000)])?;
+        env.call_method(&context, "startActivity", "(Landroid/content/Intent;)V", &[JValue::Object(&intent)])?;
+        Ok(())
+    };
+    open(&mut *env).map_err(|_| {
+        let _ = env.exception_clear();
+        friendly.to_string()
+    })
+}
+
 /// Every command the UI can call, in ONE place. `run()` registers it and the
 /// integration test builds the real app with it, so a command can't be live in
 /// the app but missing from the test (the test's own copy had drifted, missing
@@ -655,7 +894,14 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         open_storage_settings,
         network_state,
         prepare_web_query,
-        web_search
+        web_search,
+        memory_overview,
+        memory_recall,
+        memory_thread,
+        memory_forget,
+        memory_import_whatsapp,
+        memory_set_apps,
+        open_notification_access
     ]
 }
 
@@ -679,6 +925,7 @@ pub fn run() {
     builder
         .manage(LiveState::default())
         .manage(ChatState::default())
+        .manage(MemoryState::default())
         .invoke_handler(handlers())
         .run(build_context())
         .expect("error while running the Verdure porter");
@@ -705,6 +952,7 @@ mod command_tests {
         builder
             .manage(super::LiveState::default())
             .manage(super::ChatState::default())
+            .manage(super::MemoryState::default())
             .invoke_handler(super::handlers())
             .build(super::build_context())
             .expect("the app builds with the real config + both commands registered")

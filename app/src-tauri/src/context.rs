@@ -1097,6 +1097,11 @@ const STOPWORDS: &[&str] = &[
     "coming", "soon", "recently", "last", "again", "just", "know", "think", "like", "get", "got", "yes", "no",
 ];
 
+/// Whether a word carries no meaning worth searching for.
+pub(crate) fn is_stopword(w: &str) -> bool {
+    STOPWORDS.contains(&w)
+}
+
 /// The content words of a question: lower-cased, stopwords and one-letter
 /// fragments dropped, each once.
 fn content_words(question: &str) -> Vec<String> {
@@ -1334,9 +1339,167 @@ pub(crate) fn parse_whatsapp_export(text: &str, thread_title: &str, me: &str) ->
     items
 }
 
+// ----- the spool: how the Android listener hands messages in ----------------
+//
+// The Kotlin `NotificationListenerService` (knowledge/25, `[OQ-100]`) never
+// calls native code: a background service that crashed inside Rust would take
+// the listener down with it, and loading the engine library in a service that
+// only needs to append a line is waste. It appends one JSON line per message
+// to `context.spool` in the app's private folder; the app drains that file
+// into the store whenever it runs. Rename-then-read makes the hand-off atomic:
+// the service appends to a fresh file while the app reads the renamed one.
+
+/// The spool file's name, beside `context.sqlite`.
+pub(crate) const SPOOL_FILE: &str = "context.spool";
+/// The per-app opt-in list the listener reads: one package per line. Absent
+/// means "the well-known messaging apps" (see `DEFAULT_APPS`).
+pub(crate) const APPS_FILE: &str = "context.apps";
+/// The store's own file name.
+pub(crate) const STORE_FILE: &str = "context.sqlite";
+/// How many recalled records may reach the model at once (knowledge/25:
+/// few and exact — more than the web's five is fine because each is ~25
+/// tokens, but never more than eight).
+pub(crate) const MAX_RECALL_SOURCES: usize = 8;
+
+/// Messaging apps recorded by default once the listener is on. Mirrored in the
+/// Kotlin service (`patch-android-project.py`), which must agree.
+pub(crate) const DEFAULT_APPS: &[&str] = &[
+    "com.whatsapp",
+    "com.whatsapp.w4b",
+    "org.telegram.messenger",
+    "com.facebook.orca",
+    "com.instagram.android",
+    "com.google.android.apps.messaging",
+    "com.snapchat.android",
+];
+
+/// One line of the spool, exactly as the Kotlin service writes it.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SpoolLine {
+    app: String,
+    thread_key: String,
+    #[serde(default)]
+    thread_title: String,
+    #[serde(default)]
+    is_group: bool,
+    #[serde(default)]
+    sender: String,
+    #[serde(default)]
+    sender_key: String,
+    #[serde(default)]
+    out: bool,
+    at_ms: i64,
+    text: String,
+}
+
+/// What a drain did: how many new messages landed, and how many lines were
+/// unreadable (a partial last line from a service killed mid-write is normal).
+#[derive(Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Drained {
+    pub inserted: usize,
+    pub duplicates: usize,
+    pub unreadable: usize,
+}
+
+/// Move whatever the listener has spooled in `dir` into the store. Safe to
+/// call any time; a drain interrupted by a crash is finished on the next call.
+pub(crate) fn drain_spool(store: &mut Store, dir: &Path) -> Result<Drained, String> {
+    let spool = dir.join(SPOOL_FILE);
+    let draining = dir.join(format!("{SPOOL_FILE}.draining"));
+    let mut out = Drained::default();
+    // A previous drain that didn't finish: read it first.
+    if !draining.exists() {
+        if !spool.exists() {
+            return Ok(out);
+        }
+        std::fs::rename(&spool, &draining).map_err(|e| format!("couldn't pick up new messages: {e}"))?;
+    }
+    let text = std::fs::read_to_string(&draining).map_err(|e| format!("couldn't read new messages: {e}"))?;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(l) = serde_json::from_str::<SpoolLine>(line) else {
+            out.unreadable += 1;
+            continue;
+        };
+        let m = NewMessage {
+            source: source::NOTIFICATION.to_string(),
+            app: l.app,
+            thread_key: l.thread_key,
+            thread_title: l.thread_title,
+            is_group: l.is_group,
+            sender: if l.out { String::new() } else { l.sender },
+            sender_key: if l.out { String::new() } else { l.sender_key },
+            direction: if l.out { Direction::Out } else { Direction::In },
+            at_ms: l.at_ms,
+            text: l.text,
+        };
+        match store.ingest(&m)? {
+            Ingest::Inserted(_) => out.inserted += 1,
+            Ingest::Duplicate => out.duplicates += 1,
+        }
+    }
+    std::fs::remove_file(&draining).map_err(|e| format!("couldn't clear the message hand-off: {e}"))?;
+    // Not the spool's job, but the right moment: a store that just grew may
+    // have a partial drain on disk from a crash mid-rename — already handled.
+    Ok(out)
+}
+
+/// The apps the listener records, as the user set them (or the default).
+pub(crate) fn read_apps(dir: &Path) -> Vec<String> {
+    match std::fs::read_to_string(dir.join(APPS_FILE)) {
+        Ok(text) => text.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect(),
+        Err(_) => DEFAULT_APPS.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+/// Set the apps the listener records. Written whole, so the service never
+/// reads a half-written list.
+pub(crate) fn write_apps(dir: &Path, apps: &[String]) -> Result<(), String> {
+    let tmp = dir.join(format!("{APPS_FILE}.tmp"));
+    let body = apps.iter().map(|a| a.trim()).filter(|a| !a.is_empty()).collect::<Vec<_>>().join("\n") + "\n";
+    std::fs::write(&tmp, body).map_err(|e| format!("couldn't save the app list: {e}"))?;
+    std::fs::rename(&tmp, dir.join(APPS_FILE)).map_err(|e| format!("couldn't save the app list: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_spool_is_drained_once_and_survives_a_bad_line() {
+        let dir = std::env::temp_dir().join(format!("verdure-spool-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let line = |t: i64, text: &str, out: bool| {
+            format!(
+                "{{\"app\":\"com.whatsapp\",\"threadKey\":\"shortcut-1\",\"threadTitle\":\"Tunde\",\"isGroup\":false,\"sender\":\"Tunde\",\"senderKey\":\"tel:+234\",\"out\":{out},\"atMs\":{t},\"text\":\"{text}\"}}\n"
+            )
+        };
+        let mut body = line(1_000, "hello", false) + &line(2_000, "hi back", true) + &line(1_000, "hello", false);
+        body.push_str("{\"app\":\"com.whatsapp\",\"thre"); // the service was killed mid-write
+        std::fs::write(dir.join(SPOOL_FILE), body).unwrap();
+        let mut s = Store::open_in_memory().unwrap();
+        let d = drain_spool(&mut s, &dir).unwrap();
+        assert_eq!(d, Drained { inserted: 2, duplicates: 1, unreadable: 1 });
+        assert!(!dir.join(SPOOL_FILE).exists() && !dir.join("context.spool.draining").exists(), "the hand-off is cleared");
+        // Nothing to do is not an error; draining again stores nothing.
+        assert_eq!(drain_spool(&mut s, &dir).unwrap(), Drained::default());
+        let tunde = match s.find_person("Tunde").unwrap() {
+            PersonMatch::One(p) => p,
+            o => panic!("{o:?}"),
+        };
+        assert_eq!(s.last_from(tunde.id, 5).unwrap()[0].text, "hello");
+        assert_eq!(s.threads(5).unwrap()[0].items, 2, "the user's own reply is in the thread");
+        // The apps list: default until written, then exactly what was written.
+        assert_eq!(read_apps(&dir).len(), DEFAULT_APPS.len());
+        write_apps(&dir, &["com.whatsapp".to_string(), " ".to_string()]).unwrap();
+        assert_eq!(read_apps(&dir), ["com.whatsapp"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn msg(app: &str, thread: &str, sender: &str, at_ms: i64, text: &str) -> NewMessage {
         NewMessage {

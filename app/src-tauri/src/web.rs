@@ -165,7 +165,14 @@ pub(crate) fn fit_snippets(snippets: Vec<Snippet>, budget_tokens: u32, max_count
 /// with the question for a small model's attention (see `llm::SYSTEM`'s note).
 /// Citations are plain `[n]`; the UI turns them into the source list.
 pub(crate) fn sources_block(query: &str, snippets: &[Snippet]) -> String {
-    let mut b = format!("Web search results for \"{query}\" (just now):\n");
+    sources_block_under(&format!("Web search results for \"{query}\" (just now):"), snippets, "the search or the results")
+}
+
+/// The same block under any heading — the personal context store hands the
+/// model its records through this too (knowledge/25), so the citation rules
+/// are taught once. `about` names what the model must not mention.
+pub(crate) fn sources_block_under(heading: &str, snippets: &[Snippet], about: &str) -> String {
+    let mut b = format!("{heading}\n");
     for (i, s) in snippets.iter().enumerate() {
         b.push_str(&format!("[{}] {}", i + 1, s.domain));
         if let Some(d) = s.date.as_deref().filter(|d| !d.is_empty()) {
@@ -177,14 +184,14 @@ pub(crate) fn sources_block(query: &str, snippets: &[Snippet]) -> String {
     // the claim, the sentence reads whole without it, and a number is never a
     // noun. `testflight-16` wrote "[1] and [3] confirm that…", which is what
     // this rules out. One example beats three rules for a small model.
-    b.push_str(
+    b.push_str(&format!(
         "Answer the question below in plain sentences that read on their own. \
          When a sentence uses a fact from a result, put that result's number in square brackets at the end of the sentence, \
          like a footnote: The rate closed at 1,480 naira to the dollar on Monday [1]. \
          Never start a sentence with a number or write \"[1] says\" — the numbers are footnotes, not names. \
-         Don't mention the search or the results, and don't add headings like \"Final answer\". \
-         If the results don't answer it, say so briefly, then answer from what you know.",
-    );
+         Don't mention {about}, and don't add headings like \"Final answer\". \
+         If the results don't answer it, say so briefly, then answer from what you know."
+    ));
     b
 }
 
@@ -310,7 +317,87 @@ pub(crate) fn network_state() -> NetState {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+/// Android answers through `ConnectivityManager` over JNI (the same
+/// process-global `ndk_context` that the mic and storage bridges use — see
+/// lib.rs `initAudioContext`). Needs `ACCESS_NETWORK_STATE` in the manifest
+/// (a normal permission, no prompt; declared by `patch-android-project.py`);
+/// without it the call throws, the exception is cleared, and the answer is
+/// `Unknown` — which the gate treats like cellular, i.e. it asks (knowledge/24).
+/// Ownership at this boundary: every JObject is a local reference owned by
+/// the JVM for the duration of the attached call; nothing is retained.
+#[cfg(target_os = "android")]
+pub(crate) fn network_state() -> NetState {
+    let ctx = ndk_context::android_context();
+    // SAFETY: `ctx.vm()` is the process's JavaVM pointer, stored by
+    // initAudioContext at launch and valid for the life of the process.
+    let Ok(vm) = (unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }) else {
+        return NetState::Unknown;
+    };
+    let Ok(mut env) = vm.attach_current_thread() else {
+        return NetState::Unknown;
+    };
+    // SAFETY: the Application context stored by initAudioContext is a global
+    // ref, alive for the whole process; we never delete it through this handle.
+    let context = unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
+    match android_probe(&mut env, &context) {
+        Ok(state) => state,
+        Err(_) => {
+            // A pending Java exception (SecurityException without the
+            // permission, say) must be cleared or it poisons the JVM bridge.
+            let _ = env.exception_clear();
+            NetState::Unknown
+        }
+    }
+}
+
+/// The JNI calls for `network_state`, separated so a thrown Java exception
+/// unwinds to one place that clears it.
+#[cfg(target_os = "android")]
+fn android_probe(env: &mut jni::JNIEnv, context: &jni::objects::JObject) -> jni::errors::Result<NetState> {
+    use jni::objects::{JObject, JValue};
+    // android.net.NetworkCapabilities constants (stable public API values).
+    const TRANSPORT_CELLULAR: i32 = 0;
+    const TRANSPORT_WIFI: i32 = 1;
+    const TRANSPORT_ETHERNET: i32 = 3;
+    const NET_CAPABILITY_INTERNET: i32 = 12;
+    const NET_CAPABILITY_VALIDATED: i32 = 16;
+
+    let name: JObject = env.new_string("connectivity")?.into();
+    let cm = env
+        .call_method(context, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", &[JValue::Object(&name)])?
+        .l()?;
+    if cm.is_null() {
+        return Ok(NetState::Unknown);
+    }
+    let network = env.call_method(&cm, "getActiveNetwork", "()Landroid/net/Network;", &[])?.l()?;
+    if network.is_null() {
+        return Ok(NetState::Offline);
+    }
+    let caps = env
+        .call_method(
+            &cm,
+            "getNetworkCapabilities",
+            "(Landroid/net/Network;)Landroid/net/NetworkCapabilities;",
+            &[JValue::Object(&network)],
+        )?
+        .l()?;
+    if caps.is_null() {
+        return Ok(NetState::Offline);
+    }
+    let mut has = |method: &str, arg: i32| -> jni::errors::Result<bool> {
+        env.call_method(&caps, method, "(I)Z", &[JValue::Int(arg)])?.z()
+    };
+    let internet = has("hasCapability", NET_CAPABILITY_INTERNET)?;
+    // VALIDATED is Android's own "this network actually reaches the internet"
+    // (false behind a captive portal) — the equivalent of Apple's
+    // "connection required" being clear.
+    let validated = has("hasCapability", NET_CAPABILITY_VALIDATED)?;
+    let cellular = has("hasTransport", TRANSPORT_CELLULAR)?;
+    let unmetered = has("hasTransport", TRANSPORT_WIFI)? || has("hasTransport", TRANSPORT_ETHERNET)?;
+    Ok(net_state_from(internet, !validated, cellular && !unmetered))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
 pub(crate) fn network_state() -> NetState {
     NetState::Unknown
 }

@@ -151,3 +151,193 @@ if "RECORD_AUDIO" not in kt:
     kt = kt[:idx] + helper + kt[idx:]
     activity.write_text(kt)
     print(f"patched {activity}")
+
+# 3. Manifest: ACCESS_NETWORK_STATE — a normal permission (no prompt) that the
+#    web search's Wi-Fi-only rule needs to read ConnectivityManager (web.rs
+#    `network_state`). Without it the probe throws, the answer is "unknown",
+#    and every search asks about mobile data (knowledge/24).
+xml = manifest.read_text()
+if "ACCESS_NETWORK_STATE" not in xml:
+    xml = xml.replace(
+        "<application",
+        '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <application',
+        1,
+    )
+    manifest.write_text(xml)
+    print(f"patched {manifest}: ACCESS_NETWORK_STATE")
+
+# 4. Keep Verdure's memory off Google's servers (knowledge/25, "the rule most
+#    likely to be broken silently"). Android auto backup copies an app's data
+#    root to Google Drive; `context.sqlite` (and SQLite's -wal/-shm sidecars)
+#    live at that root (Tauri's app_data_dir on Android is `Context.dataDir`),
+#    so they are excluded by name in both rule formats: fullBackupContent for
+#    Android 11 and below, dataExtractionRules for 12 and up. Models are not
+#    excluded — the per-app backup quota (25 MB) already keeps them out.
+res_xml = manifest.parent / "res" / "xml"
+res_xml.mkdir(parents=True, exist_ok=True)
+STORE_FILES = [
+    "context.sqlite", "context.sqlite-wal", "context.sqlite-shm", "context.sqlite-journal",
+    # The listener's hand-off file and the per-app opt-in list (context.rs).
+    "context.spool", "context.spool.draining", "context.apps",
+]
+excludes = "".join(f'    <exclude domain="root" path="{f}" />\n' for f in STORE_FILES)
+(res_xml / "backup_rules.xml").write_text(
+    '<?xml version="1.0" encoding="utf-8"?>\n<full-backup-content>\n' + excludes + "</full-backup-content>\n"
+)
+(res_xml / "data_extraction_rules.xml").write_text(
+    '<?xml version="1.0" encoding="utf-8"?>\n<data-extraction-rules>\n'
+    "  <cloud-backup>\n" + excludes + "  </cloud-backup>\n"
+    "  <device-transfer>\n" + excludes + "  </device-transfer>\n"
+    "</data-extraction-rules>\n"
+)
+xml = manifest.read_text()
+if 'android:allowBackup="false"' not in xml:
+    for attr, value in (
+        ("android:fullBackupContent", "@xml/backup_rules"),
+        ("android:dataExtractionRules", "@xml/data_extraction_rules"),
+    ):
+        present = re.search(rf'{re.escape(attr)}="([^"]*)"', xml)
+        if present is None:
+            xml = xml.replace("<application", f'<application\n        {attr}="{value}"', 1)
+        else:
+            assert present.group(1) == value, (
+                f"the manifest already sets {attr}={present.group(1)!r}; refusing to "
+                "guess which backup rules win. Reconcile them in this script."
+            )
+    manifest.write_text(xml)
+    print(f"patched {manifest}: backup rules exclude {STORE_FILES}")
+
+# Prove it on the manifest as written, not on the string we meant to write.
+after = manifest.read_text()
+assert "android.permission.ACCESS_NETWORK_STATE" in after, "ACCESS_NETWORK_STATE missing after patching"
+assert 'android:allowBackup="false"' in after or (
+    'android:fullBackupContent="@xml/backup_rules"' in after
+    and 'android:dataExtractionRules="@xml/data_extraction_rules"' in after
+), f"backup rules missing after patching:\n{after}"
+for name in ("backup_rules.xml", "data_extraction_rules.xml"):
+    text = (res_xml / name).read_text()
+    assert all(f in text for f in STORE_FILES), f"{name} does not exclude every store file"
+
+# 5. The notification listener (knowledge/25, [OQ-100]): a small Kotlin service
+#    that reads MessagingStyle conversations from the apps the user opted into
+#    and appends one JSON line per message to `context.spool` in the app's
+#    private folder. It never calls native code — a background service that
+#    crashed inside Rust would take the listener down with it — so the app
+#    drains the spool into the store when it runs (context.rs `drain_spool`).
+#    The JSON field names are the contract with `SpoolLine` in context.rs, and
+#    DEFAULT_APPS mirrors `context::DEFAULT_APPS`; change both together.
+#    Declared with BIND_NOTIFICATION_LISTENER_SERVICE so only the system can
+#    bind it, and with the "conversations" default filter (Android 13+) so it
+#    is never even offered non-conversation notifications.
+listener = activity.parent / "VerdureListener.kt"
+listener.write_text(
+    """package ai.verdure.porter
+
+import android.app.Notification
+import android.app.Person
+import android.os.Build
+import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
+import org.json.JSONObject
+import java.io.File
+
+/**
+ * Verdure's memory feed (knowledge/25): the structured conversation each
+ * messaging app posts as a notification, written as JSON lines to a spool
+ * file in the app's private folder. Nothing leaves the device; the app reads
+ * the spool into its store. Per-app opt-in via `context.apps` (one package
+ * per line; absent = the defaults below). Never auto-replies, never acts.
+ */
+class VerdureListener : NotificationListenerService() {
+  private val defaultApps = setOf(
+    "com.whatsapp", "com.whatsapp.w4b", "org.telegram.messenger", "com.facebook.orca",
+    "com.instagram.android", "com.google.android.apps.messaging", "com.snapchat.android",
+  )
+
+  override fun onNotificationPosted(sbn: StatusBarNotification) {
+    try {
+      record(sbn)
+    } catch (t: Throwable) {
+      // A malformed notification must never take the listener down.
+    }
+  }
+
+  private fun allowed(pkg: String): Boolean {
+    val f = File(dataDir, "context.apps")
+    if (!f.exists()) return pkg in defaultApps
+    return f.readLines().map { it.trim() }.any { it == pkg }
+  }
+
+  private fun record(sbn: StatusBarNotification) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+    val n = sbn.notification ?: return
+    if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
+    if (!allowed(sbn.packageName)) return
+    val extras = n.extras ?: return
+    @Suppress("DEPRECATION")
+    val raw = extras.getParcelableArray(Notification.EXTRA_MESSAGES) ?: return
+    val messages = Notification.MessagingStyle.Message.getMessagesFromBundleArray(raw)
+    if (messages.isEmpty()) return
+    val isGroup = extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
+    val title = (extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
+      ?: extras.getCharSequence(Notification.EXTRA_TITLE) ?: "").toString()
+    @Suppress("DEPRECATION")
+    val self = extras.getParcelable<Person>(Notification.EXTRA_MESSAGING_PERSON)
+    val threadKey = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) n.shortcutId else null)
+      ?: sbn.tag ?: title.lowercase()
+    val lines = StringBuilder()
+    for (m in messages) {
+      val text = m.text?.toString()?.trim() ?: continue
+      if (text.isEmpty()) continue
+      val who = m.senderPerson
+      // MessagingStyle marks the user's own messages with a null sender, or
+      // with the style's own user Person.
+      val mine = who == null ||
+        (self != null && ((who.key != null && who.key == self.key) || who.name == self.name))
+      val o = JSONObject()
+      o.put("app", sbn.packageName)
+      o.put("threadKey", threadKey)
+      o.put("threadTitle", title)
+      o.put("isGroup", isGroup)
+      o.put("sender", if (mine) "" else (who?.name?.toString() ?: ""))
+      o.put("senderKey", if (mine) "" else (who?.key ?: who?.uri ?: who?.name?.toString() ?: ""))
+      o.put("out", mine)
+      o.put("atMs", m.timestamp)
+      o.put("text", text)
+      lines.append(o.toString()).append('\\n')
+    }
+    if (lines.isEmpty()) return
+    File(dataDir, "context.spool").appendText(lines.toString())
+  }
+}
+"""
+)
+print(f"wrote {listener}")
+
+xml = manifest.read_text()
+if "VerdureListener" not in xml:
+    service = (
+        '        <service\n'
+        '            android:name=".VerdureListener"\n'
+        '            android:exported="true"\n'
+        '            android:label="Verdure"\n'
+        '            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">\n'
+        '            <intent-filter>\n'
+        '                <action android:name="android.service.notification.NotificationListenerService" />\n'
+        '            </intent-filter>\n'
+        '            <meta-data\n'
+        '                android:name="android.service.notification.default_filter_types"\n'
+        '                android:value="conversations" />\n'
+        '        </service>\n'
+        '    </application>'
+    )
+    assert xml.count("</application>") == 1, "unexpected manifest layout (application close tag)"
+    xml = xml.replace("    </application>", service, 1) if "    </application>" in xml else xml.replace("</application>", service, 1)
+    manifest.write_text(xml)
+    print(f"patched {manifest}: VerdureListener service")
+
+after = manifest.read_text()
+assert 'android:name=".VerdureListener"' in after and "BIND_NOTIFICATION_LISTENER_SERVICE" in after, (
+    f"listener service missing after patching:\\n{after}"
+)
+assert listener.is_file() and "class VerdureListener" in listener.read_text()

@@ -80,6 +80,9 @@ export type WebContext = {
   query: string;
   sources: Snippet[];
   unavailable: UnavailableReason | null;
+  /** Set when the sources are the user's own records (knowledge/25) rather
+   *  than web results: what was looked up, for the footer and the prompt. */
+  memoryLabel?: string | null;
 };
 
 /**
@@ -148,6 +151,7 @@ export async function chatSend(
       webSources: web?.sources ?? null,
       webUnavailable: web?.unavailable ?? null,
       webEnabled,
+      memoryLabel: web?.memoryLabel ?? null,
     });
   } finally {
     unlisten();
@@ -438,4 +442,168 @@ export async function openThirdPartyNotices(): Promise<void> {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("open_third_party_notices");
+}
+
+// --- Verdure's memory: the personal context store (knowledge/25, 27) ---------
+//
+// Mechanism only, like the web functions above: what is stored, what is
+// recalled, what is forgotten. Nothing here leaves the device.
+
+export type MemoryPerson = { id: number; displayName: string; items: number };
+export type MemoryThread = {
+  id: number;
+  app: string;
+  title: string;
+  isGroup: boolean;
+  lastAtMs: number;
+  items: number;
+  lastText: string;
+};
+export type MemoryEvent = {
+  id: number;
+  title: string;
+  startMs: number;
+  endMs: number;
+  place: string | null;
+  origin: string;
+  app: string;
+};
+export type MemoryCount = { app: string; items: number; threads: number };
+export type MemoryObservation = {
+  id: number;
+  kind: string;
+  app: string;
+  atMs: number;
+  text: string;
+  threadId: number | null;
+  threadTitle: string;
+  sender: string;
+  senderPersonId: number | null;
+  direction: "in" | "out";
+  place: string | null;
+  eventId: number | null;
+};
+export type MemoryOverview = {
+  counts: MemoryCount[];
+  people: MemoryPerson[];
+  threads: MemoryThread[];
+  events: MemoryEvent[];
+  /** Android: whether notification access is granted. Elsewhere: unsupported. */
+  listener: "on" | "off" | "unsupported";
+  apps: string[];
+  knownApps: [string, string][];
+  drained: { inserted: number; duplicates: number; unreadable: number };
+};
+/** What recall found (recall.rs): nothing for the store, a direct answer, records
+ *  for the model, or a name that matched several people. */
+export type Recall = {
+  kind: "none" | "direct" | "sources" | "ambiguous";
+  label: string;
+  direct: string | null;
+  sources: Snippet[];
+  ambiguous: MemoryPerson[];
+};
+
+const PREVIEW_PEOPLE: MemoryPerson[] = [
+  { id: 1, displayName: "Tunde", items: 12 },
+  { id: 2, displayName: "Ada", items: 7 },
+];
+
+/** Everything held, after bringing in whatever the listener spooled. */
+export async function memoryOverview(): Promise<MemoryOverview> {
+  if (!inTauri) {
+    const day = 86_400_000;
+    return {
+      counts: [
+        { app: "com.whatsapp", items: 19, threads: 2 },
+        { app: "org.telegram.messenger", items: 7, threads: 1 },
+      ],
+      people: PREVIEW_PEOPLE,
+      threads: [
+        { id: 1, app: "com.whatsapp", title: "Tunde", isGroup: false, lastAtMs: Date.now() - day, items: 12, lastText: "See you Friday then" },
+        { id: 2, app: "org.telegram.messenger", title: "Ada", isGroup: false, lastAtMs: Date.now() - 3 * day, items: 7, lastText: "Happy to help with the visa forms" },
+        { id: 3, app: "com.whatsapp", title: "Flatmates", isGroup: true, lastAtMs: Date.now() - 9 * day, items: 7, lastText: "Rent is due on the 5th" },
+      ],
+      events: [{ id: 1, title: "Lunch with Ada", startMs: Date.now() + 3 * day, endMs: Date.now() + 3 * day + 7_200_000, place: "The Wheatbaker", origin: "given", app: "calendar" }],
+      listener: "off",
+      apps: ["com.whatsapp", "org.telegram.messenger"],
+      knownApps: [["com.whatsapp", "WhatsApp"], ["org.telegram.messenger", "Telegram"], ["com.google.android.apps.messaging", "Messages"]],
+      drained: { inserted: 0, duplicates: 0, unreadable: 0 },
+    };
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<MemoryOverview>("memory_overview");
+}
+
+/** Answer `question` from the store by rules, in the device's local time. */
+export async function memoryRecall(question: string): Promise<Recall> {
+  if (!inTauri) {
+    await new Promise((r) => setTimeout(r, 150));
+    if (/jackson/i.test(question)) {
+      return { kind: "ambiguous", label: "Jackson", direct: null, sources: [], ambiguous: [{ id: 3, displayName: "Jackson Lee", items: 4 }, { id: 4, displayName: "Jackson Okoro", items: 2 }] };
+    }
+    if (/last thing tunde/i.test(question)) {
+      return {
+        kind: "direct",
+        label: "The last thing Tunde said",
+        direct: "The last thing Tunde said was on 21 October 2026, WhatsApp: “See you Friday then”",
+        sources: [{ title: "Tunde", url: "verdure://thread/1", domain: "WhatsApp", date: "2026-10-21", text: "See you Friday then" }],
+        ambiguous: [],
+      };
+    }
+    if (/rent/i.test(question)) {
+      return {
+        kind: "sources",
+        label: "Tunde's messages about rent",
+        direct: null,
+        sources: [{ title: "Tunde", url: "verdure://thread/1", domain: "WhatsApp", date: "2026-10-12", text: "Rent is due on the 5th, landlord wants 1.2m" }],
+        ambiguous: [],
+      };
+    }
+    return { kind: "none", label: "", direct: null, sources: [], ambiguous: [] };
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<Recall>("memory_recall", { question, tzOffsetMin: -new Date().getTimezoneOffset() });
+}
+
+/** One conversation, oldest first. */
+export async function memoryThread(threadId: number): Promise<MemoryObservation[]> {
+  if (!inTauri) {
+    const base = { kind: "message", app: "com.whatsapp", threadId, threadTitle: "Tunde", senderPersonId: 1, place: null, eventId: null };
+    return [
+      { ...base, id: 1, atMs: Date.now() - 9 * 86_400_000, text: "Rent is due on the 5th, landlord wants 1.2m", sender: "Tunde", direction: "in" },
+      { ...base, id: 2, atMs: Date.now() - 9 * 86_400_000 + 60_000, text: "Ok I'll send my half on Friday", sender: "", direction: "out", senderPersonId: null },
+      { ...base, id: 3, atMs: Date.now() - 86_400_000, text: "See you Friday then", sender: "Tunde", direction: "in" },
+    ];
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<MemoryObservation[]>("memory_thread", { threadId });
+}
+
+/** Forget a conversation, a person, an event, or everything. */
+export async function memoryForget(what: "thread" | "person" | "event" | "all", id = 0): Promise<void> {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("memory_forget", { what, id });
+}
+
+/** Import a WhatsApp "Export chat" text file. Resolves to how many messages were new. */
+export async function memoryImportWhatsapp(text: string, title: string, me: string): Promise<number> {
+  if (!inTauri) return text.split("\n").filter((l) => /^\[?\d{1,2}\/\d{1,2}\/\d{2,4}/.test(l)).length;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<number>("memory_import_whatsapp", { text, title, me });
+}
+
+/** The apps the listener records. */
+export async function memorySetApps(apps: string[]): Promise<void> {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("memory_set_apps", { apps });
+}
+
+/** Android: open the OS screen where notification access is granted. */
+export async function openNotificationAccess(): Promise<void> {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("open_notification_access");
 }

@@ -23,7 +23,16 @@ import {
   openUrl,
   prepareWebQuery,
   webSearch,
+  memoryOverview,
+  memoryRecall,
+  memoryThread,
+  memoryForget,
+  memoryImportWhatsapp,
+  memorySetApps,
+  openNotificationAccess,
   type ChatModelPlan,
+  type MemoryOverview,
+  type Recall,
   type WebContext,
 } from "./bridge";
 
@@ -448,7 +457,12 @@ function renderChat(): void {
   };
   paintWeb();
   root.appendChild(
-    brandBar([modelBtn, webBtn, iconButton(ICON_STORAGE, "Storage & your computer", renderStorage)]),
+    brandBar([
+      modelBtn,
+      webBtn,
+      iconButton(ICON_MEMORY, "What Verdure knows", () => void renderMemory()),
+      iconButton(ICON_STORAGE, "Storage & your computer", renderStorage),
+    ]),
   );
 
   const panel = el("section", "panel");
@@ -704,7 +718,7 @@ function renderChat(): void {
                 if (!src) return;
                 sup.setAttribute("role", "link");
                 sup.title = src.domain;
-                sup.addEventListener("click", () => void openUrl(src.url).catch(() => {}));
+                sup.addEventListener("click", () => void openSource(src.url));
               });
               node.appendChild(sourcesFooter(text, web));
             }
@@ -733,7 +747,9 @@ function renderChat(): void {
       box.appendChild(el("span", "badge", why));
       return box;
     }
-    box.appendChild(el("span", "sources-query", `Searched the web for “${web.query}”`));
+    box.appendChild(
+      el("span", "sources-query", web.memoryLabel ? `From your phone — ${web.memoryLabel}` : `Searched the web for “${web.query}”`),
+    );
     const used = citedSources(reply, web.sources.length);
     const list = el("ol", "sources-list");
     web.sources.forEach((s, i) => {
@@ -741,8 +757,10 @@ function renderChat(): void {
       li.setAttribute("role", "link");
       li.title = s.url;
       li.appendChild(el("span", "source-domain", s.domain));
-      li.appendChild(el("span", "source-title", s.title));
-      li.addEventListener("click", () => void openUrl(s.url).catch(() => {}));
+      // A record's day in the user's words ("21 Oct"), not the store's ISO date.
+      const day = s.date && web.memoryLabel ? whenShort(Date.parse(`${s.date}T12:00:00Z`)) : "";
+      li.appendChild(el("span", "source-title", day ? `${s.title} · ${day}` : s.title));
+      li.addEventListener("click", () => void openSource(s.url));
       list.appendChild(li);
     });
     box.appendChild(list);
@@ -908,12 +926,48 @@ function renderChat(): void {
     }
   };
 
-  const submit = async () => {
-    const text = input.value.trim();
-    if (!text || busy) return;
-    input.value = "";
-    examples.remove(); // empty-state examples make way for the conversation
-    addMsg("user", text);
+  // Two people share the name the user typed: ask which, never guess
+  // (knowledge/25). The chosen full name replaces the word and the question
+  // runs again.
+  const askWhich = (text: string, r: Recall) => {
+    const card = el("div", "msg ai web-offer");
+    card.appendChild(el("p", "", `Which ${capitalise(r.label)} do you mean?`));
+    const row = el("div", "web-row");
+    for (const p of r.ambiguous) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "update-choice";
+      b.textContent = p.displayName;
+      b.addEventListener("click", () => {
+        card.remove();
+        void ask(text.replace(new RegExp(r.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), p.displayName));
+      });
+      row.appendChild(b);
+    }
+    card.appendChild(row);
+    thread.appendChild(card);
+    thread.scrollTop = thread.scrollHeight;
+  };
+
+  // Answer `text`: first from what the phone has seen (knowledge/25 — rules,
+  // no model, for a pure lookup; a few exact records for the model otherwise),
+  // then the web if it applies, then the model alone.
+  const ask = async (text: string) => {
+    const r = await memoryRecall(text).catch((): Recall | null => null);
+    if (r?.kind === "ambiguous") {
+      askWhich(text, r);
+      return;
+    }
+    if (r?.kind === "direct" && r.direct) {
+      // A lookup: shown as-is, with the records under it. No model ran.
+      addMsg("ai", r.direct, { query: r.label, sources: r.sources, unavailable: null, memoryLabel: r.label });
+      history.push({ user: text, assistant: r.direct });
+      return;
+    }
+    if (r?.kind === "sources" && r.sources.length) {
+      await runChat(text, { query: r.label, sources: r.sources, unavailable: null, memoryLabel: r.label });
+      return;
+    }
     // With web search on, a question that plainly needs fresh facts is searched
     // before the model is asked (its own words, scrubbed); everything else is
     // the model's call through its SEARCH: line (knowledge/24).
@@ -922,6 +976,15 @@ function renderChat(): void {
       return;
     }
     await runChat(text);
+  };
+
+  const submit = async () => {
+    const text = input.value.trim();
+    if (!text || busy) return;
+    input.value = "";
+    examples.remove(); // empty-state examples make way for the conversation
+    addMsg("user", text);
+    await ask(text);
   };
 
   send.addEventListener("click", () => void submit());
@@ -934,6 +997,317 @@ function renderChat(): void {
   input.focus();
 }
 
+
+// --- What Verdure knows (knowledge/25, 27) ------------------------------------
+// The transparency page a powerful permission requires: what is held, from
+// which apps, who and which conversations — and a way to forget any of it.
+// Nothing here leaves the device, and the page says so in one sentence.
+
+/** The app's everyday name from its package (mirrors context.rs `app_label`). */
+function appName(pkg: string): string {
+  return (
+    {
+      "com.whatsapp": "WhatsApp",
+      "com.whatsapp.w4b": "WhatsApp Business",
+      "com.instagram.android": "Instagram",
+      "org.telegram.messenger": "Telegram",
+      "com.facebook.orca": "Messenger",
+      "com.snapchat.android": "Snapchat",
+      "com.google.android.apps.messaging": "Messages",
+      sms: "Messages",
+      calendar: "Calendar",
+      "com.google.android.calendar": "Calendar",
+      photos: "Photos",
+    }[pkg] ?? pkg
+  );
+}
+
+/** "21 Oct" / "21 Oct 2025" — the day, in the user's locale. */
+function whenShort(ms: number): string {
+  const d = new Date(ms);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }) });
+}
+
+function capitalise(s: string): string {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
+
+/** A tapped source: Verdure's own links open in-app (a conversation, in a
+ *  sheet over the chat); anything else is a web page for the browser. */
+async function openSource(url: string): Promise<void> {
+  const m = /^verdure:\/\/thread\/(\d+)$/.exec(url);
+  if (m) {
+    await openThreadSheet(Number(m[1]));
+    return;
+  }
+  if (url.startsWith("verdure://")) return; // an event or a single record: nothing more to show yet
+  await openUrl(url).catch(() => {});
+}
+
+/** A conversation, oldest first, over whatever screen is showing. */
+async function openThreadSheet(threadId: number): Promise<void> {
+  const sheet = el("div", "sheet");
+  const body = el("div", "sheet-body");
+  const head = el("div", "sheet-head");
+  const title = el("span", "sheet-title", "Conversation");
+  head.appendChild(title);
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "update-choice";
+  close.textContent = "Close";
+  close.addEventListener("click", () => sheet.remove());
+  head.appendChild(close);
+  body.appendChild(head);
+  const list = el("div", "sheet-thread");
+  body.appendChild(list);
+  sheet.appendChild(body);
+  sheet.addEventListener("click", (e) => {
+    if (e.target === sheet) sheet.remove();
+  });
+  document.body.appendChild(sheet);
+  try {
+    const items = await memoryThread(threadId);
+    if (items.length) title.textContent = `${items[0].threadTitle} · ${appName(items[0].app)}`;
+    for (const o of items) {
+      const m = el("div", o.direction === "out" ? "msg user" : "msg ai", o.text);
+      m.appendChild(el("span", "msg-when", `${o.direction === "out" ? "You" : o.sender} · ${whenShort(o.atMs)}`));
+      list.appendChild(m);
+    }
+    if (!items.length) list.appendChild(el("p", "subtitle", "Nothing here any more."));
+    body.scrollTop = body.scrollHeight;
+  } catch (err) {
+    list.appendChild(el("p", "subtitle", friendlyError(err)));
+  }
+}
+
+async function renderMemory(): Promise<void> {
+  clearDrop();
+  root.innerHTML = "";
+  root.appendChild(brandBar());
+  root.appendChild(backButton(renderChat));
+
+  const panel = el("section", "panel");
+  panel.appendChild(el("h1", "title", "What Verdure knows"));
+  panel.appendChild(
+    el(
+      "p",
+      "subtitle",
+      "Messages and events Verdure has seen on this phone, so it can answer questions like “what did Tunde say about the rent?”. Everything stays on this device — nothing is sent anywhere — and you can forget any of it here.",
+    ),
+  );
+  const status = el("p", "status");
+  const box = el("div", "memory");
+  panel.appendChild(box);
+  panel.appendChild(status);
+  root.appendChild(panel);
+
+  const paint = (o: MemoryOverview) => {
+    box.innerHTML = "";
+
+    // 1. The feed: Android's notification access, in the OS's own hands.
+    const feed = el("div", "updates-box");
+    feed.appendChild(el("h2", "section-title", "Read my messages"));
+    if (o.listener === "unsupported") {
+      feed.appendChild(
+        el("p", "memory-status", "Reading messages as they arrive is an Android feature. On this device you can share a WhatsApp chat export below instead."),
+      );
+    } else {
+      const line = el("p", "memory-status");
+      line.innerHTML =
+        o.listener === "on"
+          ? "<strong>On.</strong> New messages from the apps below are remembered as they arrive."
+          : "<strong>Off.</strong> Allow Verdure “notification access” in your phone’s settings, and messages from the apps you choose are remembered as they arrive — on this phone only.";
+      feed.appendChild(line);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "update-choice" + (o.listener === "on" ? "" : " preferred");
+      btn.textContent = o.listener === "on" ? "Change in phone settings" : "Turn on in phone settings";
+      btn.addEventListener("click", () => void openNotificationAccess().catch((err) => (status.textContent = friendlyError(err))));
+      feed.appendChild(btn);
+      // Per-app opt-in: the user chooses which apps are read.
+      feed.appendChild(el("p", "memory-status", "Apps to remember messages from:"));
+      const checks = el("div", "check-list");
+      const chosen = new Set(o.apps);
+      for (const [pkg, label] of o.knownApps) {
+        const c = document.createElement("button");
+        c.type = "button";
+        c.className = "check-row" + (chosen.has(pkg) ? " selected" : "");
+        c.setAttribute("aria-pressed", String(chosen.has(pkg)));
+        c.textContent = label;
+        c.addEventListener("click", async () => {
+          if (chosen.has(pkg)) chosen.delete(pkg);
+          else chosen.add(pkg);
+          c.classList.toggle("selected", chosen.has(pkg));
+          c.setAttribute("aria-pressed", String(chosen.has(pkg)));
+          await memorySetApps([...chosen]).catch((err) => (status.textContent = friendlyError(err)));
+        });
+        checks.appendChild(c);
+      }
+      feed.appendChild(checks);
+    }
+    box.appendChild(feed);
+
+    // 2. What is held, per app — the honest number.
+    const held = el("div", "updates-box");
+    held.appendChild(el("h2", "section-title", "What's remembered"));
+    if (!o.counts.length) {
+      held.appendChild(el("p", "model-empty", "Nothing yet."));
+    } else {
+      for (const c of o.counts) {
+        held.appendChild(
+          el("p", "memory-status", `${appName(c.app)}: ${c.items} message${c.items === 1 ? "" : "s"}${c.threads ? ` in ${c.threads} conversation${c.threads === 1 ? "" : "s"}` : ""}`),
+        );
+      }
+    }
+    box.appendChild(held);
+
+    const forgetRow = (label: string, meta: string, onOpen: (() => void) | null, onForget: () => Promise<void>) => {
+      const row = el("div", "model-row memory-row");
+      const info = el("div", "model-info");
+      info.appendChild(el("span", "model-name", label));
+      info.appendChild(el("span", "model-meta", meta));
+      if (onOpen) info.addEventListener("click", onOpen);
+      row.appendChild(info);
+      const forget = document.createElement("button");
+      forget.className = "link-danger";
+      forget.type = "button";
+      forget.textContent = "Forget";
+      forget.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        forget.disabled = true;
+        forget.textContent = "Forgetting…";
+        try {
+          await onForget();
+        } catch (err) {
+          status.textContent = friendlyError(err);
+        }
+        paint(await memoryOverview());
+      });
+      row.appendChild(forget);
+      return row;
+    };
+
+    // 3. Conversations: tap to read, Forget to drop.
+    if (o.threads.length) {
+      const conv = el("div", "updates-box");
+      conv.appendChild(el("h2", "section-title", "Conversations"));
+      const list = el("div", "model-list");
+      for (const t of o.threads) {
+        list.appendChild(
+          forgetRow(
+            `${t.title}${t.isGroup ? " (group)" : ""} · ${appName(t.app)}`,
+            `${whenShort(t.lastAtMs)} · ${t.lastText}`,
+            () => void openThreadSheet(t.id),
+            () => memoryForget("thread", t.id),
+          ),
+        );
+      }
+      conv.appendChild(list);
+      box.appendChild(conv);
+    }
+
+    // 4. People.
+    if (o.people.length) {
+      const ppl = el("div", "updates-box");
+      ppl.appendChild(el("h2", "section-title", "People"));
+      const list = el("div", "model-list");
+      for (const p of o.people) {
+        list.appendChild(forgetRow(p.displayName, `${p.items} message${p.items === 1 ? "" : "s"}`, null, () => memoryForget("person", p.id)));
+      }
+      ppl.appendChild(list);
+      box.appendChild(ppl);
+    }
+
+    // 5. Coming up.
+    if (o.events.length) {
+      const ev = el("div", "updates-box");
+      ev.appendChild(el("h2", "section-title", "Coming up"));
+      const list = el("div", "model-list");
+      for (const e of o.events) {
+        list.appendChild(forgetRow(e.title, `${whenShort(e.startMs)}${e.place ? ` · ${e.place}` : ""}`, null, () => memoryForget("event", e.id)));
+      }
+      ev.appendChild(list);
+      box.appendChild(ev);
+    }
+
+    // 6. Bring in a chat's past: WhatsApp's "Export chat" file.
+    const imp = el("div", "updates-box");
+    imp.appendChild(el("h2", "section-title", "Add a chat's history"));
+    imp.appendChild(
+      el(
+        "p",
+        "memory-status",
+        "In WhatsApp, open a chat › ⋮ › More › Export chat › Without media, and save the file here. Verdure reads it on this phone; the same file twice adds nothing.",
+      ),
+    );
+    const form = el("div", "memory-import");
+    const title = document.createElement("input");
+    title.type = "text";
+    title.placeholder = "Who the chat is with (as WhatsApp names it)";
+    const me = document.createElement("input");
+    me.type = "text";
+    me.placeholder = "Your own name, as it appears in the export";
+    const file = document.createElement("input");
+    file.type = "file";
+    file.accept = ".txt,text/plain";
+    const go = document.createElement("button");
+    go.type = "button";
+    go.className = "update-choice preferred";
+    go.textContent = "Add this chat";
+    go.addEventListener("click", async () => {
+      const f = file.files?.[0];
+      if (!f || !title.value.trim() || !me.value.trim()) {
+        status.textContent = "Choose the export file and fill in both names first.";
+        return;
+      }
+      go.disabled = true;
+      go.textContent = "Adding…";
+      try {
+        const n = await memoryImportWhatsapp(await f.text(), title.value.trim(), me.value.trim());
+        status.textContent = n ? `Added ${n} message${n === 1 ? "" : "s"} from ${title.value.trim()}.` : "Nothing new in that file.";
+        paint(await memoryOverview());
+      } catch (err) {
+        status.textContent = friendlyError(err);
+      } finally {
+        go.disabled = false;
+        go.textContent = "Add this chat";
+      }
+    });
+    form.appendChild(title);
+    form.appendChild(me);
+    form.appendChild(file);
+    form.appendChild(go);
+    imp.appendChild(form);
+    box.appendChild(imp);
+
+    // 7. The exit.
+    if (o.counts.length) {
+      const all = document.createElement("button");
+      all.type = "button";
+      all.className = "link-danger";
+      all.textContent = "Forget everything";
+      all.addEventListener("click", async () => {
+        all.disabled = true;
+        try {
+          await memoryForget("all");
+        } catch (err) {
+          status.textContent = friendlyError(err);
+        }
+        paint(await memoryOverview());
+      });
+      box.appendChild(all);
+    }
+  };
+
+  try {
+    const o = await memoryOverview();
+    paint(o);
+    if (o.drained.inserted) status.textContent = `${o.drained.inserted} new message${o.drained.inserted === 1 ? "" : "s"} since last time.`;
+  } catch (err) {
+    box.appendChild(el("p", "subtitle", friendlyError(err)));
+  }
+}
 
 // --- small DOM helpers ------------------------------------------------------
 function backButton(onClick: () => void): HTMLElement {
@@ -966,6 +1340,9 @@ const ICON_MIC =
 // Globe — the web search switch in the chat bar.
 const ICON_GLOBE =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>';
+// Book-open — "what Verdure knows": the memory page.
+const ICON_MEMORY =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>';
 // Hard-drive — reads as "storage / what's on your computer" more clearly than a gear.
 const ICON_STORAGE =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>';

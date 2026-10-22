@@ -48,7 +48,7 @@ Every sentence is a checkable claim, and this table is where each is enforced:
 Decided with the founder 2026-10-20:
 
 - **Wi-Fi only by default.** A search is a few KB (the response is hard-capped at 20 KB on the phone and trimmed to ~2–4 KB by the relay), which at any African data price is under a hundredth of a cent — but a default should spend nothing on someone's plan.
-- **On mobile data** (or when the platform can't tell — Android today, `[OQ-94]`), Verdure asks once, in the moment: *"You're not on Wi-Fi, and web search is set to Wi-Fi only. Allow it on mobile data too? A search uses very little."* The answer is a setting (Storage → Web search), not a per-search nag. **No byte counts in the copy** — "5 KB" is jargon to the floor user.
+- **On mobile data** (or when the platform can't tell), Verdure asks once, in the moment: *"You're not on Wi-Fi, and web search is set to Wi-Fi only. Allow it on mobile data too? A search uses very little."* The answer is a setting (Storage → Web search), not a per-search nag. **No byte counts in the copy** — "5 KB" is jargon to the floor user.
 - **Offline**, the model is **told** the check couldn't happen (`web.rs::unavailable_note`, placed in the prompt), so it answers from memory and says it wasn't checked, instead of pretending or failing. The answer carries a visible badge saying the same.
 
 The rule is `app/src/web.ts::searchGate(mode, net)` — pure, unit-tested — over `web.rs::network_state()` (SCNetworkReachability via the `system-configuration` crate on iOS/macOS; `IS_WWAN` is cellular).
@@ -93,5 +93,5 @@ Assuming 15 active days a month, 2–5 searches per active day, 40% of users ena
 - `[OQ-91]` The relay is an open endpoint spending our credit: add abuse protection (Vercel WAF rate limiting or a per-IP bucket), confirm Vercel's log-retention figures in the dashboard, and plan the own-relay + OHTTP step that turns "keeps no record" from policy into construction.
 - `[OQ-92]` Measure recall on Nigerian/Kenyan/Ghanaian/South African queries and the grounded-answer quality on P1 models with a fixed eval set (ties to `[OQ-74]`); decide whether a model-written query rewrite beats the user's own scrubbed words.
 - `[OQ-93]` Cross-border transfer compliance (NDPA, Kenya DPA, Act 843, POPIA, GDPR): consent wording, a DPA/ZDR with the provider, registration thresholds. Local counsel.
-- `[OQ-94]` Android reports `Unknown` network state (asks every time on cellular until "any" is chosen); macOS on a phone hotspot reads as Wi-Fi. (Sources became tappable 2026-10-21 via the opener plugin.)
+- `[OQ-94]` **Resolved 2026-10-22 for Android:** `web::network_state` reads `ConnectivityManager` over JNI (`ACCESS_NETWORK_STATE`, declared by `patch-android-project.py`): Wi-Fi/Ethernet → Wi-Fi, cellular-only → cellular, no validated network → offline; the old "unknown → ask every time" remains only as the fallback when the probe throws. Still open: macOS on a phone hotspot reads as Wi-Fi. (Sources became tappable 2026-10-21 via the opener plugin.)
 - `[OQ-95]` OEM/telco pre-installs: how opt-in consent is captured, and whether a carrier can zero-rate the relay hostname.

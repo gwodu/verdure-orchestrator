@@ -130,6 +130,14 @@ jobs:
           "$BT/aapt2" dump badging verdure-android-test.apk > badging.txt
           grep -q "package: name='ai.verdure.app'" badging.txt || { echo "::error::built APK is not ai.verdure.app"; head -1 badging.txt; exit 1; }
           grep -q "uses-permission: name='android.permission.RECORD_AUDIO'" badging.txt || { echo "::error::built APK lacks RECORD_AUDIO"; exit 1; }
+          # The web search's Wi-Fi-only rule reads ConnectivityManager; without
+          # this the probe throws and every search asks about mobile data.
+          grep -q "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'" badging.txt || { echo "::error::built APK lacks ACCESS_NETWORK_STATE"; exit 1; }
+          # Verdure's memory must never ride Android auto backup to Google Drive
+          # (knowledge/25). Assert the rules are compiled into the APK.
+          "$BT/aapt2" dump xmltree --file AndroidManifest.xml verdure-android-test.apk > manifest.txt
+          grep -q "fullBackupContent" manifest.txt || { echo "::error::built APK has no fullBackupContent rules"; exit 1; }
+          grep -q "dataExtractionRules" manifest.txt || { echo "::error::built APK has no dataExtractionRules"; exit 1; }
           head -1 badging.txt
       - name: Upload the Android test build
         uses: actions/upload-artifact@v4
