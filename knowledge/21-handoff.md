@@ -34,6 +34,8 @@
 
 The `#[ignore]`d `repro_oq71_generates_from_a_real_model` needs a `.gguf` to point at; its own doc comment says how to get one (the 469 MB copy was deleted 2026-08-22 to reclaim disk).
 
+**Deleted 2026-10-22 to unblock a build (disk hit 271 MB free):** `~/Verdure-bisect/models/Qwen3.5-2B-Q4_K_M.gguf` (1.28 GB, the `[OQ-82]` architecture check's model — re-downloadable) and the app's abandoned `qwen2.5-0.5b-instruct-q4_k_m.part` (491 MB; that model is no longer offered). Also cleared: cargo's `incremental/` (1.8 GB, regenerates) and the npm cache.
+
 **Kept on disk for diagnostics:** `~/Verdure-bisect/llama-cpp-reference/` (26 MB — upstream's prebuilt macOS x64 `llama-cli`, `llama-tokenize`, `llama-perplexity`, `llama-bench`). This is the known-good reference that exonerated everything outside our binary during `[OQ-71]`, and `llama-tokenize` is the tool `[OQ-74]`'s tokenizer-parity check needs. Worth its space.
 
 **Disk is tight** (~1–3 GB free after the SDK workspace; the root `target/` is ~1.3 GB and the app's `target/debug` ~6.6 GB; `target/debug` ~2 GB, `target/release` ~1 GB, and a universal build adds an `aarch64` tree on top). npm and Homebrew caches are safely clearable and were worth 4.3 GB.
