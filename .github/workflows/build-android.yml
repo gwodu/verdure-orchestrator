@@ -133,11 +133,19 @@ jobs:
           # The web search's Wi-Fi-only rule reads ConnectivityManager; without
           # this the probe throws and every search asks about mobile data.
           grep -q "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'" badging.txt || { echo "::error::built APK lacks ACCESS_NETWORK_STATE"; exit 1; }
+          # Background work (knowledge/11, "Mobile non-negotiables"): the
+          # foreground service and the per-type permissions Android 14 needs.
+          for p in FOREGROUND_SERVICE FOREGROUND_SERVICE_DATA_SYNC FOREGROUND_SERVICE_MICROPHONE; do
+            grep -q "uses-permission: name='android.permission.$p'" badging.txt || { echo "::error::built APK lacks $p"; exit 1; }
+          done
           # Verdure's memory must never ride Android auto backup to Google Drive
           # (knowledge/25). Assert the rules are compiled into the APK.
           "$BT/aapt2" dump xmltree --file AndroidManifest.xml verdure-android-test.apk > manifest.txt
           grep -q "fullBackupContent" manifest.txt || { echo "::error::built APK has no fullBackupContent rules"; exit 1; }
           grep -q "dataExtractionRules" manifest.txt || { echo "::error::built APK has no dataExtractionRules"; exit 1; }
+          grep -q "ai.verdure.porter.VerdureWork" manifest.txt || { echo "::error::built APK has no VerdureWork service"; exit 1; }
+          grep -q "ai.verdure.porter.VerdureListener" manifest.txt || { echo "::error::built APK has no VerdureListener service"; exit 1; }
+          grep -q "default_filter_types" manifest.txt && { echo "::error::the listener is still filtered to conversations"; exit 1; }
           head -1 badging.txt
       - name: Upload the Android test build
         uses: actions/upload-artifact@v4

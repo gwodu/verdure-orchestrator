@@ -27,7 +27,8 @@ Each source is listed with what it contributes (the nouns below), where it is re
 | **Reminders / tasks** | things to do, with a time | No standard provider | `EventKit` reminders | Prompt | Later |
 | **Email** | people, time, text | IMAP / Gmail API, by connecting an account | Same | Account-level consent | Later; large |
 | **Health** | numbers over time | Health Connect | HealthKit | Prompt | Out of this shape (no people, no events) |
-| **Verdure's own chats and dictation** | what the user told Verdure | Have it | Have it | None | Already stored (`22`) |
+| **Verdure's own chats and dictation** | what the user told Verdure | Have it | Have it | None | On disk since 2026-10-23 (`chat.jsonl`, `22`); not yet indexed into the store |
+| **Any other notification** — reminders, receipts, deliveries, email subjects | time, text, app | **Live**, same listener, as a `notice` observation; every app unless unticked (2026-10-23) | Never | Same permission as messages | **Now** |
 | Screen time, browsing history, clipboard | — | Partly reachable | Not reachable | Trust cost too high for the value | **Out** |
 
 **What the table decides.** Five sources contribute people-and-time: messages, calendar, contacts, photos, location. They define the shape. Everything else either fits the same shape later (calls, reminders, email are observations with people and a time) or stays outside it (health).

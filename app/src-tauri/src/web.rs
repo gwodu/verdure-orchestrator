@@ -200,7 +200,7 @@ pub(crate) fn sources_block_under(heading: &str, snippets: &[Snippet], about: &s
 /// answer and the badge under it can never disagree — `testflight-14` told the
 /// model "the device is offline" when the relay had merely answered badly, and
 /// the model dutifully repeated the false reason to the user.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum UnavailableReason {
     /// No connection at all (the data rule, before any call).

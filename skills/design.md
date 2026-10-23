@@ -145,3 +145,4 @@ replaced the stock Tauri mark. Rules that make it work:
 - Does the change remove a step or add one?
 - Is the floor user (Tier L1 / P1, least technical) still served well?
 - Are any performance claims still honest?
+- On a phone: does the work survive the user switching apps, does what is on screen survive leaving the screen, and was any permission asked for in the app rather than left on a settings page? (`knowledge/11`, "Mobile non-negotiables".)

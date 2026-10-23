@@ -7,6 +7,7 @@
 //! list, so they cannot drift apart.
 
 mod audio;
+mod background;
 mod context;
 mod device;
 mod live;
@@ -14,6 +15,7 @@ mod llm;
 mod model;
 mod recall;
 mod transcribe;
+mod transcript;
 mod web;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,14 +38,24 @@ struct LiveState(Mutex<Option<LiveHandle>>);
 ///
 /// Mobile note: holding weights resident makes a backgrounded app a likelier
 /// target for iOS jetsam / Android's LMK. The failure mode is benign — the OS
-/// kills it, the user reopens, the model reloads — and the transcript lives in
-/// the frontend, so nothing is lost. Releasing on background is [OQ-69].
+/// kills it, the user reopens, the model reloads — and the transcript lives on
+/// disk (transcript.rs), so nothing is lost. Releasing on background is [OQ-69].
 #[derive(Default)]
 struct ChatState(Mutex<Option<llm::ResidentModel>>);
+
+/// Whether a reply is being written right now. The chat screen asks on every
+/// return (a switch to another app, a visit to another screen) so it can show
+/// "Thinking…" and wait for `chat:done` instead of a blank where the answer
+/// will land (knowledge/11, "Mobile non-negotiables").
+#[derive(Default)]
+struct ChatBusy(AtomicBool);
 
 struct LiveHandle {
     stop: Arc<AtomicBool>,
     thread: JoinHandle<()>,
+    /// Keeps the capture alive while the user is in another app; released
+    /// with the session.
+    _work: background::Guard,
 }
 
 /// The personal context store (knowledge/25), opened on first use and kept
@@ -106,9 +118,67 @@ fn chat_model_plan<R: Runtime>(app: AppHandle<R>) -> Result<model::ChatModelPlan
     ))
 }
 
+/// The conversation so far, and whether a reply is in flight. What the chat
+/// screen renders from, every time it is shown (transcript.rs).
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Transcript {
+    entries: Vec<transcript::Entry>,
+    busy: bool,
+}
+
+#[tauri::command]
+fn chat_transcript<R: Runtime>(app: AppHandle<R>) -> Result<Transcript, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    Ok(Transcript {
+        entries: transcript::load(&data_dir),
+        busy: app.state::<ChatBusy>().0.load(Ordering::Relaxed),
+    })
+}
+
+/// Start a new conversation: the transcript goes. The model's memory of the
+/// old one goes with it, since the transcript is what it is shown.
+#[tauri::command]
+fn chat_new<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    transcript::clear(&data_dir)
+}
+
+/// Record an exchange the model took no part in — a lookup answered by rules
+/// from the user's own records (recall.rs) — so it is part of the
+/// conversation like any other turn.
+#[tauri::command]
+fn chat_note<R: Runtime>(
+    app: AppHandle<R>,
+    user: String,
+    assistant: String,
+    web: Option<transcript::WebRecord>,
+) -> Result<(), String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| format!("couldn't create the app's data folder: {e}"))?;
+    let now = now_ms();
+    transcript::append(&data_dir, &transcript::Entry { role: transcript::Role::User, text: user, at_ms: now, web: None })?;
+    transcript::append(&data_dir, &transcript::Entry { role: transcript::Role::Assistant, text: assistant, at_ms: now, web })
+}
+
 /// The conversational front door: ensure the chat model → generate a reply.
 /// Long-running, so it runs on a blocking thread and streams a "Thinking…" stage
 /// via the `chat:progress` event (knowledge/18).
+///
+/// The conversation's memory (knowledge/22) is the transcript on disk: the
+/// question is written before the model runs, the reply after, so a reply
+/// finished while the user was in another app is recorded all the same and
+/// `chat:done` tells the screen to catch up. Held under a background guard
+/// (background.rs) for the same reason.
 ///
 /// `web_query` + `web_sources` carry this turn's approved web search and its
 /// results (knowledge/24); `web_unavailable` says the user wanted the check and
@@ -119,7 +189,6 @@ async fn chat<R: Runtime>(
     app: AppHandle<R>,
     message: String,
     model_id: String,
-    history: Vec<llm::Turn>,
     web_query: Option<String>,
     web_sources: Option<Vec<web::Snippet>>,
     web_unavailable: Option<web::UnavailableReason>,
@@ -130,9 +199,30 @@ async fn chat<R: Runtime>(
         .path()
         .app_data_dir()
         .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| format!("couldn't create the app's data folder: {e}"))?;
+    // The question goes down first — once, even when this is a retry (a
+    // resumed download, the second ask after a web search).
+    let entries = transcript::load(&data_dir);
+    if !transcript::awaiting(&entries, &message) {
+        transcript::append(
+            &data_dir,
+            &transcript::Entry { role: transcript::Role::User, text: message.clone(), at_ms: now_ms(), web: None },
+        )?;
+    }
+    let history = transcript::history(&entries);
+    let web_record = web_query.as_ref().map(|q| transcript::WebRecord {
+        query: q.clone(),
+        sources: web_sources.clone().unwrap_or_default(),
+        unavailable: web_unavailable,
+        memory_label: memory_label.clone(),
+    });
     let app_for_progress = app.clone();
     let app_for_state = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    app.state::<ChatBusy>().0.store(true, Ordering::Relaxed);
+    let dir_for_model = data_dir.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let data_dir = dir_for_model;
+        let _work = background::Guard::begin(background::Work::Thinking);
         let progress = |msg: &str| {
             let _ = app_for_progress.emit("chat:progress", msg);
         };
@@ -202,7 +292,19 @@ async fn chat<R: Runtime>(
         llm::decide(resident, &history, &message, style, n_ctx, grounding, web)
     })
     .await
-    .map_err(|e| format!("the chat task could not run: {e}"))?
+    .map_err(|e| format!("the chat task could not run: {e}"));
+    app.state::<ChatBusy>().0.store(false, Ordering::Relaxed);
+    let decision = result?;
+    // A request to search is not an answer: the reply comes on the next call,
+    // with the results. Anything else is what the user will read.
+    if let Ok(d) = &decision {
+        if d.action != "search" {
+            let entry = transcript::Entry { role: transcript::Role::Assistant, text: d.reply.clone(), at_ms: now_ms(), web: web_record };
+            transcript::append(&data_dir, &entry)?;
+            let _ = app.emit("chat:done", &entry);
+        }
+    }
+    decision
 }
 
 /// Whether the relay is reachable, and over Wi-Fi or mobile data (knowledge/24).
@@ -289,12 +391,15 @@ async fn start_live_transcription<R: Runtime>(app: AppHandle<R>) -> Result<(), S
     let stop = Arc::new(AtomicBool::new(false));
     let stop_for_thread = stop.clone();
     let app_for_thread = app.clone();
+    // Begun before the thread, while the app is still plainly in front: Android
+    // only lets a microphone foreground service start from the foreground.
+    let work = background::Guard::begin(background::Work::Listening);
     let thread = std::thread::Builder::new()
         .name("verdure-live".into())
         .spawn(move || live::run(app_for_thread, model_path, stop_for_thread))
         .map_err(|e| format!("couldn't start the capture thread: {e}"))?;
 
-    *app.state::<LiveState>().0.lock().unwrap() = Some(LiveHandle { stop, thread });
+    *app.state::<LiveState>().0.lock().unwrap() = Some(LiveHandle { stop, thread, _work: work });
     Ok(())
 }
 
@@ -685,9 +790,11 @@ struct MemoryOverview {
     /// `on` / `off` (Android: notification access granted or not),
     /// `unsupported` elsewhere.
     listener: &'static str,
-    /// The apps the listener records (packages).
-    apps: Vec<String>,
-    /// Every app it could record, with its everyday name.
+    /// The apps the user unticked (packages). Everything else is remembered.
+    off: Vec<String>,
+    /// The apps the page offers to untick, with their everyday names: every
+    /// app something has arrived from, the unticked ones, and a few well-known
+    /// ones so the list is never empty on day one.
     known_apps: Vec<(String, String)>,
     /// What the last spool drain brought in.
     drained: context::Drained,
@@ -706,14 +813,24 @@ fn memory_overview<R: Runtime>(app: AppHandle<R>) -> Result<MemoryOverview, Stri
     with_store(&app, |store, dir| {
         let drained = context::drain_spool(store, dir)?;
         let now = now_ms();
+        let counts = store.counts()?;
+        let off = context::read_off(dir);
+        let mut known: Vec<String> = counts.iter().map(|c| c.app.clone()).collect();
+        for a in off.iter().cloned().chain(context::WELL_KNOWN_APPS.iter().map(|a| a.to_string())) {
+            if !known.contains(&a) {
+                known.push(a);
+            }
+        }
+        let mut known_apps: Vec<(String, String)> = known.into_iter().map(|a| (context::app_label(&a).to_string(), a)).map(|(l, a)| (a, l)).collect();
+        known_apps.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
         Ok(MemoryOverview {
-            counts: store.counts()?,
+            counts,
             people: store.people()?,
             threads: store.threads(50)?,
             events: store.events_in_range(now, now + 90 * 86_400_000, 10)?,
             listener: listener_state(),
-            apps: context::read_apps(dir),
-            known_apps: context::DEFAULT_APPS.iter().map(|a| (a.to_string(), context::app_label(a).to_string())).collect(),
+            off,
+            known_apps,
             drained,
         })
     })
@@ -769,15 +886,24 @@ fn memory_import_whatsapp<R: Runtime>(app: AppHandle<R>, text: String, title: St
     })
 }
 
-/// The apps the listener records — the per-app opt-in (knowledge/25).
+/// The apps the user unticked — the listener skips them from now on
+/// (knowledge/25: everything the phone shows is remembered unless unticked).
+/// What was already remembered from them stays until forgotten, which is a
+/// separate, visible step (`memory_forget_app`).
 #[tauri::command]
-fn memory_set_apps<R: Runtime>(app: AppHandle<R>, apps: Vec<String>) -> Result<(), String> {
+fn memory_set_off<R: Runtime>(app: AppHandle<R>, apps: Vec<String>) -> Result<(), String> {
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("couldn't find the app's data folder: {e}"))?;
     std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
-    context::write_apps(&data_dir, &apps)
+    context::write_off(&data_dir, &apps)
+}
+
+/// Forget everything remembered from one app.
+#[tauri::command]
+fn memory_forget_app<R: Runtime>(app: AppHandle<R>, package: String) -> Result<(), String> {
+    with_store(&app, |store, _| store.delete_app(&package))
 }
 
 /// Android: open the system's notification-access screen, where the user
@@ -885,6 +1011,9 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         start_live_transcription,
         stop_live_transcription,
         chat,
+        chat_transcript,
+        chat_new,
+        chat_note,
         list_models,
         remove_model,
         models_dir,
@@ -900,7 +1029,8 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         memory_thread,
         memory_forget,
         memory_import_whatsapp,
-        memory_set_apps,
+        memory_set_off,
+        memory_forget_app,
         open_notification_access
     ]
 }
@@ -925,6 +1055,7 @@ pub fn run() {
     builder
         .manage(LiveState::default())
         .manage(ChatState::default())
+        .manage(ChatBusy::default())
         .manage(MemoryState::default())
         .invoke_handler(handlers())
         .run(build_context())
@@ -952,6 +1083,7 @@ mod command_tests {
         builder
             .manage(super::LiveState::default())
             .manage(super::ChatState::default())
+            .manage(super::ChatBusy::default())
             .manage(super::MemoryState::default())
             .invoke_handler(super::handlers())
             .build(super::build_context())

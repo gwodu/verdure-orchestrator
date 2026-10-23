@@ -197,6 +197,16 @@ jobs:
               || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" "$plist"
             /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$plist" \
               || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$plist"
+            # Dictation keeps running when the user switches apps (knowledge/11,
+            # "Mobile non-negotiables"): the audio background mode is what lets an
+            # open microphone session continue off-screen. A reply being written
+            # is covered separately by UIApplication.beginBackgroundTask
+            # (background.rs). Unverified on a device until the next TestFlight
+            # build ([OQ-116]).
+            /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$plist" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" "$plist" | grep -q audio \
+              || /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string audio" "$plist"
+            /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" "$plist" | grep -q audio || { echo "::error::UIBackgroundModes lacks audio in $plist"; exit 1; }
           done
       - name: Patch entitlements — raise the memory ceiling (Qwen3.8 27B experiment)
         # Without this, iPadOS kills the app (jetsam) well below physical RAM, and

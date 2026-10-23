@@ -53,9 +53,6 @@ export async function chatModelPlan(): Promise<ChatModelPlan> {
   return await invoke<ChatModelPlan>("chat_model_plan");
 }
 
-/** One completed exchange, as the backend wants it for conversation memory. */
-export type ChatTurn = { user: string; assistant: string };
-
 /** One web search result (web.rs `Snippet`), as the prompt and the UI use it. */
 export type Snippet = {
   title: string;
@@ -90,28 +87,34 @@ export type WebContext = {
  * the model the user picked (Small/Balanced/Powerful); the backend loads it if it
  * fits, or explains why it can't — never a silent downgrade. Empty id → auto-pick.
  *
- * `history` is the conversation so far — this is what gives the chat memory
- * (knowledge/22). The backend keeps whichever recent turns fit the window it
- * sized for this device, so the frontend can pass everything it has. `web` is
- * for this answer only and never enters the history.
+ * The conversation's memory (knowledge/22) is the transcript the backend keeps
+ * on disk (transcript.rs): the question is recorded before the model runs and
+ * the reply after, so the screen can leave and come back — or the app be
+ * killed — without losing either. `web` is for this answer only.
  */
 export async function chatSend(
   message: string,
   onProgress: ProgressFn,
   modelId = "",
-  history: ChatTurn[] = [],
   web: WebContext | null = null,
   webEnabled = false,
 ): Promise<ChatDecision> {
   if (!inTauri) {
     onProgress("Thinking…");
     await new Promise((r) => setTimeout(r, 800));
+    if (!previewTranscript.some((e) => e.role === "user" && e.text === message && e === previewTranscript[previewTranscript.length - 1])) {
+      previewTranscript.push({ role: "user", text: message, atMs: Date.now() });
+    }
+    const answer = (reply: string): ChatDecision => {
+      previewTranscript.push({ role: "assistant", text: reply, atMs: Date.now(), web: web ? { ...web, memoryLabel: web.memoryLabel ?? null } : undefined });
+      return { action: "answer", reply };
+    };
     // Browser preview of the model asking for a search (knowledge/24).
     if (webEnabled && !web && /who|members|party|election/i.test(message)) {
       return { action: "search", reply: "Nigeria opposition coalition members 2027" };
     }
     if (!webEnabled && /search|online|web/i.test(message)) {
-      return { action: "answer", reply: "(Browser preview.) Web search is switched off, so I can't look that up." };
+      return answer("(Browser preview.) Web search is switched off, so I can't look that up.");
     }
     // Browser preview: mimic the tool decision so the flow is reviewable.
     if (/dictat|transcri|record|voice note|audio|meeting/i.test(message)) {
@@ -121,21 +124,18 @@ export async function chatSend(
       };
     }
     if (web?.sources.length) {
-      return {
-        action: "answer",
-        reply: `(Browser preview.) From the results: ${web.sources[0].text} [1] The second source agrees [2].`,
-      };
+      return answer(`(Browser preview.) From the results: ${web.sources[0].text} [1] The second source agrees [2].`);
     }
     if (web?.unavailable) {
-      return { action: "answer", reply: `(Browser preview.) I couldn't check the web (${web.unavailable}). From memory, …` };
+      return answer(`(Browser preview.) I couldn't check the web (${web.unavailable}). From memory, …`);
     }
-    // Echo the memory back so the preview shows history is actually flowing.
-    return {
-      action: "answer",
-      reply: history.length
-        ? `(Browser preview — chat runs only in the desktop app. Remembering ${history.length} earlier message${history.length === 1 ? "" : "s"}.)`
+    // Echo the memory back so the preview shows the transcript is actually flowing.
+    const earlier = previewTranscript.filter((e) => e.role === "assistant").length;
+    return answer(
+      earlier
+        ? `(Browser preview — chat runs only in the desktop app. Remembering ${earlier} earlier exchange${earlier === 1 ? "" : "s"}.)`
         : "(Browser preview — chat runs only in the desktop app.)",
-    };
+    );
   }
   const { invoke } = await import("@tauri-apps/api/core");
   const { listen } = await import("@tauri-apps/api/event");
@@ -146,7 +146,6 @@ export async function chatSend(
     return await invoke<ChatDecision>("chat", {
       message,
       modelId,
-      history,
       webQuery: web?.query ?? null,
       webSources: web?.sources ?? null,
       webUnavailable: web?.unavailable ?? null,
@@ -156,6 +155,70 @@ export async function chatSend(
   } finally {
     unlisten();
   }
+}
+
+// --- The conversation on disk (transcript.rs) ---------------------------------
+//
+// Mechanism only. The chat screen renders from this on every visit — after
+// another screen, another app, or a restart — and the rule for reconciling it
+// with what is already on screen lives in chat.ts.
+
+/** One line of the transcript. `web` is what the reply was grounded on. */
+export type ChatEntry = {
+  role: "user" | "assistant";
+  text: string;
+  atMs: number;
+  web?: WebContext | null;
+};
+
+export type ChatTranscript = {
+  entries: ChatEntry[];
+  /** A reply is being written right now; `onChatDone` fires when it lands. */
+  busy: boolean;
+};
+
+/** The browser preview's transcript: in memory, so navigating between screens
+ *  shows the conversation surviving exactly as it does in the app. */
+const previewTranscript: ChatEntry[] = [];
+
+export async function chatTranscript(): Promise<ChatTranscript> {
+  if (!inTauri) return { entries: previewTranscript.slice(), busy: false };
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<ChatTranscript>("chat_transcript");
+}
+
+/** Start a new conversation: the transcript goes. */
+export async function chatNew(): Promise<void> {
+  if (!inTauri) {
+    previewTranscript.length = 0;
+    return;
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("chat_new");
+}
+
+/** Record an exchange the model took no part in — a lookup answered from the
+ *  user's own records (knowledge/25) — so it is part of the conversation. */
+export async function chatNote(user: string, assistant: string, web: WebContext | null): Promise<void> {
+  if (!inTauri) {
+    previewTranscript.push({ role: "user", text: user, atMs: Date.now() });
+    previewTranscript.push({ role: "assistant", text: assistant, atMs: Date.now(), web });
+    return;
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("chat_note", {
+    user,
+    assistant,
+    web: web ? { query: web.query, sources: web.sources, unavailable: web.unavailable, memoryLabel: web.memoryLabel ?? null } : null,
+  });
+}
+
+/** A reply landed in the transcript — possibly one begun before the screen
+ *  was last left. Returns the unlisten. */
+export async function onChatDone(handler: (entry: ChatEntry) => void): Promise<() => void> {
+  if (!inTauri) return () => {};
+  const { listen } = await import("@tauri-apps/api/event");
+  return await listen<ChatEntry>("chat:done", (e) => handler(e.payload));
 }
 
 // --- Web search (knowledge/24) ------------------------------------------------
@@ -468,7 +531,7 @@ export type MemoryEvent = {
   origin: string;
   app: string;
 };
-export type MemoryCount = { app: string; items: number; threads: number };
+export type MemoryCount = { app: string; items: number; threads: number; notices: number };
 export type MemoryObservation = {
   id: number;
   kind: string;
@@ -490,7 +553,9 @@ export type MemoryOverview = {
   events: MemoryEvent[];
   /** Android: whether notification access is granted. Elsewhere: unsupported. */
   listener: "on" | "off" | "unsupported";
-  apps: string[];
+  /** The apps the user unticked (packages). Everything else is remembered. */
+  off: string[];
+  /** The apps the page offers to untick: [package, everyday name]. */
   knownApps: [string, string][];
   drained: { inserted: number; duplicates: number; unreadable: number };
 };
@@ -515,8 +580,9 @@ export async function memoryOverview(): Promise<MemoryOverview> {
     const day = 86_400_000;
     return {
       counts: [
-        { app: "com.whatsapp", items: 19, threads: 2 },
-        { app: "org.telegram.messenger", items: 7, threads: 1 },
+        { app: "com.whatsapp", items: 19, threads: 2, notices: 0 },
+        { app: "org.telegram.messenger", items: 7, threads: 1, notices: 0 },
+        { app: "com.google.android.gm", items: 4, threads: 0, notices: 4 },
       ],
       people: PREVIEW_PEOPLE,
       threads: [
@@ -526,8 +592,15 @@ export async function memoryOverview(): Promise<MemoryOverview> {
       ],
       events: [{ id: 1, title: "Lunch with Ada", startMs: Date.now() + 3 * day, endMs: Date.now() + 3 * day + 7_200_000, place: "The Wheatbaker", origin: "given", app: "calendar" }],
       listener: "off",
-      apps: ["com.whatsapp", "org.telegram.messenger"],
-      knownApps: [["com.whatsapp", "WhatsApp"], ["org.telegram.messenger", "Telegram"], ["com.google.android.apps.messaging", "Messages"]],
+      off: ["com.gtbank.app"],
+      knownApps: [
+        ["com.google.android.calendar", "Calendar"],
+        ["com.google.android.gm", "Gmail"],
+        ["com.gtbank.app", "com.gtbank.app"],
+        ["com.google.android.apps.messaging", "Messages"],
+        ["org.telegram.messenger", "Telegram"],
+        ["com.whatsapp", "WhatsApp"],
+      ],
       drained: { inserted: 0, duplicates: 0, unreadable: 0 },
     };
   }
@@ -594,11 +667,18 @@ export async function memoryImportWhatsapp(text: string, title: string, me: stri
   return await invoke<number>("memory_import_whatsapp", { text, title, me });
 }
 
-/** The apps the listener records. */
-export async function memorySetApps(apps: string[]): Promise<void> {
+/** The apps the user unticked: the listener skips them from now on. */
+export async function memorySetOff(apps: string[]): Promise<void> {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("memory_set_apps", { apps });
+  await invoke("memory_set_off", { apps });
+}
+
+/** Forget everything remembered from one app. */
+export async function memoryForgetApp(pkg: string): Promise<void> {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("memory_forget_app", { package: pkg });
 }
 
 /** Android: open the OS screen where notification access is granted. */

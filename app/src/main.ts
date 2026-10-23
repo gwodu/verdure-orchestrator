@@ -8,7 +8,10 @@ import {
   startLiveTranscription,
   stopLiveTranscription,
   chatSend,
-  type ChatTurn,
+  chatTranscript,
+  chatNew,
+  chatNote,
+  onChatDone,
   chatModelPlan,
   listModels,
   removeModel,
@@ -28,7 +31,8 @@ import {
   memoryThread,
   memoryForget,
   memoryImportWhatsapp,
-  memorySetApps,
+  memorySetOff,
+  memoryForgetApp,
   openNotificationAccess,
   type ChatModelPlan,
   type MemoryOverview,
@@ -59,6 +63,15 @@ import {
   webMode,
   type WebMode,
 } from "./web";
+import { reconcile, type Line } from "./chat";
+import {
+  REMEMBER_ASK,
+  REMEMBER_LATER,
+  askedToRemember,
+  heldLine,
+  markAskedToRemember,
+  shouldAskToRemember,
+} from "./memory";
 
 const WHISPER_MODEL_ID = "whisper-base-en";
 import {
@@ -145,12 +158,17 @@ const root = document.querySelector<HTMLDivElement>("#app")!;
 // calls clearDrop() on entry, so leaving the transcribe panel always releases the
 // microphone — no recording survives navigation.
 let liveCleanup: (() => void) | null = null;
+// What a screen must undo when another replaces it (event listeners it
+// subscribed to). Registered by the screen, run by the next one's clearDrop.
+let onLeave: (() => void)[] = [];
 function clearDrop(): void {
   if (liveCleanup) {
     liveCleanup();
     liveCleanup = null;
     void stopLiveTranscription();
   }
+  for (const f of onLeave) f();
+  onLeave = [];
 }
 
 // --- Storage screen: every downloaded model, with size + Remove --------------
@@ -456,12 +474,20 @@ function renderChat(): void {
     webBtn.title = on ? "Web search is on — tap to switch off" : "Web search is off — tap to switch on";
   };
   paintWeb();
+  // New chat: the conversation persists until the user says otherwise
+  // (knowledge/11), so starting over has to be a tap, not a restart.
+  const newBtn = iconButton(ICON_NEW, "New chat", () => {
+    void chatNew()
+      .catch(() => {})
+      .then(() => renderChat());
+  });
   root.appendChild(
     brandBar([
       modelBtn,
       webBtn,
       iconButton(ICON_MEMORY, "What Verdure knows", () => void renderMemory()),
       iconButton(ICON_STORAGE, "Storage & your computer", renderStorage),
+      newBtn,
     ]),
   );
 
@@ -696,12 +722,13 @@ function renderChat(): void {
   }
   thread.appendChild(examples);
 
-
-  // The conversation so far — this IS the chat's memory (knowledge/22). Only
-  // completed exchanges go in: a question whose answer failed would otherwise
-  // teach the model that questions go unanswered. The backend keeps whichever
-  // recent turns fit the window it sized for this device, so we pass all of it.
-  const history: ChatTurn[] = [];
+  // The conversation lives on disk, in the Rust core (transcript.rs) — that is
+  // the chat's memory (knowledge/22) and what this screen renders from, every
+  // time it is shown. What the screen echoes the moment it happens (the user's
+  // words, a lookup's answer) is reconciled with what the transcript records a
+  // beat later (chat.ts `reconcile`), so nothing paints twice.
+  let painted = 0; // transcript entries already on screen
+  let pending: Line[] = []; // echoed here, not yet seen in the transcript
 
   const addMsg = (who: "user" | "ai", text: string, web: WebContext | null = null) => {
     // Only the model's replies get Markdown rendering. What the USER typed is
@@ -885,7 +912,7 @@ function renderChat(): void {
     };
     status.textContent = "Thinking…";
     try {
-      const ask = () => chatSend(text, onProgress, modelIdForChat(), history, web, webEnabled());
+      const ask = () => chatSend(text, onProgress, modelIdForChat(), web, webEnabled());
       // Hold a screen wake lock while a (possibly large) model downloads.
       let decision = downloading ? await withScreenAwake(ask) : await ask();
       card?.el.remove();
@@ -902,8 +929,8 @@ function renderChat(): void {
       status.textContent = "";
       const reply = decision.reply || "(no reply)";
       addMsg("ai", reply, web);
-      // Only a completed exchange becomes memory (see `history`'s note).
-      if (decision.reply) history.push({ user: text, assistant: decision.reply });
+      if (decision.reply) pending.push({ role: "assistant", text: decision.reply });
+      void sync(); // the transcript has it now; nothing to paint, keeps the count right
     } catch (err) {
       card?.el.remove();
       status.textContent = "";
@@ -959,9 +986,13 @@ function renderChat(): void {
       return;
     }
     if (r?.kind === "direct" && r.direct) {
-      // A lookup: shown as-is, with the records under it. No model ran.
-      addMsg("ai", r.direct, { query: r.label, sources: r.sources, unavailable: null, memoryLabel: r.label });
-      history.push({ user: text, assistant: r.direct });
+      // A lookup: shown as-is, with the records under it. No model ran — so
+      // it is recorded here, to be part of the conversation like any turn.
+      const web: WebContext = { query: r.label, sources: r.sources, unavailable: null, memoryLabel: r.label };
+      addMsg("ai", r.direct, web);
+      pending.push({ role: "assistant", text: r.direct });
+      await chatNote(text, r.direct, web).catch(() => {});
+      void sync();
       return;
     }
     if (r?.kind === "sources" && r.sources.length) {
@@ -984,6 +1015,7 @@ function renderChat(): void {
     input.value = "";
     examples.remove(); // empty-state examples make way for the conversation
     addMsg("user", text);
+    pending.push({ role: "user", text });
     await ask(text);
   };
 
@@ -995,6 +1027,76 @@ function renderChat(): void {
     }
   });
   input.focus();
+
+  // Catch up with the transcript: on arrival, whenever a reply lands, and
+  // whenever the app comes back into view (a reply finished while the user was
+  // in another app may have had its event dropped by a suspended webview).
+  // Serialised, so two catch-ups can never paint the same entry.
+  let syncing: Promise<void> = Promise.resolve();
+  const catchUp = async () => {
+    const t = await chatTranscript().catch(() => null);
+    if (!t) return;
+    const arrived = t.entries.slice(painted);
+    const r = reconcile(pending, arrived);
+    pending = r.pending;
+    arrived.forEach((e, i) => {
+      if (r.paint[i]) addMsg(e.role === "user" ? "user" : "ai", e.text, e.web ?? null);
+    });
+    painted = t.entries.length;
+    if (t.entries.length) examples.remove();
+    if (t.busy && !busy) {
+      // Begun before this screen existed; its reply arrives through chat:done.
+      status.textContent = "Thinking…";
+      send.disabled = true;
+    } else if (!t.busy && !busy) {
+      send.disabled = false;
+      if (status.textContent === "Thinking…") status.textContent = "";
+    }
+  };
+  const sync = () => (syncing = syncing.then(catchUp, catchUp));
+  void onChatDone(() => void sync()).then((unlisten) => onLeave.push(unlisten));
+  const onVisible = () => {
+    if (document.visibilityState === "visible") void sync();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  onLeave.push(() => document.removeEventListener("visibilitychange", onVisible));
+  void sync().then(() => void offerToRemember(thread, status));
+}
+
+// Ask, once, to be allowed to remember what the phone shows (knowledge/25):
+// in the chat, where the user is looking, with the benefit first and the
+// exact mechanism second. "Allow" opens the one place Android lets it be
+// granted; "Not now" is final until the user visits the book icon.
+let feedState: Promise<MemoryOverview["listener"]> | null = null;
+async function offerToRemember(thread: HTMLElement, status: HTMLElement): Promise<void> {
+  if (askedToRemember()) return;
+  feedState ??= memoryOverview().then((o) => o.listener, (): MemoryOverview["listener"] => "unsupported");
+  if (!shouldAskToRemember(await feedState, askedToRemember())) return;
+  const card = el("div", "msg ai web-offer");
+  card.appendChild(el("p", "", REMEMBER_ASK));
+  const row = el("div", "web-row");
+  const allow = document.createElement("button");
+  allow.type = "button";
+  allow.className = "update-choice preferred";
+  allow.textContent = "Allow in Settings";
+  allow.addEventListener("click", () => {
+    markAskedToRemember();
+    card.remove();
+    void openNotificationAccess().catch((err) => (status.textContent = friendlyError(err)));
+  });
+  const not = document.createElement("button");
+  not.type = "button";
+  not.className = "update-choice";
+  not.textContent = "Not now";
+  not.addEventListener("click", () => {
+    markAskedToRemember();
+    card.remove();
+    status.textContent = REMEMBER_LATER;
+  });
+  row.appendChild(allow);
+  row.appendChild(not);
+  card.appendChild(row);
+  thread.prepend(card);
 }
 
 
@@ -1018,6 +1120,15 @@ function appName(pkg: string): string {
       calendar: "Calendar",
       "com.google.android.calendar": "Calendar",
       photos: "Photos",
+      "com.google.android.gm": "Gmail",
+      "com.google.android.apps.maps": "Maps",
+      "com.android.chrome": "Chrome",
+      "com.google.android.youtube": "YouTube",
+      "com.spotify.music": "Spotify",
+      "com.linkedin.android": "LinkedIn",
+      "com.ubercab": "Uber",
+      "com.google.android.apps.tasks": "Tasks",
+      "com.google.android.deskclock": "Clock",
     }[pkg] ?? pkg
   );
 }
@@ -1093,7 +1204,7 @@ async function renderMemory(): Promise<void> {
     el(
       "p",
       "subtitle",
-      "Messages and events Verdure has seen on this phone, so it can answer questions like “what did Tunde say about the rent?”. Everything stays on this device — nothing is sent anywhere — and you can forget any of it here.",
+      "What your phone has shown you — messages, reminders, receipts, events — so Verdure can answer questions like “what did Tunde say about the rent?”. Everything stays on this device — nothing is sent anywhere — and you can forget any of it here.",
     ),
   );
   const status = el("p", "status");
@@ -1107,17 +1218,18 @@ async function renderMemory(): Promise<void> {
 
     // 1. The feed: Android's notification access, in the OS's own hands.
     const feed = el("div", "updates-box");
-    feed.appendChild(el("h2", "section-title", "Read my messages"));
+    feed.appendChild(el("h2", "section-title", "Remember what my phone shows me"));
+    const label = (pkg: string) => o.knownApps.find(([p]) => p === pkg)?.[1] ?? appName(pkg);
     if (o.listener === "unsupported") {
       feed.appendChild(
-        el("p", "memory-status", "Reading messages as they arrive is an Android feature. On this device you can share a WhatsApp chat export below instead."),
+        el("p", "memory-status", "Remembering what the phone shows is an Android feature. On this device you can share a WhatsApp chat export below instead."),
       );
     } else {
       const line = el("p", "memory-status");
       line.innerHTML =
         o.listener === "on"
-          ? "<strong>On.</strong> New messages from the apps below are remembered as they arrive."
-          : "<strong>Off.</strong> Allow Verdure “notification access” in your phone’s settings, and messages from the apps you choose are remembered as they arrive — on this phone only.";
+          ? "<strong>On.</strong> Messages, reminders, receipts and the rest are remembered as they arrive — on this phone only — except from the apps you untick below."
+          : "<strong>Off.</strong> Allow Verdure “notification access” in your phone’s settings, and what your phone shows you is remembered as it arrives — on this phone only.";
       feed.appendChild(line);
       const btn = document.createElement("button");
       btn.type = "button";
@@ -1125,42 +1237,29 @@ async function renderMemory(): Promise<void> {
       btn.textContent = o.listener === "on" ? "Change in phone settings" : "Turn on in phone settings";
       btn.addEventListener("click", () => void openNotificationAccess().catch((err) => (status.textContent = friendlyError(err))));
       feed.appendChild(btn);
-      // Per-app opt-in: the user chooses which apps are read.
-      feed.appendChild(el("p", "memory-status", "Apps to remember messages from:"));
+      // Every app is remembered unless unticked: a bank, a health app, anything
+      // the user would rather Verdure never saw. Ticked = remembering.
+      feed.appendChild(el("p", "memory-status", "Untick any app you'd rather Verdure didn't remember — your bank, say:"));
       const checks = el("div", "check-list");
-      const chosen = new Set(o.apps);
-      for (const [pkg, label] of o.knownApps) {
+      const off = new Set(o.off);
+      for (const [pkg, name] of o.knownApps) {
         const c = document.createElement("button");
         c.type = "button";
-        c.className = "check-row" + (chosen.has(pkg) ? " selected" : "");
-        c.setAttribute("aria-pressed", String(chosen.has(pkg)));
-        c.textContent = label;
+        c.className = "check-row" + (off.has(pkg) ? "" : " selected");
+        c.setAttribute("aria-pressed", String(!off.has(pkg)));
+        c.textContent = name;
         c.addEventListener("click", async () => {
-          if (chosen.has(pkg)) chosen.delete(pkg);
-          else chosen.add(pkg);
-          c.classList.toggle("selected", chosen.has(pkg));
-          c.setAttribute("aria-pressed", String(chosen.has(pkg)));
-          await memorySetApps([...chosen]).catch((err) => (status.textContent = friendlyError(err)));
+          if (off.has(pkg)) off.delete(pkg);
+          else off.add(pkg);
+          c.classList.toggle("selected", !off.has(pkg));
+          c.setAttribute("aria-pressed", String(!off.has(pkg)));
+          await memorySetOff([...off]).catch((err) => (status.textContent = friendlyError(err)));
         });
         checks.appendChild(c);
       }
       feed.appendChild(checks);
     }
     box.appendChild(feed);
-
-    // 2. What is held, per app — the honest number.
-    const held = el("div", "updates-box");
-    held.appendChild(el("h2", "section-title", "What's remembered"));
-    if (!o.counts.length) {
-      held.appendChild(el("p", "model-empty", "Nothing yet."));
-    } else {
-      for (const c of o.counts) {
-        held.appendChild(
-          el("p", "memory-status", `${appName(c.app)}: ${c.items} message${c.items === 1 ? "" : "s"}${c.threads ? ` in ${c.threads} conversation${c.threads === 1 ? "" : "s"}` : ""}`),
-        );
-      }
-    }
-    box.appendChild(held);
 
     const forgetRow = (label: string, meta: string, onOpen: (() => void) | null, onForget: () => Promise<void>) => {
       const row = el("div", "model-row memory-row");
@@ -1187,6 +1286,21 @@ async function renderMemory(): Promise<void> {
       row.appendChild(forget);
       return row;
     };
+
+    // 2. What is held, per app — the honest number, and Forget per app
+    //    (unticking an app stops new records; this is how the old ones go).
+    const held = el("div", "updates-box");
+    held.appendChild(el("h2", "section-title", "What's remembered"));
+    if (!o.counts.length) {
+      held.appendChild(el("p", "model-empty", "Nothing yet."));
+    } else {
+      const list = el("div", "model-list");
+      for (const c of o.counts) {
+        list.appendChild(forgetRow(label(c.app), heldLine(c), null, () => memoryForgetApp(c.app)));
+      }
+      held.appendChild(list);
+    }
+    box.appendChild(held);
 
     // 3. Conversations: tap to read, Forget to drop.
     if (o.threads.length) {
@@ -1303,7 +1417,7 @@ async function renderMemory(): Promise<void> {
   try {
     const o = await memoryOverview();
     paint(o);
-    if (o.drained.inserted) status.textContent = `${o.drained.inserted} new message${o.drained.inserted === 1 ? "" : "s"} since last time.`;
+    if (o.drained.inserted) status.textContent = `${o.drained.inserted} new since last time.`;
   } catch (err) {
     box.appendChild(el("p", "subtitle", friendlyError(err)));
   }
@@ -1343,6 +1457,9 @@ const ICON_GLOBE =
 // Book-open — "what Verdure knows": the memory page.
 const ICON_MEMORY =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>';
+// Square-pen — "new chat": a fresh page to write on.
+const ICON_NEW =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>';
 // Hard-drive — reads as "storage / what's on your computer" more clearly than a gear.
 const ICON_STORAGE =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>';

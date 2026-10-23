@@ -110,6 +110,15 @@ libc = "0.2"
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 system-configuration = "0.8"
 
+# Background time on iOS (background.rs): UIApplication.beginBackgroundTask,
+# reached through objc2's message sending with the class looked up at run
+# time — so the same code compiles on macOS (where it finds no UIApplication
+# and does nothing) and is exercised by this Mac's tests. Not a new native
+# dependency: objc2 0.6 is already in the tree under tauri on every Apple
+# target, so the iOS build gains no crate it did not compile before.
+[target.'cfg(target_vendor = "apple")'.dependencies]
+objc2 = "0.6"
+
 # Android-only ([OQ-66]). cpal's Android backend (oboe) enumerates the mic over
 # JNI and reads the app's JavaVM + Context from the process-global `ndk_context`.
 # Tauri v2 does NOT populate that global, so opening the mic panics "android

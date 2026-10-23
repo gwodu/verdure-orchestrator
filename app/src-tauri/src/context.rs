@@ -59,6 +59,10 @@ pub(crate) enum Kind {
     Photo,
     Visit,
     Note,
+    /// Any other notification the phone showed — a reminder, a receipt, a
+    /// delivery update, an email's subject line — from an app the user has
+    /// not unticked (knowledge/25). Time, app, title and text; no thread.
+    Notice,
 }
 
 impl Kind {
@@ -69,6 +73,7 @@ impl Kind {
             Kind::Photo => "photo",
             Kind::Visit => "visit",
             Kind::Note => "note",
+            Kind::Notice => "notice",
         }
     }
     fn parse(s: &str) -> Kind {
@@ -77,6 +82,7 @@ impl Kind {
             "photo" => Kind::Photo,
             "visit" => Kind::Visit,
             "note" => Kind::Note,
+            "notice" => Kind::Notice,
             _ => Kind::Message,
         }
     }
@@ -279,8 +285,11 @@ pub(crate) struct Participant {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AppCount {
     pub app: String,
+    /// Every kind of observation from this app.
     pub items: i64,
     pub threads: i64,
+    /// How many of `items` are plain notifications (kind `notice`).
+    pub notices: i64,
 }
 
 /// The answer to "who is X?" — the question every person-scoped lookup asks
@@ -863,14 +872,30 @@ impl Store {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT o.app, COUNT(o.id), COUNT(DISTINCT o.thread_id)
+                "SELECT o.app, COUNT(o.id), COUNT(DISTINCT o.thread_id), SUM(o.kind = 'notice')
                  FROM observation o GROUP BY o.app ORDER BY COUNT(o.id) DESC",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
-            .query_map([], |r| Ok(AppCount { app: r.get(0)?, items: r.get(1)?, threads: r.get(2)? }))
+            .query_map([], |r| Ok(AppCount { app: r.get(0)?, items: r.get(1)?, threads: r.get(2)?, notices: r.get(3)? }))
             .map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// Forget everything from one app — the user unticked it, or wants its
+    /// records gone. Its conversations, notices and index entries go; people
+    /// stay (their counts drop), as do events.
+    pub(crate) fn delete_app(&mut self, app: &str) -> Result<(), String> {
+        let tx = self.conn.transaction().map_err(|e| e.to_string())?;
+        tx.execute(
+            "DELETE FROM observation_fts WHERE rowid IN (SELECT id FROM observation WHERE app = ?1)",
+            params![app],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM observation WHERE app = ?1", params![app]).map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM threads WHERE app = ?1", params![app]).map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM sources WHERE app = ?1", params![app]).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())
     }
 
     // ----- forgetting ----------------------------------------------------------
@@ -1147,6 +1172,8 @@ pub(crate) fn observations_as_snippets(items: &[Observation]) -> Vec<Snippet> {
                     Some(p) => format!("At {p}"),
                     None => "A visit".to_string(),
                 },
+                // A plain notification: its text already starts with its title.
+                ("notice", _) => "Notification".to_string(),
                 (k, _) => {
                     let mut s = k.to_string();
                     if let Some(c) = s.get_mut(0..1) {
@@ -1211,6 +1238,15 @@ pub(crate) fn app_label(app: &str) -> &str {
         "sms" | "com.google.android.apps.messaging" => "Messages",
         "com.google.android.calendar" | "calendar" => "Calendar",
         "photos" | "com.google.android.apps.photos" => "Photos",
+        "com.google.android.gm" => "Gmail",
+        "com.google.android.apps.maps" => "Maps",
+        "com.android.chrome" => "Chrome",
+        "com.google.android.youtube" => "YouTube",
+        "com.spotify.music" => "Spotify",
+        "com.linkedin.android" => "LinkedIn",
+        "com.ubercab" => "Uber",
+        "com.google.android.apps.tasks" => "Tasks",
+        "com.google.android.deskclock" => "Clock",
         other => other,
     }
 }
@@ -1351,9 +1387,10 @@ pub(crate) fn parse_whatsapp_export(text: &str, thread_title: &str, me: &str) ->
 
 /// The spool file's name, beside `context.sqlite`.
 pub(crate) const SPOOL_FILE: &str = "context.spool";
-/// The per-app opt-in list the listener reads: one package per line. Absent
-/// means "the well-known messaging apps" (see `DEFAULT_APPS`).
-pub(crate) const APPS_FILE: &str = "context.apps";
+/// The apps the user unticked (knowledge/25: every app is remembered unless
+/// unticked): one package per line. The listener reads it; absent means
+/// nothing is unticked.
+pub(crate) const OFF_FILE: &str = "context.off";
 /// The store's own file name.
 pub(crate) const STORE_FILE: &str = "context.sqlite";
 /// How many recalled records may reach the model at once (knowledge/25:
@@ -1361,23 +1398,32 @@ pub(crate) const STORE_FILE: &str = "context.sqlite";
 /// tokens, but never more than eight).
 pub(crate) const MAX_RECALL_SOURCES: usize = 8;
 
-/// Messaging apps recorded by default once the listener is on. Mirrored in the
-/// Kotlin service (`patch-android-project.py`), which must agree.
-pub(crate) const DEFAULT_APPS: &[&str] = &[
+/// Apps offered for unticking before any notification has arrived from them,
+/// so the list on "What Verdure knows" is never empty on day one. Everything
+/// the phone shows is remembered by default; this is only what the page
+/// names up front. Apps seen since are added to the list as they appear.
+pub(crate) const WELL_KNOWN_APPS: &[&str] = &[
     "com.whatsapp",
-    "com.whatsapp.w4b",
     "org.telegram.messenger",
     "com.facebook.orca",
     "com.instagram.android",
     "com.google.android.apps.messaging",
-    "com.snapchat.android",
+    "com.google.android.gm",
+    "com.google.android.calendar",
 ];
 
-/// One line of the spool, exactly as the Kotlin service writes it.
+/// One line of the spool, exactly as the Kotlin service writes it: a
+/// conversation message (the default `kind`), or a `notice` — any other
+/// notification, with its title and text and no thread.
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SpoolLine {
     app: String,
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
     thread_key: String,
     #[serde(default)]
     thread_title: String,
@@ -1426,6 +1472,37 @@ pub(crate) fn drain_spool(store: &mut Store, dir: &Path) -> Result<Drained, Stri
             out.unreadable += 1;
             continue;
         };
+        if l.kind == "notice" {
+            // "Title: text" so the title is searchable and readable without a
+            // column of its own; the title is also the dedupe scope, so the
+            // same notification re-posted stores nothing.
+            let text = match (l.title.trim(), l.text.trim()) {
+                ("", t) => t.to_string(),
+                (t, "") => t.to_string(),
+                (title, body) if body.starts_with(title) => body.to_string(),
+                (title, body) => format!("{title}: {body}"),
+            };
+            if text.is_empty() {
+                out.unreadable += 1;
+                continue;
+            }
+            let o = NewObservation {
+                kind: Kind::Notice,
+                source: source::NOTIFICATION.to_string(),
+                app: l.app,
+                source_key: l.title,
+                at_ms: l.at_ms,
+                text,
+                person_id: None,
+                place: None,
+                event_id: None,
+            };
+            match store.record(&o)? {
+                Ingest::Inserted(_) => out.inserted += 1,
+                Ingest::Duplicate => out.duplicates += 1,
+            }
+            continue;
+        }
         let m = NewMessage {
             source: source::NOTIFICATION.to_string(),
             app: l.app,
@@ -1449,21 +1526,29 @@ pub(crate) fn drain_spool(store: &mut Store, dir: &Path) -> Result<Drained, Stri
     Ok(out)
 }
 
-/// The apps the listener records, as the user set them (or the default).
-pub(crate) fn read_apps(dir: &Path) -> Vec<String> {
-    match std::fs::read_to_string(dir.join(APPS_FILE)) {
+/// The apps the user unticked — the listener skips these. Absent = none.
+pub(crate) fn read_off(dir: &Path) -> Vec<String> {
+    match std::fs::read_to_string(dir.join(OFF_FILE)) {
         Ok(text) => text.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect(),
-        Err(_) => DEFAULT_APPS.iter().map(|s| s.to_string()).collect(),
+        Err(_) => Vec::new(),
     }
 }
 
-/// Set the apps the listener records. Written whole, so the service never
-/// reads a half-written list.
-pub(crate) fn write_apps(dir: &Path, apps: &[String]) -> Result<(), String> {
-    let tmp = dir.join(format!("{APPS_FILE}.tmp"));
-    let body = apps.iter().map(|a| a.trim()).filter(|a| !a.is_empty()).collect::<Vec<_>>().join("\n") + "\n";
-    std::fs::write(&tmp, body).map_err(|e| format!("couldn't save the app list: {e}"))?;
-    std::fs::rename(&tmp, dir.join(APPS_FILE)).map_err(|e| format!("couldn't save the app list: {e}"))
+/// Set the unticked apps. Written whole, so the service never reads a
+/// half-written list; an empty list removes the file.
+pub(crate) fn write_off(dir: &Path, apps: &[String]) -> Result<(), String> {
+    let apps: Vec<&str> = apps.iter().map(|a| a.trim()).filter(|a| !a.is_empty()).collect();
+    let path = dir.join(OFF_FILE);
+    if apps.is_empty() {
+        return match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("couldn't save the app list: {e}")),
+        };
+    }
+    let tmp = dir.join(format!("{OFF_FILE}.tmp"));
+    std::fs::write(&tmp, apps.join("\n") + "\n").map_err(|e| format!("couldn't save the app list: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("couldn't save the app list: {e}"))
 }
 
 #[cfg(test)]
@@ -1480,11 +1565,17 @@ mod tests {
             )
         };
         let mut body = line(1_000, "hello", false) + &line(2_000, "hi back", true) + &line(1_000, "hello", false);
+        // Any other notification: a notice, twice (Android re-posts), then one
+        // with nothing to say.
+        let notice = "{\"app\":\"com.google.android.gm\",\"kind\":\"notice\",\"title\":\"Ada Obi\",\"text\":\"Re: visa forms — sent the scans\",\"atMs\":3000}\n";
+        body.push_str(notice);
+        body.push_str(notice);
+        body.push_str("{\"app\":\"com.google.android.gm\",\"kind\":\"notice\",\"title\":\"\",\"text\":\" \",\"atMs\":3001}\n");
         body.push_str("{\"app\":\"com.whatsapp\",\"thre"); // the service was killed mid-write
         std::fs::write(dir.join(SPOOL_FILE), body).unwrap();
         let mut s = Store::open_in_memory().unwrap();
         let d = drain_spool(&mut s, &dir).unwrap();
-        assert_eq!(d, Drained { inserted: 2, duplicates: 1, unreadable: 1 });
+        assert_eq!(d, Drained { inserted: 3, duplicates: 2, unreadable: 2 });
         assert!(!dir.join(SPOOL_FILE).exists() && !dir.join("context.spool.draining").exists(), "the hand-off is cleared");
         // Nothing to do is not an error; draining again stores nothing.
         assert_eq!(drain_spool(&mut s, &dir).unwrap(), Drained::default());
@@ -1494,10 +1585,30 @@ mod tests {
         };
         assert_eq!(s.last_from(tunde.id, 5).unwrap()[0].text, "hello");
         assert_eq!(s.threads(5).unwrap()[0].items, 2, "the user's own reply is in the thread");
-        // The apps list: default until written, then exactly what was written.
-        assert_eq!(read_apps(&dir).len(), DEFAULT_APPS.len());
-        write_apps(&dir, &["com.whatsapp".to_string(), " ".to_string()]).unwrap();
-        assert_eq!(read_apps(&dir), ["com.whatsapp"]);
+        // The notice is a timed record like any other: found by words and by time,
+        // titled for the prompt, counted per app without a conversation.
+        let found = s.search("visa scans", None, 5).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].text, "Ada Obi: Re: visa forms — sent the scans");
+        assert_eq!(found[0].kind, "notice");
+        assert_eq!(observations_as_snippets(&found)[0].title, "Notification");
+        assert_eq!(observations_as_snippets(&found)[0].domain, "Gmail");
+        assert_eq!(s.in_range(2_500, 3_500, None, 5).unwrap().len(), 1);
+        let gmail = s.counts().unwrap().into_iter().find(|c| c.app == "com.google.android.gm").unwrap();
+        assert_eq!((gmail.items, gmail.threads, gmail.notices), (1, 0, 1));
+        // Unticking an app: nothing until written, then exactly what was written,
+        // and an empty list clears the file rather than leaving an empty one.
+        assert!(read_off(&dir).is_empty());
+        write_off(&dir, &["com.google.android.gm".to_string(), " ".to_string()]).unwrap();
+        assert_eq!(read_off(&dir), ["com.google.android.gm"]);
+        write_off(&dir, &[]).unwrap();
+        assert!(!dir.join(OFF_FILE).exists());
+        // Forgetting an app takes its records, conversations and index entries.
+        s.delete_app("com.google.android.gm").unwrap();
+        assert!(s.search("visa scans", None, 5).unwrap().is_empty());
+        assert!(s.counts().unwrap().iter().all(|c| c.app != "com.google.android.gm"));
+        s.delete_app("com.whatsapp").unwrap();
+        assert!(s.threads(5).unwrap().is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

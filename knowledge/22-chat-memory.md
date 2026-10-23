@@ -96,6 +96,10 @@ There is **no context-length setting**, and this is a deliberate refusal. "Conte
 
 If a control is ever added it should be about **behavior, not tokens** — "Remember our conversations: on/off" — which is a privacy choice the user genuinely owns and can answer. That belongs with cross-session persistence, not here.
 
+## Where the transcript lives (2026-10-23)
+
+The turns the model is shown no longer come from the webview. They are read from the transcript on disk (`app/src-tauri/src/transcript.rs`, `chat.jsonl` in the app's data folder): the completed exchanges in that file, oldest first, with the same turn-level eviction as before. The reason is `11`'s "Mobile non-negotiables": the conversation has to survive the user leaving the screen, switching apps, or the OS killing the app, and a reply finished while the webview was suspended has to be recorded. "New chat" clears the file, and with it the model's memory of the conversation — the two are one thing now.
+
 ## Open questions
 
 - `[OQ-68]` — summarize evicted turns instead of dropping them (deferred; needs evidence users notice).

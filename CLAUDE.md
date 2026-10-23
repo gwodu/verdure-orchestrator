@@ -30,6 +30,7 @@ Read these first — they are the facts that, when missed, lead to wrong moves:
 - **Read everything through the pivot.** Verdure pivoted 2026-06-18 (`knowledge/18`) from a launcher-of-apps to **one interface over local model engines**, then to the **personal-AI** north star (`knowledge/20`). Files `01`/`14`–`17` predate it — read them through `18`'s lens. The "porter" naming in code/docs is legacy.
 - **`@verdure/decider` is the single source of truth** for recommendation logic; `knowledge/` is the *why* behind it. Change the knowledge file first, then the code follows — never the reverse.
 - **Start a build session at `knowledge/21-handoff.md`** — current working state, architecture debt, and prioritized next steps.
+- **Mobile non-negotiables (founder, 2026-10-23), in `knowledge/11` under that heading:** work the user started finishes when they switch apps (a background guard around every reply, download and dictation — `background.rs`); the conversation persists across screens, app switches and restarts (`transcript.rs`); permissions are asked for in the app, once, where the user is looking. A mobile change that breaks one of these is not done, whatever else it does.
 
 ## How you work
 

@@ -177,8 +177,10 @@ res_xml = manifest.parent / "res" / "xml"
 res_xml.mkdir(parents=True, exist_ok=True)
 STORE_FILES = [
     "context.sqlite", "context.sqlite-wal", "context.sqlite-shm", "context.sqlite-journal",
-    # The listener's hand-off file and the per-app opt-in list (context.rs).
-    "context.spool", "context.spool.draining", "context.apps",
+    # The listener's hand-off file and the unticked-apps list (context.rs).
+    "context.spool", "context.spool.draining", "context.off",
+    # The conversation itself (transcript.rs).
+    "chat.jsonl",
 ]
 excludes = "".join(f'    <exclude domain="root" path="{f}" />\n' for f in STORE_FILES)
 (res_xml / "backup_rules.xml").write_text(
@@ -219,19 +221,21 @@ for name in ("backup_rules.xml", "data_extraction_rules.xml"):
     assert all(f in text for f in STORE_FILES), f"{name} does not exclude every store file"
 
 # 5. The notification listener (knowledge/25, [OQ-100]): a small Kotlin service
-#    that reads MessagingStyle conversations from the apps the user opted into
-#    and appends one JSON line per message to `context.spool` in the app's
-#    private folder. It never calls native code — a background service that
-#    crashed inside Rust would take the listener down with it — so the app
-#    drains the spool into the store when it runs (context.rs `drain_spool`).
-#    The JSON field names are the contract with `SpoolLine` in context.rs, and
-#    DEFAULT_APPS mirrors `context::DEFAULT_APPS`; change both together.
+#    that reads what the phone shows the user — conversations message by
+#    message (MessagingStyle), anything else as a notice with its title and
+#    text — from every app except the ones the user unticked, and appends one
+#    JSON line per record to `context.spool` in the app's private folder. It
+#    never calls native code — a background service that crashed inside Rust
+#    would take the listener down with it — so the app drains the spool into
+#    the store when it runs (context.rs `drain_spool`). The JSON field names
+#    are the contract with `SpoolLine` in context.rs; `context.off` (one
+#    package per line) is the contract with `read_off`/`write_off` there.
 #    Declared with BIND_NOTIFICATION_LISTENER_SERVICE so only the system can
-#    bind it, and with the "conversations" default filter (Android 13+) so it
-#    is never even offered non-conversation notifications.
+#    bind it. No default filter: every kind of notification is offered, and
+#    the service decides what is information and what is machinery.
 listener = activity.parent / "VerdureListener.kt"
 listener.write_text(
-    """package ai.verdure.porter
+    r"""package ai.verdure.porter
 
 import android.app.Notification
 import android.app.Person
@@ -242,16 +246,26 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Verdure's memory feed (knowledge/25): the structured conversation each
- * messaging app posts as a notification, written as JSON lines to a spool
- * file in the app's private folder. Nothing leaves the device; the app reads
- * the spool into its store. Per-app opt-in via `context.apps` (one package
- * per line; absent = the defaults below). Never auto-replies, never acts.
+ * Verdure's memory feed (knowledge/25): what the phone shows the user, written
+ * as JSON lines to a spool file in the app's private folder. A conversation
+ * (MessagingStyle) is written message by message with sender and time; any
+ * other notification is written as a notice with its title and text. Every
+ * app is read unless the user unticked it (`context.off`, one package per
+ * line). Nothing leaves the device; the app reads the spool into its store.
+ * Never auto-replies, never acts.
  */
 class VerdureListener : NotificationListenerService() {
-  private val defaultApps = setOf(
-    "com.whatsapp", "com.whatsapp.w4b", "org.telegram.messenger", "com.facebook.orca",
-    "com.instagram.android", "com.google.android.apps.messaging", "com.snapchat.android",
+  // The system's own chatter is not the user's life: Android itself, the
+  // status bar, the store, Play services — and Verdure's own notifications.
+  private val systemApps = setOf(
+    "android", "com.android.systemui", "com.android.vending", "com.google.android.gms",
+  )
+  // Machinery, not information: playback controls, progress bars, service
+  // notices, the phone's own status, timers and turn-by-turn directions.
+  private val noise = setOf(
+    Notification.CATEGORY_SERVICE, Notification.CATEGORY_PROGRESS, Notification.CATEGORY_TRANSPORT,
+    Notification.CATEGORY_SYSTEM, Notification.CATEGORY_STATUS, Notification.CATEGORY_STOPWATCH,
+    Notification.CATEGORY_NAVIGATION,
   )
 
   override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -262,49 +276,73 @@ class VerdureListener : NotificationListenerService() {
     }
   }
 
-  private fun allowed(pkg: String): Boolean {
-    val f = File(dataDir, "context.apps")
-    if (!f.exists()) return pkg in defaultApps
+  private fun unticked(pkg: String): Boolean {
+    val f = File(dataDir, "context.off")
+    if (!f.exists()) return false
     return f.readLines().map { it.trim() }.any { it == pkg }
   }
 
   private fun record(sbn: StatusBarNotification) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+    val pkg = sbn.packageName
+    if (pkg == packageName || pkg in systemApps || unticked(pkg)) return
     val n = sbn.notification ?: return
     if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
-    if (!allowed(sbn.packageName)) return
+    // Ongoing notifications are state, not events: a call in progress, a
+    // download, a foreground service's own notice.
+    if ((n.flags and (Notification.FLAG_ONGOING_EVENT or Notification.FLAG_FOREGROUND_SERVICE)) != 0) return
+    val category = n.category
+    if (category != null && category in noise) return
     val extras = n.extras ?: return
     @Suppress("DEPRECATION")
-    val raw = extras.getParcelableArray(Notification.EXTRA_MESSAGES) ?: return
-    val messages = Notification.MessagingStyle.Message.getMessagesFromBundleArray(raw)
-    if (messages.isEmpty()) return
-    val isGroup = extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
-    val title = (extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
-      ?: extras.getCharSequence(Notification.EXTRA_TITLE) ?: "").toString()
-    @Suppress("DEPRECATION")
-    val self = extras.getParcelable<Person>(Notification.EXTRA_MESSAGING_PERSON)
-    val threadKey = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) n.shortcutId else null)
-      ?: sbn.tag ?: title.lowercase()
+    val raw = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
+    val messages = if (raw != null) Notification.MessagingStyle.Message.getMessagesFromBundleArray(raw) else emptyList()
     val lines = StringBuilder()
-    for (m in messages) {
-      val text = m.text?.toString()?.trim() ?: continue
-      if (text.isEmpty()) continue
-      val who = m.senderPerson
-      // MessagingStyle marks the user's own messages with a null sender, or
-      // with the style's own user Person.
-      val mine = who == null ||
-        (self != null && ((who.key != null && who.key == self.key) || who.name == self.name))
+    if (messages.isNotEmpty()) {
+      val isGroup = extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
+      val title = (extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
+        ?: extras.getCharSequence(Notification.EXTRA_TITLE) ?: "").toString()
+      @Suppress("DEPRECATION")
+      val self = extras.getParcelable<Person>(Notification.EXTRA_MESSAGING_PERSON)
+      val threadKey = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) n.shortcutId else null)
+        ?: sbn.tag ?: title.lowercase()
+      for (m in messages) {
+        val text = m.text?.toString()?.trim() ?: continue
+        if (text.isEmpty()) continue
+        val who = m.senderPerson
+        // MessagingStyle marks the user's own messages with a null sender, or
+        // with the style's own user Person.
+        val mine = who == null ||
+          (self != null && ((who.key != null && who.key == self.key) || who.name == self.name))
+        val o = JSONObject()
+        o.put("app", pkg)
+        o.put("threadKey", threadKey)
+        o.put("threadTitle", title)
+        o.put("isGroup", isGroup)
+        o.put("sender", if (mine) "" else (who?.name?.toString() ?: ""))
+        o.put("senderKey", if (mine) "" else (who?.key ?: who?.uri ?: who?.name?.toString() ?: ""))
+        o.put("out", mine)
+        o.put("atMs", m.timestamp)
+        o.put("text", text)
+        lines.append(o.toString()).append('\n')
+      }
+    } else {
+      // Anything else the phone showed: its title and its text, as the user
+      // saw them. The expanded forms first — they carry the whole message.
+      val title = (extras.getCharSequence(Notification.EXTRA_TITLE_BIG)
+        ?: extras.getCharSequence(Notification.EXTRA_TITLE) ?: "").toString().trim()
+      val body = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
+        ?: extras.getCharSequence(Notification.EXTRA_TEXT)
+        ?: extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.joinToString("\n")
+        ?: "").toString().trim()
+      if (title.isEmpty() && body.isEmpty()) return
       val o = JSONObject()
-      o.put("app", sbn.packageName)
-      o.put("threadKey", threadKey)
-      o.put("threadTitle", title)
-      o.put("isGroup", isGroup)
-      o.put("sender", if (mine) "" else (who?.name?.toString() ?: ""))
-      o.put("senderKey", if (mine) "" else (who?.key ?: who?.uri ?: who?.name?.toString() ?: ""))
-      o.put("out", mine)
-      o.put("atMs", m.timestamp)
-      o.put("text", text)
-      lines.append(o.toString()).append('\\n')
+      o.put("kind", "notice")
+      o.put("app", pkg)
+      o.put("title", title)
+      o.put("text", body)
+      o.put("atMs", sbn.postTime)
+      lines.append(o.toString()).append('\n')
     }
     if (lines.isEmpty()) return
     File(dataDir, "context.spool").appendText(lines.toString())
@@ -325,9 +363,6 @@ if "VerdureListener" not in xml:
         '            <intent-filter>\n'
         '                <action android:name="android.service.notification.NotificationListenerService" />\n'
         '            </intent-filter>\n'
-        '            <meta-data\n'
-        '                android:name="android.service.notification.default_filter_types"\n'
-        '                android:value="conversations" />\n'
         '        </service>\n'
         '    </application>'
     )
@@ -335,9 +370,137 @@ if "VerdureListener" not in xml:
     xml = xml.replace("    </application>", service, 1) if "    </application>" in xml else xml.replace("</application>", service, 1)
     manifest.write_text(xml)
     print(f"patched {manifest}: VerdureListener service")
+# An older patch limited the listener to conversations; every notification is
+# read now (knowledge/25, 2026-10-23). Drop the filter if a tree still has it.
+xml = manifest.read_text()
+if "default_filter_types" in xml:
+    xml = re.sub(r"\s*<meta-data\s+android:name=\"android\.service\.notification\.default_filter_types\"[^>]*/>", "", xml)
+    manifest.write_text(xml)
+    print(f"patched {manifest}: removed the conversations-only filter")
 
 after = manifest.read_text()
 assert 'android:name=".VerdureListener"' in after and "BIND_NOTIFICATION_LISTENER_SERVICE" in after, (
-    f"listener service missing after patching:\\n{after}"
+    f"listener service missing after patching:\n{after}"
 )
+assert "default_filter_types" not in after, "the listener is still filtered to conversations"
 assert listener.is_file() and "class VerdureListener" in listener.read_text()
+
+# 6. Background work (knowledge/11, "Mobile non-negotiables"): a foreground
+#    service the Rust core starts while a reply is being written, a model is
+#    downloading or a dictation is running (background.rs), so Android neither
+#    freezes nor kills the process when the user switches apps. It does no
+#    work itself; it holds the process's foreground standing and shows one
+#    quiet notification naming the work. Reached by an explicit Intent with
+#    the class name, so the Rust side needs no app class from a native thread.
+#    Permissions: FOREGROUND_SERVICE plus the per-type ones Android 14 requires
+#    (dataSync for a reply or download, microphone for dictation), and
+#    POST_NOTIFICATIONS so the notification can be shown on 13+ if the user
+#    allows it — the service runs either way.
+work = activity.parent / "VerdureWork.kt"
+work.write_text(
+    r"""package ai.verdure.porter
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.os.IBinder
+
+/**
+ * Keeps Verdure's work alive when the user switches apps (knowledge/11,
+ * "Mobile non-negotiables"): a reply being written, a model downloading, a
+ * dictation running. Started and stopped by the Rust core (background.rs)
+ * with the kind of work in the Intent's "kind" extra; shows one quiet
+ * notification naming it. Does no work itself.
+ */
+class VerdureWork : Service() {
+  override fun onBind(intent: Intent?): IBinder? = null
+
+  override fun onCreate() {
+    super.onCreate()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      val channel = NotificationChannel(CHANNEL, "Working in the background", NotificationManager.IMPORTANCE_LOW)
+      channel.description = "Shown while Verdure finishes something you started."
+      channel.setShowBadge(false)
+      getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+  }
+
+  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    val kind = intent?.getStringExtra("kind") ?: "working"
+    val text = when (kind) {
+      "listening" -> "Listening…"
+      "thinking" -> "Thinking…"
+      else -> "Working…"
+    }
+    val open = packageManager.getLaunchIntentForPackage(packageName)
+    val tap = if (open != null) {
+      PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    } else null
+    @Suppress("DEPRECATION")
+    val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, CHANNEL) else Notification.Builder(this)
+    val notification = builder
+      .setSmallIcon(applicationInfo.icon)
+      .setContentTitle("Verdure")
+      .setContentText(text)
+      .setOngoing(true)
+      .setContentIntent(tap)
+      .build()
+    val type = if (kind == "listening") ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+      else ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(ID, notification, type)
+    else startForeground(ID, notification)
+    return START_NOT_STICKY
+  }
+
+  override fun onDestroy() {
+    stopForeground(STOP_FOREGROUND_REMOVE)
+    super.onDestroy()
+  }
+
+  companion object {
+    private const val CHANNEL = "verdure.work"
+    private const val ID = 7
+  }
+}
+"""
+)
+print(f"wrote {work}")
+
+xml = manifest.read_text()
+for perm in (
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+    "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+    "android.permission.POST_NOTIFICATIONS",
+):
+    if perm not in xml:
+        xml = xml.replace("<application", f'<uses-permission android:name="{perm}" />\n    <application', 1)
+if "VerdureWork" not in xml:
+    service = (
+        '        <service\n'
+        '            android:name=".VerdureWork"\n'
+        '            android:exported="false"\n'
+        '            android:foregroundServiceType="dataSync|microphone" />\n'
+        '    </application>'
+    )
+    assert xml.count("</application>") == 1, "unexpected manifest layout (application close tag)"
+    xml = xml.replace("    </application>", service, 1) if "    </application>" in xml else xml.replace("</application>", service, 1)
+manifest.write_text(xml)
+print(f"patched {manifest}: VerdureWork service + foreground-service permissions")
+
+after = manifest.read_text()
+for needle in (
+    "android.permission.FOREGROUND_SERVICE\"",
+    "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+    "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+    "android.permission.POST_NOTIFICATIONS",
+    'android:name=".VerdureWork"',
+    'android:foregroundServiceType="dataSync|microphone"',
+):
+    assert needle in after, f"{needle} missing after patching:\n{after}"
+assert work.is_file() and "class VerdureWork" in work.read_text()
