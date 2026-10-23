@@ -107,7 +107,7 @@ This file documents the practical realities of shipping Verdure on each platform
 3. Play Console → **Users and permissions** → invite the service account's email → grant *Release to testing tracks* for this app.
 4. Add the JSON file as the GitHub secret **`PLAY_SERVICE_ACCOUNT_JSON`**.
 
-**The one step that cannot be automated:** the **first** bundle of a brand-new app must be uploaded by hand in Play Console — Google's API refuses it. Every upload after that is automated.
+~~**The one step that cannot be automated:** the **first** bundle of a brand-new app must be uploaded by hand in Play Console — Google's API refuses it.~~ **Wrong, measured 2026-10-23:** `android-play-4` was the very first bundle on the app and the API accepted it (`edits.insert` → `bundles.upload` → `tracks.update` → `edits.commit`, versionCode 4 on `alpha`). The real constraint is **draft-only releases while the app has never been rolled out** (`STATUS: draft` in the workflow). The founder rolls the draft out once in Play Console; after that flip `STATUS` to `completed` and the pipeline is hands-off end to end.
 
 **Track matters.** Default is `alpha`, which is Play's **closed** track. Internal testing does **not** count toward the 12-testers/14-day production requirement; closed testing does (`[OQ-66]`).
 

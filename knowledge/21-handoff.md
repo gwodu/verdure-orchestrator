@@ -18,7 +18,7 @@
 2. **Run the 27B on the founder's iPad (`[OQ-84]`).** `testflight-12` delivered it. Record whether it loads, its real footprint (`runtime_mb = 10000` is an estimate), and the time to the first reply.
 3. ~~**Work the cleanup queue below**~~ — **done 2026-10-20** (all 13 items; what was deliberately left is listed per item). Next inspection: before the next large feature.
 4. ~~**Website: Vercel builds are unreliable (`[OQ-81]`).**~~ **Diagnosed and fixed 2026-10-20** (log read after `vercel login`): the lockfile lacked every Linux native package (`@tailwindcss/oxide-linux-x64-gnu`, `@next/swc-linux-x64-gnu`, sharp), so `npm ci` on Vercel's Linux builder installed no binding and Turbopack died on `globals.css`. The entries are back at their pinned versions and `website/lib/lockfile.test.ts` fails on the Mac if they ever vanish again (`11`, "the Linux lockfile rule"). Next website item: `[OQ-87]` (what the site is for after the pivot).
-5. **Play: the manual first upload, then `[OQ-83]`'s confirming test.** The Android rename is done (`ai.verdure.app`) and the upload is automated. Play's rule for an unpublished app is draft-only releases, and the 12-testers / 14-days requirement counts **closed** testing.
+5. ~~**Play: the manual first upload, then `[OQ-83]`'s confirming test.**~~ **Done 2026-10-23: `android-play-4` uploaded versionCode 4 to the closed (alpha) track as a draft release, hands-off** (15 min on Linux at 1×). The "first upload must be manual" rule was never real (`[OQ-83]`). Remaining: the founder rolls the draft out in Play Console, then flip `STATUS: draft` → `completed` in `build-android-play.yml`, then 12 testers for 14 days on the **closed** track.
 6. **`[OQ-58]` process isolation**, the P0 before a *public* link. It matters more now: the 27B experiment is the most likely thing yet to trigger a ggml `abort()`.
 7. **`[OQ-64]` / `[OQ-70]`**: peak-RSS measurement across a full context window. **`[OQ-72]`** / **`[OQ-73]`**: diagnosed, not fixed. Dictation on the notarized macOS build is still unexercised on a device.
 
@@ -114,7 +114,7 @@ Ordered (structural and misleading items first):
 
 ## Next steps (prioritized — pick up here)
 
-1. **Play closed testing.** ~~Decide the rename~~ done for Android (`ai.verdure.app`, 2026-09-11); keystore, secrets and the Play app exist, and the upload is automated (`[OQ-83]`). Remaining: the manual first upload, then 12 testers for 14 days on the **closed** track before production access.
+1. **Play closed testing.** ~~Decide the rename~~ done for Android (`ai.verdure.app`, 2026-09-11); keystore, secrets and the Play app exist, and the upload is automated (`[OQ-83]`). **`android-play-4` (2026-10-23) landed versionCode 4 on the closed track as a draft, fully automated.** Remaining: roll the draft out in Play Console (the only manual step while the app is unpublished), flip `STATUS` to `completed` in the workflow, then 12 testers for 14 days on the **closed** track before production access.
 2. **Process-isolate the model runtime** (`[OQ-58]`) — a ggml `abort()` must never take down the UI. Also removes the 4B load-abort risk and re-opens the door to grammar-constrained tool-calling.
 3. ~~Resident chat model + conversational memory~~ — **done 2026-08-12** (`22`). Residual: the KV cache is still rebuilt per turn.
 4. **Calibrate the 4B on a capable device** (`[OQ-64]` residual) — measure its real resident footprint, set `runtime_mb` from measurement, and judge reply quality.
