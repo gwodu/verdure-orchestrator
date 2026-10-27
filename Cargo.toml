@@ -14,6 +14,10 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+# Throwaway integration projects built against the SDK (docs/sdk-integration-guide.md):
+# standalone packages, not workspace members, so a broken experiment never breaks
+# the suite. They depend on the crates by path.
+exclude = ["sandbox"]
 
 [workspace.package]
 version = "0.1.0"

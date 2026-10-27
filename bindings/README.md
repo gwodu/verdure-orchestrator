@@ -22,6 +22,8 @@ cargo run -p verdure-ffi --features bindgen --bin uniffi-bindgen -- \
 XCFramework of the `staticlib` — the packaging per platform is `knowledge/11`'s
 job and is not written yet.)
 
+**Verified 2026-10-26 on macOS:** the Python generation above runs and the module works end to end against `target/debug/libverdure.dylib` (copy the dylib next to `verdure.py`); see `docs/sdk-integration-guide.md` §5. Swift and Kotlin generation are the same command with `--language swift|kotlin` and are not yet exercised.
+
 ## The one-liners the generated code gives a vendor
 
 | Platform | Install | Start |

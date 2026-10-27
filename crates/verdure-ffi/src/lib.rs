@@ -130,6 +130,17 @@ pub struct BundleRef {
     pub skipped: Vec<String>,
 }
 
+/// A developer's explicit bundle choice, judged for this device.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FitReport {
+    pub bundle: BundleRef,
+    pub fits: bool,
+    pub available_ram_mb: u64,
+    pub free_disk_mb: u64,
+    /// Every problem, one sentence each; empty when it fits.
+    pub problems: Vec<String>,
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct Doc {
     pub id: String,
@@ -459,6 +470,46 @@ impl Verdure {
         })
     }
 
+    /// Judge a bundle the developer picked themselves — no substitution, no
+    /// walk-down. The vendor already chose the models by writing the
+    /// manifest; this is the developer's hand on the dial at runtime: pin
+    /// `scribe-L2` and learn, in sentences, whether this device can run it.
+    pub fn fit(&self, bundle_id: String) -> Result<FitReport, VerdureError> {
+        let inner = self.inner.lock().unwrap();
+        let manifest = inner
+            .manifest
+            .as_ref()
+            .ok_or_else(|| VerdureError::NoBundle("no manifest loaded".into()))?;
+        let profile = verdure_hw::probe(&inner.data_dir);
+        let r = verdure_core::registry::fit(
+            manifest,
+            &bundle_id,
+            profile.available_ram_mb,
+            profile.free_disk_mb,
+            &inner.claims,
+        )?;
+        Ok(FitReport {
+            bundle: BundleRef {
+                id: r.bundle.id,
+                task: match r.bundle.task {
+                    CoreTask::Scribe => Task::Scribe,
+                    CoreTask::Tutor => Task::Tutor,
+                    CoreTask::ChwForms => Task::ChwForms,
+                },
+                tier: r.bundle.tier.to_string(),
+                download_bytes: r.bundle.download_bytes,
+                required_mb: r.bundle.required_mb,
+                attributions: r.bundle.attributions,
+                downgraded_from: None,
+                skipped: vec![],
+            },
+            fits: r.fits,
+            available_ram_mb: r.available_ram_mb,
+            free_disk_mb: r.free_disk_mb,
+            problems: r.problems,
+        })
+    }
+
     /// Download (or resume) every file of `bundle_id`, verifying each.
     pub fn download(
         &self,
@@ -506,6 +557,20 @@ impl Verdure {
     /// Load the bundle's engines into memory (after `download`). Refuses,
     /// with the numbers, when the device cannot hold them right now.
     pub fn load(&self, bundle_id: String) -> Result<(), VerdureError> {
+        self.load_with(bundle_id, false)
+    }
+
+    /// `load` without the memory gate. For a developer who has measured their
+    /// own device and disagrees with the rule: the engine may abort the host
+    /// process if the model does not fit, and nothing will catch it until the
+    /// engine runs isolated. The licence still applies.
+    pub fn load_overcommit(&self, bundle_id: String) -> Result<(), VerdureError> {
+        self.load_with(bundle_id, true)
+    }
+}
+
+impl Verdure {
+    fn load_with(&self, bundle_id: String, overcommit: bool) -> Result<(), VerdureError> {
         let mut inner = self.inner.lock().unwrap();
         let manifest = inner
             .manifest
@@ -514,9 +579,14 @@ impl Verdure {
         let bundle = manifest
             .bundle(&bundle_id)
             .ok_or_else(|| VerdureError::NoBundle(format!("{bundle_id} is not in the manifest")))?;
+        if !inner.claims.entitles(&bundle_id) {
+            return Err(VerdureError::License(format!(
+                "{bundle_id} is not included in this licence"
+            )));
+        }
         let profile = verdure_hw::probe(&inner.data_dir);
         let needed = bundle.required_mb();
-        if needed > profile.available_ram_mb {
+        if !overcommit && needed > profile.available_ram_mb {
             return Err(VError::NotEnoughMemory {
                 needed_mb: needed,
                 available_mb: profile.available_ram_mb,
@@ -540,7 +610,10 @@ impl Verdure {
         inner.loaded_bundle = Some(bundle_id);
         Ok(())
     }
+}
 
+#[uniffi::export]
+impl Verdure {
     /// Open a live transcription stream.
     pub fn transcribe(&self, config: AsrConfig) -> Result<Arc<AsrStream>, VerdureError> {
         let inner = self.inner.lock().unwrap();
@@ -971,6 +1044,37 @@ mod tests {
             Err(VerdureError::NoBundle(_))
         ));
         assert!(!v.is_downloaded("chw-P1".into()));
+    }
+
+    #[test]
+    fn a_developer_can_pin_a_bundle_and_is_told_the_truth_about_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (v, _) = start(dir.path());
+        let kp = KeyPair::generate().unwrap();
+        let m = manifest_json();
+        v.load_manifest(m.clone(), kp.sign(m.as_bytes()), kp.public_b64())
+            .unwrap();
+        let r = v.fit("chw-P1".into()).unwrap();
+        assert_eq!(r.bundle.id, "chw-P1");
+        assert!(r.available_ram_mb > 0);
+        // A 1 MB model fits any machine this test runs on.
+        assert!(r.fits && r.problems.is_empty(), "{r:?}");
+        assert!(matches!(
+            v.fit("nope".into()),
+            Err(VerdureError::NoBundle(_))
+        ));
+        // Loading a pinned bundle that is not downloaded fails at the engine,
+        // not at the gate, in both modes; without an engine built it says so.
+        for load in [Verdure::load, Verdure::load_overcommit] {
+            let err = load(&v, "chw-P1".into()).err().unwrap();
+            assert!(
+                matches!(
+                    err,
+                    VerdureError::EngineUnavailable(_) | VerdureError::Engine(_)
+                ),
+                "{err:?}"
+            );
+        }
     }
 
     #[test]

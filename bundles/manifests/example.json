@@ -1,11 +1,14 @@
 {
   "schema": 1,
-  "issued_at": 1792972800,
+  "issued_at": 1793000000,
   "bundles": [
     {
       "id": "scribe-L2",
       "task": "scribe",
-      "tiers": ["L2", "L3"],
+      "tiers": [
+        "L2",
+        "L3"
+      ],
       "models": [
         {
           "id": "whisper-small",
@@ -35,12 +38,17 @@
       ],
       "requires_acknowledgement": [],
       "attributions": [],
-      "notes": "EXAMPLE ONLY. The whisper hash is whisper.cpp's published one; the Qwen hash is a placeholder to be measured before this manifest is signed for anyone. Gates in knowledge/26 §4.4 have not been run."
+      "notes": "EXAMPLE ONLY. The whisper hash is whisper.cpp's published one; the Qwen 1.5B hash is a PLACEHOLDER \u2014 do not download this bundle. Gates not run."
     },
     {
       "id": "chw-forms-P1",
       "task": "chw_forms",
-      "tiers": ["P1", "P2", "P3", "L1"],
+      "tiers": [
+        "P1",
+        "P2",
+        "P3",
+        "L1"
+      ],
       "models": [
         {
           "id": "whisper-base",
@@ -54,21 +62,63 @@
           "licence": "mit"
         },
         {
-          "id": "qwen2.5-1.5b-instruct-q4_k_m",
+          "id": "qwen2.5-0.5b-instruct-q4_k_m",
           "kind": "llm",
-          "name": "Language model",
-          "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-          "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-          "size_bytes": 1117320736,
+          "name": "Language model (small)",
+          "file": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+          "url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+          "sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+          "size_bytes": 491400032,
           "engine": "llama",
           "prompt_style": "chatml",
-          "kv_kb_per_token": 28,
+          "kv_kb_per_token": 12,
           "trained_ctx": 32768,
           "licence": "apache-2.0"
         }
       ],
-      "notes": "EXAMPLE ONLY — see scribe-L2."
+      "notes": "REAL hashes (2026-10-27): Whisper base + Qwen2.5 0.5B. Gates not run."
+    },
+    {
+      "id": "scribe-floor",
+      "task": "scribe",
+      "tiers": [
+        "P1",
+        "P2",
+        "P3",
+        "L1",
+        "L2",
+        "L3"
+      ],
+      "models": [
+        {
+          "id": "whisper-base",
+          "kind": "asr",
+          "name": "Speech model",
+          "file": "ggml-base.bin",
+          "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
+          "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+          "size_bytes": 147951465,
+          "engine": "whisper",
+          "licence": "mit"
+        },
+        {
+          "id": "qwen2.5-0.5b-instruct-q4_k_m",
+          "kind": "llm",
+          "name": "Language model (small)",
+          "file": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+          "url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+          "sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+          "size_bytes": 491400032,
+          "engine": "llama",
+          "prompt_style": "chatml",
+          "kv_kb_per_token": 12,
+          "trained_ctx": 32768,
+          "licence": "apache-2.0"
+        }
+      ],
+      "requires_acknowledgement": [],
+      "attributions": [],
+      "notes": "REAL hashes, measured 2026-10-27 (both files downloaded and hashed on the founder's Mac). The smallest scribe bundle: Whisper base + Qwen2.5 0.5B. Quality gates (knowledge/26 \u00a74.4) NOT run; this exists so the SDK can be exercised end to end on an 8 GB laptop."
     }
   ]
 }

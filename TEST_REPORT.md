@@ -6,6 +6,25 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 Run: `cargo test --workspace` at the repo root (no models, seconds). CI: the `sdk` job (Linux) runs it plus `cargo check -p verdure-ffi --features llama,whisper` and `cargo fmt --check`.
 
+### 2026-10-27 — The first real run (`evals/`)
+
+- **Engine build on the Mac:** `CARGO_BUILD_JOBS=2 cargo build -p verdure-ffi --features llama,whisper` — 5 min 39 s, exit 0, 3.8 GB disk left. The 8-job attempt five days earlier was killed by the memory reaper; two jobs is the setting for this machine.
+- **End-to-end (day1_consultation01, 457.9 s of audio, `scribe-floor`):** recommend skipped `scribe-L2` ("needs 2562 MB of memory, 1837 MB available") and chose the floor; both files verified by hash from the local cache; load within the gate (needs 1343 MB). ASR: 110.6 s, RTF 0.242, first final segment at 2.6 s, 1,260 hypothesis words vs 1,321 reference, WER 0.2755. The reference contains no digits (numbers are spelled out), so `numbers_kept` is 0/0 — the term list for a medical-term error rate is still to be written.
+- **Extraction, four runs on the saved transcript:** (1) whole transcript, schema in prompt → "did not contain a JSON object": the model echoed the schema until the 1024-token budget ran out (found by making the error quote the reply). (2) outline instead of schema → echoed the outline's placeholders and `, ...`, unparseable. (3) copy-safe outline + placeholder detection + 150-word windows → 0/9 windows valid, every one "still holds the placeholder" / missing `group`. (4) + a one-line demonstration in the system prompt → 4/9 windows valid, 62 s; facts are transcript quotes with a group; `invented_numbers: []`.
+- **New tests:** grammar `shape` (outline has no schema keywords, no `...`, no comments, nullable placeholders, refs/consts/cycles); core: no-JSON error quotes the reply and the repair turn carries it; outline handed back with placeholders is repaired; unparseable JSON is reported as such. Scorer: TextGrid parsing with tags stripped, WER arithmetic, invented numbers exclude digits inside words (`HbA1c`) and split compounds (`150/95`) — the first version flagged both wrongly.
+- **Two full end-to-end runs afterwards (audio → facts, background):** consultation 01: RTF 0.23, first text 2.1 s, WER 0.2755, 4 facts from 4/9 windows, 61 s extraction. Consultation 02 (8.7 min): RTF 0.20, first text 1.1 s, WER 0.2519, 7 facts from 2/10 windows, 89 s. Both `invented_numbers: []`. One fact in run 02 was the schema's own description copied back without its brackets ("One atomic clinical statement, in the clinician's words where possible.") — now a named violation too (`description_hints`), asserted inside the existing placeholder test; core stays at 29.
+- **Not measured:** Whisper small; any model above 0.5B; the 1.5B needs ~2.2 GB free; Swift/Kotlin bindings; any device but this Mac.
+
+### 2026-10-26 — Integration guide verification
+
+- Python: `uniffi-bindgen generate --language python` from `target/debug/libverdure.dylib` produced `verdure.py` (349 defs); the guide's §5 snippet ran verbatim: tier/memory printed, `fit` listed both problems on this Mac (memory and disk), `query` returned the indexed passage, `extract` without an engine raised `VerdureError.EngineUnavailable`, with a Python `CloudFallback` returned validated JSON tagged "answered by the vendor's cloud fallback", `DeleteScope.ALL()` and the `NoBundle` catch worked. yapf warning from the generator is cosmetic.
+- Rust: `crates/verdure-ffi/examples/chw.rs` runs with the sandbox token and prints the same flow; `sandbox/template` copied to a new folder builds and runs; `cargo test --workspace` still 86 with `sandbox` excluded.
+- **Not verified:** Swift and Kotlin generation; anything with an engine built.
+
+### 2026-10-24 — `fit()` and `load_overcommit`
+
+- core 28, ffi 6, zero warnings, `cargo fmt` clean. The 2026-10-21 `cargo fmt` had applied before the memory kill; only the re-test had not run. **Caught:** the first FFI edit was written against the pre-format text and failed its anchors; redone against the formatted file. Nothing else changed.
+
 ### 2026-10-21 — The SDK workspace (`knowledge/26`)
 
 - **84 tests, zero warnings**, after `cargo fmt --all`.

@@ -1,0 +1,10 @@
+# A starter project against the Verdure SDK. Copy this folder, rename it, build.
+[package]
+name = "verdure-sandbox-template"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+verdure-ffi = { path = "../../crates/verdure-ffi" }
+serde_json = "1"

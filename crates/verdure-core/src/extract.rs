@@ -55,10 +55,14 @@ pub struct Extraction {
 /// short rule better than a careful one (the app's lesson, knowledge/21), and
 /// the two that matter most are the release gates: never invent, especially
 /// numbers (CHW: "zero fabricated numeric vitals").
-const SYSTEM: &str = "You turn text into JSON that matches a schema. \
+const SYSTEM: &str = "You turn text into JSON by filling in an outline. \
 Use only what the text says. If the text does not state a value, use null. \
 Never invent numbers, names or dates. \
-Reply with the JSON only.";
+Reply with the JSON only.\n\n\
+Example.\n\
+Text: Mrs Okafor is 34, her blood pressure is one fifty over ninety five, no known allergies.\n\
+Outline: {\"name\": \"<text>\", \"age\": \"<integer or null>\", \"bp\": \"<text or null>\", \"allergies\": [\"<text>\"], \"smoker\": \"<true or false or null>\"}\n\
+JSON: {\"name\": \"Mrs Okafor\", \"age\": 34, \"bp\": \"150/95\", \"allergies\": [], \"smoker\": null}";
 
 pub fn extract(
     engine: &dyn LlmEngine,
@@ -91,12 +95,14 @@ pub fn extract(
         Some(c) => format!("{c}\n\n{SYSTEM}"),
         None => SYSTEM.to_string(),
     };
-    let compact_schema = serde_json::to_string(&schema).expect("value serialises");
+    // The model sees an OUTLINE with placeholders, never the schema itself: on
+    // the first real run a 0.5B model copied the schema back verbatim until its
+    // budget ran out (`verdure_grammar::shape`). Validation uses the real schema.
+    let outline = verdure_grammar::shape(&schema);
+    let hints = description_hints(&schema);
     let mut messages = vec![
         Msg::system(system),
-        Msg::user(format!(
-            "Schema:\n{compact_schema}\n\nText:\n{text}\n\nJSON:"
-        )),
+        Msg::user(format!("Text: {text}\nOutline: {outline}\nJSON:")),
     ];
 
     let total_attempts = 1 + opts.repair_attempts;
@@ -127,11 +133,15 @@ pub fn extract(
             return Err(VError::Cancelled);
         }
 
+        let found = find_json(&reply);
         let violations: Vec<String> =
-            match find_json(&reply).and_then(|s| serde_json::from_str::<Value>(s).ok()) {
+            match found.and_then(|s| serde_json::from_str::<Value>(s).ok()) {
                 Some(value) => {
                     let value = verdure_grammar::strip_optional_nulls(&schema, value);
-                    let v = verdure_grammar::validate(&schema, &value);
+                    let mut v = verdure_grammar::validate(&schema, &value);
+                    // A small model may hand the outline back with its
+                    // placeholders still in: valid JSON, not an extraction.
+                    v.extend(placeholders_left(&value, "$", &hints));
                     if v.is_empty() {
                         progress.on_event(Event::Progress {
                             done: total_attempts as u64,
@@ -146,7 +156,15 @@ pub fn extract(
                     }
                     v.iter().map(ToString::to_string).collect()
                 }
-                None => vec!["$: the reply did not contain a JSON object".to_string()],
+                None => vec![format!(
+                    "$: {} (it began: {:?})",
+                    if found.is_some() {
+                        "the reply's JSON could not be parsed"
+                    } else {
+                        "the reply did not contain a JSON object"
+                    },
+                    reply.chars().take(160).collect::<String>()
+                )],
             };
         if attempt == total_attempts {
             return Err(VError::SchemaInvalid { violations });
@@ -158,6 +176,62 @@ pub fn extract(
         )));
     }
     unreachable!("the loop returns on its last attempt")
+}
+
+/// Strings still shaped like the outline's placeholders (`<text>`,
+/// `<one of: a | b>`), as violations the repair turn can name.
+fn placeholders_left(
+    value: &Value,
+    path: &str,
+    hints: &[String],
+) -> Vec<verdure_grammar::Violation> {
+    let mut out = Vec::new();
+    match value {
+        // `<text>` with its brackets, or a schema description copied out
+        // word for word (seen on PriMock57 consultation 02): neither is a value.
+        Value::String(s)
+            if (s.starts_with('<') && s.ends_with('>')) || hints.iter().any(|h| h == s.trim()) =>
+        {
+            out.push(verdure_grammar::Violation {
+                path: path.to_string(),
+                message: format!(
+                    "still holds the placeholder {s:?}; put the value from the text, or null"
+                ),
+            })
+        }
+        Value::Object(map) => {
+            for (k, v) in map {
+                out.extend(placeholders_left(v, &format!("{path}.{k}"), hints));
+            }
+        }
+        Value::Array(items) => {
+            for (i, v) in items.iter().enumerate() {
+                out.extend(placeholders_left(v, &format!("{path}[{i}]"), hints));
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// Every `description` string in the schema — the words the outline shows as
+/// placeholder hints, which a small model may copy back as if they were values.
+fn description_hints(schema: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    fn walk(v: &Value, out: &mut Vec<String>) {
+        match v {
+            Value::Object(m) => {
+                if let Some(Value::String(d)) = m.get("description") {
+                    out.push(d.trim().to_string());
+                }
+                m.values().for_each(|x| walk(x, out));
+            }
+            Value::Array(a) => a.iter().for_each(|x| walk(x, out)),
+            _ => {}
+        }
+    }
+    walk(schema, &mut out);
+    out
 }
 
 /// The first JSON object or array in `reply`, tolerant of prose and code
@@ -246,7 +320,16 @@ mod tests {
         let reqs = llm.requests.lock().unwrap();
         assert_eq!(reqs.len(), 1);
         assert!(reqs[0].messages[0].content.contains("Never invent numbers"));
-        assert!(reqs[0].messages[1].content.contains("\"chief_complaint\""));
+        let prompt = &reqs[0].messages[1].content;
+        assert!(
+            prompt.contains("\"chief_complaint\": \"<text>\""),
+            "{prompt}"
+        );
+        assert!(prompt.contains("\"heart_rate\": \"<integer>\""), "{prompt}");
+        assert!(
+            !prompt.contains("minimum"),
+            "schema keywords must not reach the model"
+        );
         assert!(reqs[0].messages[1].content.contains("Patient has a cough"));
         assert!(
             reqs[0].grammar.is_none(),
@@ -296,6 +379,59 @@ mod tests {
             }
         );
         assert!(err.to_string().contains("did not match the schema"));
+        // When the model never produced JSON at all, the error shows what it
+        // said instead — the first thing anyone debugging a bundle needs.
+        let llm = FakeLlm::scripted(["I cannot do that.", "Sorry, still no."]);
+        let err = extract(&llm, "…", SCHEMA, &ExtractOptions::default(), &NoProgress).unwrap_err();
+        assert!(
+            err.to_string().contains("it began: \"Sorry, still no.\""),
+            "{err}"
+        );
+        let reqs = llm.requests.lock().unwrap();
+        assert!(reqs[1].messages[3]
+            .content
+            .contains("it began: \"I cannot do that.\""));
+    }
+
+    #[test]
+    fn an_outline_handed_back_with_placeholders_is_not_an_extraction() {
+        let llm = FakeLlm::scripted([
+            r#"{"chief_complaint": "<text>", "heart_rate": null, "medications": ["<text>"]}"#,
+            r#"{"chief_complaint": "cough", "medications": []}"#,
+        ]);
+        let out = extract(
+            &llm,
+            "cough",
+            SCHEMA,
+            &ExtractOptions::default(),
+            &NoProgress,
+        )
+        .unwrap();
+        assert_eq!(out.attempts, 2);
+        let reqs = llm.requests.lock().unwrap();
+        let ask = &reqs[1].messages[3].content;
+        assert!(
+            ask.contains("$.chief_complaint: still holds the placeholder \"<text>\""),
+            "{ask}"
+        );
+        assert!(ask.contains("$.medications[0]: still holds"), "{ask}");
+        // A description copied back without its brackets is caught too.
+        let schema = r#"{"type":"object","properties":{"a":{"type":"string","description":"one statement"}},"required":["a"],"additionalProperties":false}"#;
+        let llm = FakeLlm::scripted([r#"{"a": "one statement"}"#, r#"{"a": "cough"}"#]);
+        let out = extract(
+            &llm,
+            "cough",
+            schema,
+            &ExtractOptions::default(),
+            &NoProgress,
+        )
+        .unwrap();
+        assert_eq!(out.attempts, 2);
+        assert_eq!(out.json, r#"{"a":"cough"}"#);
+        // Unparseable JSON is reported as such, not as "no JSON".
+        let llm = FakeLlm::scripted(["{\"a\": [1, ...]}", "{\"a\": [1, ...]}"]);
+        let err = extract(&llm, "x", SCHEMA, &ExtractOptions::default(), &NoProgress).unwrap_err();
+        assert!(err.to_string().contains("could not be parsed"), "{err}");
     }
 
     #[test]

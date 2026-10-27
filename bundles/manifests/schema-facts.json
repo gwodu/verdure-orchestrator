@@ -1,0 +1,21 @@
+{
+  "$comment": "Clinical facts in the shape of the ambient-scribe platforms' facts stream (atomic statements, grouped). Groups follow the CortiTest simulation's FactGroup enum.",
+  "type": "object",
+  "properties": {
+    "facts": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "minLength": 3, "description": "One atomic clinical statement, in the clinician's words where possible." },
+          "group": { "enum": ["medical-history", "symptoms", "examination", "assessment", "plan", "medication", "other"] }
+        },
+        "required": ["text", "group"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["facts"],
+  "additionalProperties": false
+}

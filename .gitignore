@@ -46,3 +46,11 @@ node_modules/
 # Python bytecode (from running app/scripts tests)
 __pycache__/
 *.pyc
+
+# Throwaway SDK integration projects (docs/sdk-integration-guide.md); only the template is kept
+sandbox/*
+!sandbox/template/
+sandbox/template/target/
+
+# SDK evaluation outputs (transcripts, facts, scores per run)
+evals/out/

@@ -6,6 +6,36 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Started 2026-10-21 from the founder's nine-vendor teardown and build spec (`knowledge/26`). The long-term Rust core, real: `verdure-core` pure, I/O crates behind its ports, `verdure-ffi` the public surface. Three users in every decision: the end user who never sees Verdure, the developer with an afternoon, the customer's compliance team.
 
+### 2026-10-27 — The first real run: engines built, a consultation through the SDK, and three extraction fixes (`knowledge/26`, "The first real run")
+
+**What:** the engines compiled into the SDK on the founder's Mac (`CARGO_BUILD_JOBS=2`, 5 min 39 s), and `evals/run-primock.py` pushed a 7.6-minute PriMock57 GP consultation (real speech, two speakers mixed, CC BY 4.0) through the Python binding: device → `recommend` → `load` → `transcribe` → `extract` per 60-second window → score. New in the repo: `evals/` (fetch script with attribution, scorer with tests, the runner, README), a real `scribe-floor` bundle in the manifest with measured hashes (Whisper base + Qwen2.5 0.5B; the chw bundle now carries the same real files), `bundles/manifests/schema-facts.json` in the dummy platform's fact shape.
+
+**Three fixes to `extract()` the run forced, each with a test:** the model sees an outline with placeholders (`verdure_grammar::shape`) instead of the schema it kept copying back; a value still shaped like a placeholder is a named violation; a one-line demonstration in the system prompt. The no-JSON error now quotes what the model said and tells unparseable from absent.
+
+**What the numbers say:** speech at 0.24× real time, first words in 2.6 s, 27.6 % words wrong with the smallest Whisper on mixed voices; the 0.5B produced schema-valid facts in 4 of 9 windows, quote-like, zero invented numbers. The floor model cannot extract clinical facts; the 1.5B–2B class is the honest floor for `extract` and needs ~2.2 GB free, which this Mac does not have with a browser open. Everything around the models worked as designed, offline.
+
+**Simpler or more complex for the user?** Nothing changes for the end user. For the developer, nothing: the same `extract(text, schema)`. Inside, the prompt is shorter and the errors are more specific.
+
+**Tests:** grammar 14 → 16, core 28 → 29, scorer 4 (Python); workspace unchanged otherwise.
+
+### 2026-10-26 — The integration guide, the sandbox, and the first proof the bindings work (`docs/sdk-integration-guide.md`, `knowledge/26`)
+
+**What:** a self-contained paper a developer (or a small model standing in for one) follows top to bottom to build a project against the SDK with no model on disk: vocabulary, prerequisites, sandbox credentials committed to the repo (`bundles/sandbox.token`, ten years, vendor `sandbox`), a Rust route (`sandbox/template` + `cargo run -p verdure-ffi --example chw`), a Python route (generate the binding, copy the dylib, run), the full method table with the error each can return, an honest "works today / needs an engine build / do not do" section, the CLI, and a test assignment with acceptance criteria. `sandbox/` is excluded from the workspace and git-ignored except the template.
+
+**Why:** the founder wants to test the developer story by handing the paper to Haiku before any company sees it. A paper that only contains verified steps is the only fair test.
+
+**Verified before writing:** the Python binding generated from the built library and the whole flow run through it (start, capabilities, signed manifest, `fit`, `recommend` refusal with numbers, index/query, `extract` → `EngineUnavailable`, then via a Python `CloudFallback`, `delete(All)`); the Rust example doing the same; the template copied into a new folder and built; the §5 snippet re-run verbatim after writing.
+
+**Tests:** suite unchanged at 86; the example compiles with the crate and is the executable form of §4.
+
+### 2026-10-24 — The developer's hand on the dial: `fit(bundleId)` and `load_overcommit` (`knowledge/26`, "three hands")
+
+**What:** the founder asked whether a developer should be able to enforce a model of their choice. The vendor already chooses the menu by writing the manifest; what was missing was runtime control for the developer. `registry::problems()` now judges one bundle (licence, acknowledgements, memory, disk) and both `resolve()` and the new `fit()` use it, so the automatic walk and an explicit pick cannot disagree. The FFI gains `fit(bundleId) → FitReport` (the numbers plus every problem as a sentence, no substitution) and `load_overcommit(bundleId)`, which drops the memory gate for a developer who has measured their device, documented as able to abort the host process until `[OQ-58]`. Both `load` paths now check the licence too.
+
+**Simpler or more complex for the user?** One more record and two more methods on the surface. Justified: without them a developer who disagrees with Verdure's pick has no honest path, and would fork the manifest to force one — the same control with worse visibility.
+
+**Tests:** core 27 → 28 (a pick is judged not substituted; every problem listed, not just the first; a fitting pick reports its highest tier; an unknown id is `NoBundle`); ffi 5 → 6 (pin + truth; both load paths fail at the engine, not the gate, when nothing is downloaded).
+
 ### 2026-10-21 — The SDK workspace: core, grammar, hw, download, vault, rag, asr/llm pure halves, UniFFI surface, CLI (`knowledge/26`)
 
 **What:** the root `src/` scaffold became a nine-crate workspace plus a CLI, green locally with no model on disk. `verdure-core`: `Policy` whose default is `06` as data; `02`'s tiers with a classifier; `Manifest`/`Bundle`/`resolve()` that walks a device's tier down and gives the vendor one sentence per bundle it passed over; offline Ed25519 licence tokens (`Issuer`/`Verifier`); the engine ports; `extract()` — schema in the prompt, JSON found in the reply, optional nulls stripped, validated, one repair retry with the violations as plain sentences. `verdure-grammar`: JSON Schema → GBNF with every declared property emitted in order and optional ones nullable, plus a validator over the same subset. `verdure-hw`: the app's measured probes per OS. `verdure-download`: the only socket — signed manifests, resumable range downloads hashed whole, atomic rename, cancellation that keeps the part file. `verdure-vault`: AES-256-GCM with the entry name authenticated, crypto-shred. `verdure-rag`: boundary-aware chunker, FTS5 BM25 + cosine over stored embeddings, reciprocal-rank fusion. `verdure-asr`/`verdure-llm`: the segmenter (now with timestamps), resampling, keyterms and whole-word replacements, non-speech cleanup; prompt framing for ChatML/no-think/Gemma and the context arithmetic — lifted from the app, with whisper.cpp and llama.cpp adapters behind features. `verdure-ffi`: `Verdure.start → capabilities → recommend → download → load → transcribe/chat/extract/index/query/delete`, with `ProgressListener`, `TokenSink` and `CloudFallback` as vendor-implemented callbacks. `verdure-cli`: `capabilities`, `license keygen/issue/verify`, `manifest check/sign/verify`, `recommend`, `grammar`.

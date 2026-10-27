@@ -148,6 +148,90 @@ pub struct Resolution {
 /// Disk headroom kept free after a download (MB).
 const DISK_MARGIN_MB: u64 = 500;
 
+/// Everything that would stop `bundle` from being used on this device, one
+/// sentence each; empty means it fits. One function, so `recommend()`'s
+/// walk and a developer's explicit pick cannot disagree about what "fits".
+pub fn problems(
+    bundle: &Bundle,
+    available_ram_mb: u64,
+    free_disk_mb: u64,
+    licence: &LicenseClaims,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    if !licence.entitles(&bundle.id) {
+        out.push(format!("{}: not included in this licence", bundle.id));
+    }
+    for missing in bundle
+        .requires_acknowledgement
+        .iter()
+        .filter(|a| !licence.acknowledgements.contains(a))
+    {
+        out.push(format!(
+            "{}: the {missing} licence has not been acknowledged",
+            bundle.id
+        ));
+    }
+    let needed = bundle.required_mb();
+    if needed > available_ram_mb {
+        out.push(format!(
+            "{}: needs {needed} MB of memory, {available_ram_mb} MB available",
+            bundle.id
+        ));
+    }
+    let disk_needed = bundle.download_bytes() / 1_048_576 + DISK_MARGIN_MB;
+    if disk_needed > free_disk_mb {
+        out.push(format!(
+            "{}: needs {disk_needed} MB of storage, {free_disk_mb} MB free",
+            bundle.id
+        ));
+    }
+    out
+}
+
+/// A developer's explicit pick, judged: the bundle, the numbers, and every
+/// problem spelled out. Unlike `resolve`, nothing is substituted — the
+/// developer asked for this bundle and gets the truth about it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FitReport {
+    pub bundle: BundleRef,
+    pub fits: bool,
+    pub available_ram_mb: u64,
+    pub free_disk_mb: u64,
+    pub problems: Vec<String>,
+}
+
+/// Judge one named bundle for this device and licence.
+pub fn fit(
+    manifest: &Manifest,
+    bundle_id: &str,
+    available_ram_mb: u64,
+    free_disk_mb: u64,
+    licence: &LicenseClaims,
+) -> Result<FitReport, VError> {
+    let b = manifest
+        .bundle(bundle_id)
+        .ok_or_else(|| VError::NoBundle(format!("{bundle_id} is not in the manifest")))?;
+    let problems = problems(b, available_ram_mb, free_disk_mb, licence);
+    Ok(FitReport {
+        bundle: bundle_ref(b, *b.tiers.iter().max().unwrap_or(&Tier::P1)),
+        fits: problems.is_empty(),
+        available_ram_mb,
+        free_disk_mb,
+        problems,
+    })
+}
+
+fn bundle_ref(b: &Bundle, tier: Tier) -> BundleRef {
+    BundleRef {
+        id: b.id.clone(),
+        task: b.task,
+        tier,
+        download_bytes: b.download_bytes(),
+        required_mb: b.required_mb(),
+        attributions: b.attributions.clone(),
+    }
+}
+
 /// Pick the best bundle for `task` on a device of `device_tier` with
 /// `available_ram_mb` and `free_disk_mb`, within what `licence` allows.
 /// Walks the tier down and explains every refusal.
@@ -166,47 +250,16 @@ pub fn resolve(
             .iter()
             .filter(|b| b.task == task && b.tiers.contains(&tier));
         for b in candidates {
-            if !licence.entitles(&b.id) {
-                reasons.push(format!("{}: not included in this licence", b.id));
-                continue;
-            }
-            if let Some(missing) = b
-                .requires_acknowledgement
-                .iter()
-                .find(|a| !licence.acknowledgements.contains(a))
-            {
-                reasons.push(format!(
-                    "{}: the {missing} licence has not been acknowledged",
-                    b.id
-                ));
-                continue;
-            }
-            let needed = b.required_mb();
-            if needed > available_ram_mb {
-                reasons.push(format!(
-                    "{}: needs {needed} MB of memory, {available_ram_mb} MB available",
-                    b.id
-                ));
-                continue;
-            }
-            let disk_needed = b.download_bytes() / 1_048_576 + DISK_MARGIN_MB;
-            if disk_needed > free_disk_mb {
-                reasons.push(format!(
-                    "{}: needs {disk_needed} MB of storage, {free_disk_mb} MB free",
-                    b.id
-                ));
+            let mut p = problems(b, available_ram_mb, free_disk_mb, licence);
+            if !p.is_empty() {
+                // One sentence per bundle in the walk: the first problem is
+                // the decisive one (licence before memory before disk).
+                reasons.push(p.remove(0));
                 continue;
             }
             let downgraded_from = (tier != device_tier).then_some(device_tier);
             return Ok(Resolution {
-                bundle: BundleRef {
-                    id: b.id.clone(),
-                    task,
-                    tier,
-                    download_bytes: b.download_bytes(),
-                    required_mb: needed,
-                    attributions: b.attributions.clone(),
-                },
+                bundle: bundle_ref(b, tier),
                 downgraded_from,
                 skipped: reasons,
             });
@@ -481,6 +534,34 @@ mod tests {
             r.bundle.attributions,
             vec!["Speech model: Moonshine (MIT)".to_string()]
         );
+    }
+
+    #[test]
+    fn a_developer_pick_is_judged_not_substituted() {
+        // The L3 bundle on a tight machine: resolve would walk down; fit says no, with numbers.
+        let r = fit(&manifest(), "scribe-L3", 3_000, 20_000, &licence_all()).unwrap();
+        assert!(!r.fits);
+        assert_eq!(r.bundle.id, "scribe-L3");
+        assert_eq!(
+            r.problems,
+            vec!["scribe-L3: needs 9600 MB of memory, 3000 MB available"]
+        );
+        // Every problem is listed, not just the first.
+        let no_ack = LicenseClaims {
+            bundles: vec!["scribe-L1".into()],
+            acknowledgements: vec![],
+            ..licence_all()
+        };
+        let r = fit(&manifest(), "scribe-L2", 1_000, 100, &no_ack).unwrap();
+        assert_eq!(r.problems.len(), 4, "{:?}", r.problems);
+        // A pick that fits reports so, with the tier it was built for.
+        let r = fit(&manifest(), "chw-P1", 3_000, 5_000, &licence_all()).unwrap();
+        assert!(r.fits && r.problems.is_empty());
+        assert_eq!(r.bundle.tier, Tier::P2, "the highest tier it serves");
+        assert!(matches!(
+            fit(&manifest(), "nope", 1, 1, &licence_all()),
+            Err(VError::NoBundle(_))
+        ));
     }
 
     #[test]

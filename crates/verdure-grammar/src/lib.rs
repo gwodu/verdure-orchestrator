@@ -27,7 +27,9 @@
 //! validation, so the vendor still receives standards-conforming JSON.
 
 mod gbnf;
+mod shape;
 mod validate;
 
 pub use gbnf::{to_gbnf, Grammar, GrammarError};
+pub use shape::shape;
 pub use validate::{strip_optional_nulls, validate, Violation};
