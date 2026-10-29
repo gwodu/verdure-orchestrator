@@ -38,7 +38,12 @@ jobs:
           echo "CXX_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android26-clang++" >> "$GITHUB_ENV"
           echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar" >> "$GITHUB_ENV"
           echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android26-clang" >> "$GITHUB_ENV"
-          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS=-C link-arg=-Wl,-z,max-page-size=16384" >> "$GITHUB_ENV"
+          # --allow-multiple-definition: whisper.cpp and llama.cpp each carry their own
+          # ggml, so lld sees every gguf_*/ggml_* symbol twice (run 1 of this workflow
+          # failed exactly there). Apple's linker tolerated it on the Mac, where both
+          # engines then ran correctly; lld needs to be told. One ggml for both engines
+          # is the real fix and is tracked in knowledge/26 ([OQ-114]).
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS=-C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,--allow-multiple-definition" >> "$GITHUB_ENV"
           echo "CARGO_PROFILE_RELEASE_STRIP=symbols" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
           echo "LLVM_STRIP=$TOOLCHAIN/llvm-strip" >> "$GITHUB_ENV"

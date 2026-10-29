@@ -216,6 +216,10 @@ sdk.delete(v.DeleteScope.ALL())
 
 Python differences from Rust: enum values are upper case (`v.Task.SCRIBE`, `v.DeleteScope.ALL()` — note the parentheses, it is a variant with no fields), `PolicyConfig` has no defaults so every field is passed, and errors are `v.VerdureError.NoBundle` and friends, catchable with `except v.VerdureError.NoBundle as e`.
 
+## 5b. Route C — Android (Kotlin)
+
+The CI workflow `build-sdk-android.yml` produces `verdure-android-arm64.zip`: the arm64 library with both engines, the generated Kotlin binding, the sandbox credentials and the example manifest. `bindings/android/README.md` (also inside the zip) says exactly which files go where in an Android project, the two Gradle dependencies (JNA, coroutines), and shows the start → recommend → download → load → transcribe → extract sequence in Kotlin. Same names as Rust and Python, Kotlin casing: `sdk.recommend(Task.SCRIBE)`, `stream.pushPcm(floats, 16000u)`, errors as `VerdureException.*`. Every call blocks; keep them off the main thread.
+
 ## 6. Full API reference
 
 Every method on `Verdure`. All calls block; call them off your UI thread.
