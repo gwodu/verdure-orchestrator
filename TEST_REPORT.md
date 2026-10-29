@@ -6,6 +6,11 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 Run: `cargo test --workspace` at the repo root (no models, seconds). CI: the `sdk` job (Linux) runs it plus `cargo check -p verdure-ffi --features llama,whisper` and `cargo fmt --check`.
 
+### 2026-10-29 — `build-sdk-android.yml`
+
+- Run 1 (9 min): link failed, `ld.lld: duplicate symbol: gguf_*` — two ggml copies (`[OQ-114]`). Run 2 (7 min): cross-compile green; my verification step failed looking for `whisper_full` in `nm -D` of a stripped library that exports only the API — the check was wrong, the build was not. Run 3 (12 min, 9 compiling): green. Artefact checks that passed: `file` says ARM aarch64; every LOAD segment aligned 0x4000; 67 `uniffi_verdure_*` exports; whisper and llama string literals present; the engine-less host library lacks them (negative control); the Kotlin binding compiles with kotlinc 2.1.20 against JNA 5.14 and coroutines 1.9. 8.1 MB `.so`.
+- **Not run:** anything on a phone.
+
 ### 2026-10-27 — The first real run (`evals/`)
 
 - **Engine build on the Mac:** `CARGO_BUILD_JOBS=2 cargo build -p verdure-ffi --features llama,whisper` — 5 min 39 s, exit 0, 3.8 GB disk left. The 8-job attempt five days earlier was killed by the memory reaper; two jobs is the setting for this machine.

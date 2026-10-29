@@ -47,6 +47,7 @@ This file documents the practical realities of shipping Verdure on each platform
 | Pre-merge checks (incl. the iOS cross-compile) | open a PR, or `workflow_dispatch` on `ci.yml` | ~40 | — |
 | Test on iPad | tag `testflight-N` | ~55 | `testflight-12`: 5 min wall, cold cache |
 | Test on Android | tag `android-build-N` | ~8 cached, ~19 cold | `release-14` |
+| The SDK for Android (arm64 .so + Kotlin, `knowledge/26`) | tag `sdk-android-N` or dispatch `build-sdk-android.yml` | ~12 cold | run 3 on 2026-10-29: 12 min wall, 9 compiling; cache now saves on failed runs too |
 | Signed + notarized macOS for someone else | tag `app-build-N` | ~145 | `app-build-24/25`: ~14–15 min wall (universal: both arches) |
 | Genuinely ship everywhere | tag `release-N` | ≈ the three above, ~210 | `release-14` was 144, before macOS went universal |
 

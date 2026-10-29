@@ -110,6 +110,10 @@ The engines compiled into the SDK on this Mac after all: `CARGO_BUILD_JOBS=2 car
 
 What the run proved regardless of model quality: the device was read honestly, the only bundle that fit was chosen with the refusal explained, the files were verified by hash, both engines loaded within the memory rule, audio streamed through the segmenter with timestamps, every extraction result was either schema-valid JSON or an error that named the exact problem, and the whole thing ran with Wi-Fi irrelevant. Numbers are in `evals/out/*.score.json` (git-ignored) and summarised in `TEST_REPORT.md`.
 
+## The Android deliverable (2026-10-29)
+
+`.github/workflows/build-sdk-android.yml` (tag `sdk-android-N` or dispatch; Linux, 1×) produces `verdure-android-arm64.zip`: `libverdure.so` for arm64 with both engines (8.1 MB stripped, 16 KB page aligned, API 26), the UniFFI Kotlin binding (compiled in CI against JNA 5.14 as a drift check), the sandbox licence, the signed manifest, the schemas, and `bindings/android/README.md` with the exact files-to-copy and Gradle lines. Three runs to green, all at 1×: run 1 failed at link on the duplicate ggml symbols (`[OQ-114]`), run 2 on my own wrong assertion (looking for engine symbols in a stripped library's export table), run 3 green in 12 minutes, 9 of them the cross-compile. The first artefact is at `~/Verdure-bisect/sdk-android/` on the founder's Mac. **Nothing has run on a phone yet**: the first Pixel run is the swap test with the Corti session's Android client, and it is where `[OQ-114]` gets its answer.
+
 ## Rules for anyone adding to the crates
 
 (a) All public types live in `verdure-ffi`; no platform `#[cfg]` inside an export block. (b) Every engine sits behind a port in `verdure-core`. (c) No network code outside `verdure-download`, except `CloudFallback`, which calls *into* vendor code. (d) Every long operation reports progress and is cancellable. (e) Measured numbers beat proposed ones — when a rule is changed, the test states the measurement it covers.

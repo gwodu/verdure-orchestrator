@@ -6,6 +6,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Started 2026-10-21 from the founder's nine-vendor teardown and build spec (`knowledge/26`). The long-term Rust core, real: `verdure-core` pure, I/O crates behind its ports, `verdure-ffi` the public surface. Three users in every decision: the end user who never sees Verdure, the developer with an afternoon, the customer's compliance team.
 
+### 2026-10-29 — The SDK for Android, as a vendor receives it (`knowledge/26`, "The Android deliverable")
+
+**What:** a CI workflow that cross-compiles `verdure-ffi` for arm64 Android with both engines, generates the Kotlin binding and compiles it against JNA, verifies the shipped library (arm64, 16 KB alignment, the UniFFI exports, the engines' strings present and absent from the engine-less control), and zips it with the credentials, manifest, schemas and an Android README (files to copy, two Gradle lines, a Kotlin walkthrough). Green on the third run; the cache now survives a failed run.
+
+**Why:** Corti's clinicians run on Windows EHRs, in the browser, and on an iOS/Android app; the Pixel is the device in hand and Android builds at 1×. The Corti session is building the Android client of its own simulated platform; Haiku swaps this zip in.
+
+**Found on the way:** whisper.cpp and llama.cpp each ship their own ggml, so the library carries every ggml symbol twice. Apple's linker tolerated it (both engines ran correctly on the Mac); Android's refused, and is now told to allow it — `[OQ-114]`, with the shared-ggml fix recorded. The Pixel run is the test of whether both engines behave with one copy winning.
+
+**Tests:** the workflow's own assertions on the artefact (positive and negative controls); no Rust change.
+
 ### 2026-10-27 — The first real run: engines built, a consultation through the SDK, and three extraction fixes (`knowledge/26`, "The first real run")
 
 **What:** the engines compiled into the SDK on the founder's Mac (`CARGO_BUILD_JOBS=2`, 5 min 39 s), and `evals/run-primock.py` pushed a 7.6-minute PriMock57 GP consultation (real speech, two speakers mixed, CC BY 4.0) through the Python binding: device → `recommend` → `load` → `transcribe` → `extract` per 60-second window → score. New in the repo: `evals/` (fetch script with attribution, scorer with tests, the runner, README), a real `scribe-floor` bundle in the manifest with measured hashes (Whisper base + Qwen2.5 0.5B; the chw bundle now carries the same real files), `bundles/manifests/schema-facts.json` in the dummy platform's fact shape.
