@@ -47,19 +47,32 @@ jobs:
           echo "CARGO_PROFILE_RELEASE_STRIP=symbols" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
           echo "LLVM_STRIP=$TOOLCHAIN/llvm-strip" >> "$GITHUB_ENV"
-      - name: Cache cargo build
-        uses: actions/cache@v4
+      - name: Restore cargo cache
+        # restore/save split so a run that fails in a LATER step still saves the
+        # ~9-minute cross-compile (actions/cache alone saves only on success —
+        # runs 1 and 2 each paid for the whole compile again).
+        uses: actions/cache/restore@v4
+        id: cache
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: sdk-android-cargo-${{ hashFiles('Cargo.lock') }}
+          key: sdk-android-cargo-${{ hashFiles('Cargo.lock') }}-${{ github.run_id }}
           restore-keys: sdk-android-cargo-
       - name: Build tools
         run: sudo apt-get update -q && sudo apt-get install -y -q cmake
       - name: Cross-compile the SDK library with both engines
         run: cargo build --release -p verdure-ffi --features llama,whisper --target "$TARGET" --locked
+      - name: Save cargo cache (even if a later check fails)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: sdk-android-cargo-${{ hashFiles('Cargo.lock') }}-${{ github.run_id }}
       - name: Build a host library and generate the Kotlin binding from it
         # The binding depends on the API, not on which engines are compiled in,
         # so a quick host build without engines is enough to generate it.
@@ -77,8 +90,12 @@ jobs:
           file "$SO" | tee /dev/stderr | grep -q 'ARM aarch64' || { echo "::error::not an arm64 library"; exit 1; }
           readelf -lW "$SO" | awk '/LOAD/ {print $NF}' | sort -u | tee /dev/stderr | grep -qE '^0x(4000|10000)$' || { echo "::error::LOAD alignment is not 16 KB"; exit 1; }
           nm -D "$SO" | grep -c 'uniffi_verdure_' | tee /dev/stderr | awk '$1 < 20 {exit 1}' || { echo "::error::UniFFI symbols missing"; exit 1; }
-          nm -D "$SO" | grep -q 'whisper_full' || { echo "::error::whisper.cpp not linked in"; exit 1; }
-          nm -D "$SO" | grep -q 'llama_model_load_from_file\|llama_load_model_from_file' || { echo "::error::llama.cpp not linked in"; exit 1; }
+          # The engines are not exported (the library exports only the SDK's API, and
+          # is stripped), so look for the string literals their log lines leave behind.
+          # Negative control: the host library was built WITHOUT engines and must lack them.
+          strings target/debug/libverdure.so | grep -q 'whisper_init_with_params_no_state' && { echo "::error::engine-less host lib contains whisper strings — instrument broken"; exit 1; }
+          strings "$SO" | grep -q 'whisper_init_with_params_no_state' || { echo "::error::whisper.cpp not linked in"; exit 1; }
+          strings "$SO" | grep -q 'llama_model_loader' || { echo "::error::llama.cpp not linked in"; exit 1; }
           ls -l "$SO"
       - name: Compile the Kotlin binding against JNA (catches generator/version drift)
         run: |
