@@ -1,0 +1,106 @@
+name: Build SDK for Android (arm64 library + Kotlin binding)
+
+# The Verdure SDK as an Android vendor receives it (knowledge/26): libverdure.so for
+# arm64 with whisper.cpp and llama.cpp compiled in, the UniFFI Kotlin binding, the
+# sandbox credentials and the example manifest, zipped. Linux runner (1x billing).
+#
+# Trigger: `git tag sdk-android-N && git push origin sdk-android-N`, or dispatch.
+# Not on push, not on PR — a cross-compile of llama.cpp is minutes, not seconds.
+on:
+  push:
+    tags: ["sdk-android-*"]
+  workflow_dispatch:
+
+concurrency:
+  group: sdk-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-lib:
+    name: libverdure.so (aarch64-linux-android) + Kotlin
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TARGET: aarch64-linux-android
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (host + Android target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: Point cargo and cmake at the runner's NDK
+        # Same wiring as ci.yml's porter-android job: bare cargo needs the cross
+        # compilers named. android26 = the SDK's minimum (knowledge/26 §4.5).
+        # 16 KB page alignment: required for arm64 libraries on Android 15+.
+        run: |
+          TOOLCHAIN="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android26-clang" >> "$GITHUB_ENV"
+          echo "CXX_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android26-clang++" >> "$GITHUB_ENV"
+          echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android26-clang" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS=-C link-arg=-Wl,-z,max-page-size=16384" >> "$GITHUB_ENV"
+          echo "CARGO_PROFILE_RELEASE_STRIP=symbols" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          echo "LLVM_STRIP=$TOOLCHAIN/llvm-strip" >> "$GITHUB_ENV"
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: sdk-android-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: sdk-android-cargo-
+      - name: Build tools
+        run: sudo apt-get update -q && sudo apt-get install -y -q cmake
+      - name: Cross-compile the SDK library with both engines
+        run: cargo build --release -p verdure-ffi --features llama,whisper --target "$TARGET" --locked
+      - name: Build a host library and generate the Kotlin binding from it
+        # The binding depends on the API, not on which engines are compiled in,
+        # so a quick host build without engines is enough to generate it.
+        run: |
+          cargo build -p verdure-ffi --locked
+          cargo run -p verdure-ffi --features bindgen --bin uniffi-bindgen -- \
+            generate --library target/debug/libverdure.so --language kotlin --out-dir out/kotlin
+      - name: Verify the artifact, not the intention
+        # skills/testing.md: positive control first (the host .so must be x86-64),
+        # then the real assertions on the shipped object.
+        run: |
+          set -euo pipefail
+          file target/debug/libverdure.so | grep -q 'x86-64' || { echo "::error::file(1) cannot classify ELF — instrument broken"; exit 1; }
+          SO=target/$TARGET/release/libverdure.so
+          file "$SO" | tee /dev/stderr | grep -q 'ARM aarch64' || { echo "::error::not an arm64 library"; exit 1; }
+          readelf -lW "$SO" | awk '/LOAD/ {print $NF}' | sort -u | tee /dev/stderr | grep -qE '^0x(4000|10000)$' || { echo "::error::LOAD alignment is not 16 KB"; exit 1; }
+          nm -D "$SO" | grep -c 'uniffi_verdure_' | tee /dev/stderr | awk '$1 < 20 {exit 1}' || { echo "::error::UniFFI symbols missing"; exit 1; }
+          nm -D "$SO" | grep -q 'whisper_full' || { echo "::error::whisper.cpp not linked in"; exit 1; }
+          nm -D "$SO" | grep -q 'llama_model_load_from_file\|llama_load_model_from_file' || { echo "::error::llama.cpp not linked in"; exit 1; }
+          ls -l "$SO"
+      - name: Compile the Kotlin binding against JNA (catches generator/version drift)
+        run: |
+          set -euo pipefail
+          curl -sSL -o "$RUNNER_TEMP/kotlinc.zip" https://github.com/JetBrains/kotlin/releases/download/v2.1.20/kotlin-compiler-2.1.20.zip
+          unzip -q "$RUNNER_TEMP/kotlinc.zip" -d "$RUNNER_TEMP"
+          curl -sSL -o "$RUNNER_TEMP/jna.jar" https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.14.0/jna-5.14.0.jar
+          curl -sSL -o "$RUNNER_TEMP/coroutines.jar" https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" out/kotlin/uniffi/verdure/verdure.kt -cp "$RUNNER_TEMP/jna.jar:$RUNNER_TEMP/coroutines.jar" -d "$RUNNER_TEMP/verdure-kt.jar" 2>&1 | grep -v '^warning' || true
+          test -s "$RUNNER_TEMP/verdure-kt.jar"
+      - name: Package what a vendor receives
+        run: |
+          set -euo pipefail
+          D=out/verdure-android-arm64
+          mkdir -p "$D/jniLibs/arm64-v8a" "$D/kotlin" "$D/bundles"
+          cp "target/$TARGET/release/libverdure.so" "$D/jniLibs/arm64-v8a/"
+          cp -r out/kotlin/uniffi "$D/kotlin/"
+          cp bundles/manifests/example.json bundles/manifests/example.json.sig bundles/manifests/schema-*.json bundles/sandbox.token "$D/bundles/"
+          cp crates/verdure-ffi/keys/issuer.pub "$D/bundles/"
+          cp docs/sdk-integration-guide.md "$D/"
+          cp bindings/android/README.md "$D/README.md"
+          echo "commit ${GITHUB_SHA} · $(date -u +%Y-%m-%dT%H:%MZ) · $(rustc --version)" > "$D/VERSION"
+          (cd out && zip -qr verdure-android-arm64.zip verdure-android-arm64)
+          ls -l out/verdure-android-arm64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verdure-android-arm64
+          path: out/verdure-android-arm64.zip
+          retention-days: 14
+          if-no-files-found: error
