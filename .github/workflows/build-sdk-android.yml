@@ -96,7 +96,16 @@ jobs:
           strings target/debug/libverdure.so | grep -q 'whisper_init_with_params_no_state' && { echo "::error::engine-less host lib contains whisper strings — instrument broken"; exit 1; }
           strings "$SO" | grep -q 'whisper_init_with_params_no_state' || { echo "::error::whisper.cpp not linked in"; exit 1; }
           strings "$SO" | grep -q 'llama_model_loader' || { echo "::error::llama.cpp not linked in"; exit 1; }
-          ls -l "$SO"
+          # The library needs the shared C++ runtime (whisper.cpp and llama.cpp are
+          # C++ and the sys crates link c++_shared). The first vendor run failed with
+          # `dlopen failed: library "libc++_shared.so" not found` because the zip did
+          # not carry it. Ship it from the NDK and prove the dependency is declared.
+          readelf -d "$SO" | grep -q 'NEEDED.*libc++_shared.so' || { echo "::error::expected libc++_shared.so in NEEDED — the packaging below assumes it"; exit 1; }
+          CXX_SO="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+          test -f "$CXX_SO" || { echo "::error::NDK libc++_shared.so not at $CXX_SO"; exit 1; }
+          file "$CXX_SO" | grep -q 'ARM aarch64' || { echo "::error::NDK libc++_shared.so is not arm64"; exit 1; }
+          echo "CXX_SO=$CXX_SO" >> "$GITHUB_ENV"
+          ls -l "$SO" "$CXX_SO"
       - name: Compile the Kotlin binding against JNA (catches generator/version drift)
         run: |
           set -euo pipefail
@@ -112,6 +121,8 @@ jobs:
           D=out/verdure-android-arm64
           mkdir -p "$D/jniLibs/arm64-v8a" "$D/kotlin" "$D/bundles"
           cp "target/$TARGET/release/libverdure.so" "$D/jniLibs/arm64-v8a/"
+          cp "$CXX_SO" "$D/jniLibs/arm64-v8a/"
+          test -f "$D/jniLibs/arm64-v8a/libc++_shared.so"
           cp -r out/kotlin/uniffi "$D/kotlin/"
           cp bundles/manifests/example.json bundles/manifests/example.json.sig bundles/manifests/schema-*.json bundles/sandbox.token "$D/bundles/"
           cp crates/verdure-ffi/keys/issuer.pub "$D/bundles/"

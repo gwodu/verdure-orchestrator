@@ -4,6 +4,7 @@ Produced by `.github/workflows/build-sdk-android.yml`. Contents:
 
 ```
 jniLibs/arm64-v8a/libverdure.so     the runtime: whisper.cpp + llama.cpp compiled in, arm64, 16 KB page aligned
+jniLibs/arm64-v8a/libc++_shared.so  the C++ runtime libverdure.so needs (from the NDK) — ship BOTH files
 kotlin/uniffi/verdure/verdure.kt    the Kotlin binding (UniFFI); loads libverdure.so through JNA
 bundles/example.json + .sig         a signed example manifest (scribe-floor and chw-forms-P1 have real hashes)
 bundles/schema-facts.json           a facts schema; schema-example-chw.json a CHW form schema
@@ -14,7 +15,11 @@ VERSION                             commit and build time
 
 ## Add it to an Android app (minSdk 26, arm64)
 
-1. Copy `jniLibs/arm64-v8a/libverdure.so` to `app/src/main/jniLibs/arm64-v8a/`.
+1. Copy **both** `jniLibs/arm64-v8a/libverdure.so` and `jniLibs/arm64-v8a/libc++_shared.so` to
+   `app/src/main/jniLibs/arm64-v8a/`. The second is the Android C++ runtime our library links against;
+   without it the app fails at startup with `UnsatisfiedLinkError … library "libc++_shared.so" not found`.
+   If your app already ships a `libc++_shared.so` (from another native library), keep one copy and add
+   `packaging { jniLibs { pickFirsts += "**/libc++_shared.so" } }` to `app/build.gradle.kts`.
 2. Copy `kotlin/uniffi/verdure/verdure.kt` to `app/src/main/java/uniffi/verdure/verdure.kt`.
 3. In `app/build.gradle(.kts)` add:
    ```kotlin
@@ -59,6 +64,17 @@ val facts = sdk.extract(transcriptSoFar, asset("verdure/schema-facts.json")).jso
 
 Errors arrive as `VerdureException` subclasses (`VerdureException.NoBundle`, `.EngineUnavailable`,
 `.Memory`, …); every message is a sentence meant for a screen.
+
+## If the library will not load
+
+`java.lang.UnsatisfiedLinkError: Unable to load library 'verdure'` — read the second line:
+- `library "libc++_shared.so" not found` → step 1 above: the C++ runtime file is missing from `jniLibs`.
+- `library "libverdure.so" not found` → the APK does not contain arm64 libraries; check `abiFilters` and
+  that the file is under `src/main/jniLibs/arm64-v8a/`, not `libs/`.
+- anything mentioning `page size` → the device requires 16 KB alignment and an old build was used; this
+  zip's library is aligned, rebuild the APK with it.
+Never wrap `Verdure.start` in a try/catch that swallows the exception: show its message on a screen, so a
+missing file is a sentence, not a silent no-op.
 
 ## Memory on a phone
 
