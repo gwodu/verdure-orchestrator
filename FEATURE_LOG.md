@@ -6,6 +6,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Started 2026-10-21 from the founder's nine-vendor teardown and build spec (`knowledge/26`). The long-term Rust core, real: `verdure-core` pure, I/O crates behind its ports, `verdure-ffi` the public surface. Three users in every decision: the end user who never sees Verdure, the developer with an afternoon, the customer's compliance team.
 
+### 2026-11-03 — From the first phone run: an honest Android memory budget, one generation at a time, and the threading contract (`knowledge/26`, "The first phone run")
+
+**What:** the vendor's report from the Pixel 8a produced one bug fix and one safety change in the SDK, and seven documentation corrections. `verdure-hw`'s Android budget now subtracts the process's own resident set, so `capabilities()` and the `load` gate fall after a model is loaded instead of reporting the same number forever. `LlamaEngine` holds a lock around `generate`, so two concurrent `extract` calls queue instead of each building a context. The threading contract (runtime and streams separately locked; transcription and extraction may overlap; generations queue) is written where a developer looks: the FFI crate docs, the guide, the Android README. The guide gained "What `extract` returns" (`attempts`, `used_grammar` and why it is false, `warnings`, when `SchemaInvalid` is thrown) and corrected its stale bundle text; the README gained a threads section, engine ownership for a foreground service, and the `Throwable` note.
+
+**Why:** the integrator had to guess thread safety, guessed conservatively, and the transcript froze for 20–35 s on every extraction. Guessing is the failure the three-audiences rule exists to prevent.
+
+**Simpler or more complex for the user?** Simpler for the developer: two sentences replace a design decision. No API change.
+
+**Tests:** hw 4 → 5 (the Pixel's numbers: 4543 → 3860 → 3591 as the process grows; the `MemAvailable` floor; no underflow). Workspace 90. Engines compile-checked with the lock in place.
+
 ### 2026-10-29 — The SDK for Android, as a vendor receives it (`knowledge/26`, "The Android deliverable")
 
 **What:** a CI workflow that cross-compiles `verdure-ffi` for arm64 Android with both engines, generates the Kotlin binding and compiles it against JNA, verifies the shipped library (arm64, 16 KB alignment, the UniFFI exports, the engines' strings present and absent from the engine-less control), and zips it with the credentials, manifest, schemas and an Android README (files to copy, two Gradle lines, a Kotlin walkthrough). Green on the third run; the cache now survives a failed run.

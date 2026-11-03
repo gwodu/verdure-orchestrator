@@ -45,7 +45,7 @@ The repository contains everything a test project needs:
 |---|---|
 | `bundles/sandbox.token` | A licence token for vendor `sandbox`, unlimited seats, valid for ten years. Signed by the development issuer key. |
 | `crates/verdure-ffi/keys/issuer.pub` | The development issuer's public key. `Verdure.start()` uses it automatically. |
-| `bundles/manifests/example.json` | An example manifest with two bundles: `scribe-L2` and `chw-forms-P1`. **Example only** — one file hash is a placeholder, so do not try to download these bundles. |
+| `bundles/manifests/example.json` | An example manifest with three bundles. `scribe-floor` and `chw-forms-P1` carry real, measured hashes (Whisper base + Qwen2.5 0.5B, 609 MB) and download fine. `scribe-L2` has a placeholder hash and must not be downloaded. |
 | `bundles/manifests/example.json.sig` | Its signature, made with the same development key, so the public key above verifies it. |
 | `bundles/manifests/schema-example-chw.json` | A JSON Schema for a community-health-worker antenatal visit form. |
 
@@ -240,13 +240,19 @@ Every method on `Verdure`. All calls block; call them off your UI thread.
 | `load_overcommit(bundle_id)` | Same without the memory gate; may crash the host process | as above |
 | `transcribe(config)` | Open an `AsrStream`: `push_pcm(samples, rate)` → events, `finish()` | `EngineUnavailable` |
 | `chat(messages, sink)` | One conversation turn, streamed to `sink` | `EngineUnavailable`, `Engine` |
-| `extract(text, schema_json)` | Schema-valid JSON, or the cloud hook if set and no engine | `EngineUnavailable`, `InvalidSchema`, `SchemaInvalid` |
+| `extract(text, schema_json)` | Schema-valid JSON, or the cloud hook if set and no engine. Blocks for the whole generation: tens of seconds on a phone. See "What `extract` returns" below | `EngineUnavailable`, `InvalidSchema`, `SchemaInvalid` |
 | `index(collection, docs)` | Chunk and index; returns chunk count | `Storage` |
 | `query(collection, question, k)` | Best `k` passages | `Storage` |
 | `delete(scope)` | `Collection{name}`, `Indexes`, or `All` | `Storage` |
 | `set_cloud_fallback(hook or none)` | Give or remove the company's cloud | — |
 
-Callback traits you implement: `ProgressListener` (`on_progress(done, total)`, `on_status(message)`, `is_cancelled()`), `TokenSink` (`on_token(piece) -> bool`, return false to stop), `CloudFallback` (`transcribe`, `extract`).
+Callback traits you implement: `ProgressListener` (`on_progress(done, total)` — bytes during a download; `on_status(message)` — a sentence when something changed course, such as a downgrade or a throttle, so it is normal for it never to fire during a clean download; `is_cancelled()`), `TokenSink` (`on_token(piece) -> bool`, return false to stop), `CloudFallback` (`transcribe`, `extract`).
+
+**What `extract` returns.** `Extraction { json, attempts, used_grammar, warnings }`. `json` is compact and valid against your schema. `attempts` is how many generations it took: 1 means the first reply validated; 2 means the model was shown its violations once and the repaired reply validated. If the second reply still fails, `extract` throws `SchemaInvalid` whose message lists every violation by path — that is the "did not match the schema" error, and it comes *after* the model has run, so it costs the same time as a success. `used_grammar` is `false` in this release: grammar-constrained decoding is built but switched off, because the app that this SDK grew out of saw llama.cpp's grammar sampler abort the whole process on a multi-byte token (knowledge/26, `[OQ-108]`); it returns once the engine runs isolated. `warnings` lists schema keywords the grammar could not have expressed anyway (`minimum`, `minLength`, …); they are enforced by validation.
+
+**Threads and blocking.** Every call blocks for as long as the work takes: `push_pcm` for up to a few seconds when a segment completes, `extract` for tens of seconds on a phone, `download` for the whole download. `Verdure` and each `AsrStream` are separately locked, so a stream's `push_pcm` on one thread and `extract` on another run concurrently — keep transcription on its own thread and extraction on another, and the transcript will not stall. Two `extract` calls queue; they never run at once. Nothing may run on the main thread.
+
+**Transcript events.** The whisper engine emits `Final` only, one per utterance, cut at pauses or at 12 seconds; `Partial` is reserved for engines that stream. A fixture with no pauses is cut every 12 seconds, mid-sentence; real speech pauses.
 
 Schema support for `extract`: objects with `properties`/`required`/`additionalProperties: false`; `string` (with `enum`, `const`, `minLength`, `maxLength`); `number`; `integer` (with `minimum`, `maximum`); `boolean`; `null`; arrays with `items`, `minItems`, `maxItems`; `anyOf`/`oneOf`; `$ref` to `#/$defs/...`; nullable types as `["string", "null"]`. Recursive schemas are refused.
 
@@ -258,7 +264,7 @@ Schema support for `extract`: objects with `properties`/`required`/`additionalPr
 
 **Do not do these:**
 
-- Do not try to download the example bundles. One hash is a placeholder and verification will fail by design.
+- Do not try to download `scribe-L2`. Its hash is a placeholder and verification will fail by design. `scribe-floor` and `chw-forms-P1` are real.
 - Do not hand-write a licence token or a signature. Use `bundles/sandbox.token` or mint one: `cargo run -p verdure-cli -- license issue --key ~/.verdure/issuer.key --vendor you`.
 - Do not catch errors with a blanket handler and print "failed". Every `VerdureError` carries a sentence meant for the screen; show it.
 - Do not add a workspace member or edit anything under `crates/`. Your project lives under `sandbox/`.

@@ -6,6 +6,13 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 Run: `cargo test --workspace` at the repo root (no models, seconds). CI: the `sdk` job (Linux) runs it plus `cargo check -p verdure-ffi --features llama,whisper` and `cargo fmt --check`.
 
+### 2026-11-03 — The first phone run, as reported by the vendor's client (Pixel 8a)
+
+- Chain green on the device: start 82 ms; recommend → `scribe-floor`; 639 MB in 26.3 s; load 1,240 ms; 8 segments / 93.7 s audio; 3 extractions (2 facts, 1 `SchemaInvalid`); reconnect catch-up 3 facts as `system`; online path unchanged. PSS 683 MB idle, 952 MB peak. No native crash across four visits with both engines in one process.
+- **Bug found:** `available_ram_mb` 4543 before and after a 1.3 GB load — the Android budget never counted our own process. Fixed and tested with those numbers (`android_budget_shrinks_by_what_this_process_already_holds`).
+- **Quality (floor models, TTS fixture):** lisinopril 1/2, "1.50/95", two hallucinated clauses, one 12 s stretch missing; extraction returned verbatim windows. Recorded as `[OQ-117]`/`[OQ-118]`; the 1.5B bundle is next.
+- **Not tested here:** the new lock under real concurrency; the budget fix on the device (next zip).
+
 ### 2026-10-30 — First vendor-side run of the Android zip
 
 - The integrating session built the APK and the SDK failed at `dlopen`: `libc++_shared.so` not found. Our run-3 verification had asserted the library's architecture, alignment, exports and engines, and never asked what it *needs*: `readelf -d` would have shown `NEEDED libc++_shared.so`. The assertion now exists, the file ships in the zip, the README says copy both. Lesson for the artefact checks (skills/testing.md): verify the dependencies of the shipped object, not only its contents.

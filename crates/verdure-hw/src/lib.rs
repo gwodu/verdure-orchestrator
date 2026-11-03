@@ -94,9 +94,27 @@ pub fn parse_meminfo_kb(meminfo: &str, key: &str) -> Option<u64> {
         .and_then(|l| l.split_whitespace().nth(1)?.parse().ok())
 }
 
-/// Android's allocatable budget: 60 % of total, never below `MemAvailable`.
-pub fn android_budget_mb(total_mb: u64, mem_available_mb: u64) -> u64 {
-    (total_mb * 6 / 10).max(mem_available_mb)
+/// Android's allocatable budget: 60 % of total **minus what this process already
+/// holds**, never below `MemAvailable`. The first Pixel run (2026-11-03) reported
+/// the same 4543 MB "available" before and after loading 1.3 GB of models — the
+/// budget ignored our own resident set, so a second `load` would have been
+/// admitted into memory we were already using.
+pub fn android_budget_mb(total_mb: u64, mem_available_mb: u64, self_resident_mb: u64) -> u64 {
+    (total_mb * 6 / 10)
+        .saturating_sub(self_resident_mb)
+        .max(mem_available_mb)
+}
+
+/// This process's resident set in MB from `/proc/self/statm` (second field,
+/// pages). Linux and Android only; `None` elsewhere or if unreadable.
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fn self_resident_mb() -> Option<u64> {
+    let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+    let pages: u64 = statm.split_whitespace().nth(1)?.parse().ok()?;
+    // SAFETY: sysconf takes an integer name and returns an integer; nothing owned.
+    let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    let page = if page > 0 { page as u64 } else { 4096 };
+    Some(pages * page / 1_048_576)
 }
 
 #[cfg(any(target_os = "ios", target_os = "android", target_os = "linux"))]
@@ -239,7 +257,11 @@ mod platform {
             form_factor: FormFactor::Phone,
             cores: cores(),
             total_ram_mb,
-            available_ram_mb: android_budget_mb(total_ram_mb, mem_available_mb),
+            available_ram_mb: android_budget_mb(
+                total_ram_mb,
+                mem_available_mb,
+                self_resident_mb().unwrap_or(0),
+            ),
             free_disk_mb: statvfs_free_bytes(data_dir)
                 .map(|b| b / 1_048_576)
                 .unwrap_or(0),
@@ -375,8 +397,20 @@ mod tests {
     fn android_budget_never_reports_less_than_mem_available() {
         // The on-device correction: a 4 GB phone reporting ~1 GB MemAvailable
         // wrongly blocked every model; the budget is 60 % with that as a floor.
-        assert_eq!(android_budget_mb(4000, 1000), 2400);
-        assert_eq!(android_budget_mb(4000, 3000), 3000);
+        assert_eq!(android_budget_mb(4000, 1000, 0), 2400);
+        assert_eq!(android_budget_mb(4000, 3000, 0), 3000);
+    }
+
+    #[test]
+    fn android_budget_shrinks_by_what_this_process_already_holds() {
+        // The Pixel 8a numbers: 7573 MB total → 4543 budget; after loading 1.3 GB
+        // (PSS 683 MB idle, 952 MB during extract) the figure must fall, not stay.
+        assert_eq!(android_budget_mb(7573, 2000, 0), 4543);
+        assert_eq!(android_budget_mb(7573, 2000, 683), 3860);
+        assert_eq!(android_budget_mb(7573, 2000, 952), 3591);
+        // Never below the kernel's own MemAvailable, and never underflows.
+        assert_eq!(android_budget_mb(4000, 1500, 2400), 1500);
+        assert_eq!(android_budget_mb(4000, 100, 9000), 100);
     }
 
     #[test]

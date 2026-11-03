@@ -74,14 +74,30 @@ Errors arrive as `VerdureException` subclasses (`VerdureException.NoBundle`, `.E
 - anything mentioning `page size` → the device requires 16 KB alignment and an old build was used; this
   zip's library is aligned, rebuild the APK with it.
 Never wrap `Verdure.start` in a try/catch that swallows the exception: show its message on a screen, so a
-missing file is a sentence, not a silent no-op.
+missing file is a sentence, not a silent no-op. Note that `UnsatisfiedLinkError` is a Java `Error`, not an
+`Exception`: `catch (e: Exception)` does not see it. Catch `Throwable` around the first call.
 
-## Memory on a phone
+## Threads
 
-`recommend` reads what the phone can give right now and refuses with the numbers when nothing fits;
-`load` refuses the same way. The `scribe-floor` bundle needs about 1.3 GB; a 1.5B-class bundle about
-2.2 GB. Unload (`delete(DeleteScope.All)` is not that — just drop the `Verdure` object) when the app
-goes to the background on a 4 GB device.
+Every call blocks. `pushPcm` blocks for a few seconds when a 12 s segment completes; `extract` blocks for
+20–35 s on a Pixel 8a with the floor model; `download` for the whole download. `Verdure` and each
+`AsrStream` are locked separately, so run transcription on one dispatcher and extraction on another and
+they overlap — the transcript does not wait for the facts. Two `extract` calls queue inside the engine.
+Nothing on the main thread. The whisper engine emits `TranscriptEvent.Final` only; `Partial` is for
+engines that stream and never arrives from this one.
+
+## Memory on a phone, and who owns the engines
+
+`recommend` and `load` read what the phone can give *right now* — 60 % of total RAM minus what this
+process already holds, never below the kernel's `MemAvailable` — and refuse with the numbers when a
+bundle does not fit. The figure falls after a `load` because the models now count against it. The
+`scribe-floor` bundle needs about 1.3 GB (measured on a Pixel 8a: 683 MB PSS idle after load, 952 MB
+peak during `extract`); a 1.5B-class bundle about 2.2 GB.
+
+The engines live inside the `Verdure` object: keep one instance for as long as your foreground service
+records, in a scope that outlives the Activity (an application-level holder or the service itself). Drop
+it only when the service stops; `load` after that is as fast as the first time (1.2 s on the Pixel 8a).
+`delete(DeleteScope.All)` is not "unload" — it erases downloaded bundles and indexes.
 
 ## Not in this zip
 

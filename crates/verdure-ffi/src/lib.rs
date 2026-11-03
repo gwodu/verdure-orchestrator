@@ -12,6 +12,14 @@
 //! calls them off its UI thread, as it would any file I/O. UniFFI can wrap
 //! async later without changing the Rust; the spec's `async fn` shapes were
 //! traded for a smaller, more portable v0.1 (knowledge/26).
+//!
+//! Thread safety (the first Pixel integration had to guess, 2026-11-03):
+//! `Verdure` and each `AsrStream` are separately locked. `pushPcm` on a stream
+//! and `extract`/`chat` on the runtime may run on two threads at once — the
+//! speech engine and the language engine are different objects. Two `extract`
+//! calls queue inside the language engine (one generation at a time). The
+//! `Verdure` lock is held only for the bookkeeping, never for a generation or a
+//! download, so `capabilities()` and `fit()` answer while those run.
 
 uniffi::setup_scaffolding!();
 

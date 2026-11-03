@@ -65,6 +65,11 @@ pub struct LlamaEngine {
     id: String,
     model: LlamaModel,
     opts: LoadOptions,
+    /// One generation at a time. Two concurrent `generate` calls would each
+    /// build a context (hundreds of MB on a 4B) and compete for every core;
+    /// queuing them is the honest behaviour on a phone. Transcription runs on
+    /// a different engine and is not held up by this lock.
+    busy: std::sync::Mutex<()>,
 }
 
 impl LlamaEngine {
@@ -88,7 +93,12 @@ impl LlamaEngine {
             .file_name()
             .map(|f| f.to_string_lossy().into_owned())
             .unwrap_or_else(|| "llama".into());
-        Ok(LlamaEngine { id, model, opts })
+        Ok(LlamaEngine {
+            id,
+            model,
+            opts,
+            busy: std::sync::Mutex::new(()),
+        })
     }
 }
 
@@ -113,6 +123,7 @@ impl LlmEngine for LlamaEngine {
         req: &GenRequest,
         on_token: &mut dyn FnMut(&str) -> Control,
     ) -> Result<String, VError> {
+        let _one_at_a_time = self.busy.lock().unwrap_or_else(|e| e.into_inner());
         if req.grammar.is_some() && !self.opts.allow_grammar {
             return Err(VError::EngineUnavailable(
                 "grammar-constrained sampling is switched off in this build (it can abort the host process; see [OQ-108])".into(),
