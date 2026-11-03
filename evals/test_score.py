@@ -37,6 +37,20 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(r["rtf"], 0.25)
         self.assertEqual(r["fact_groups"], ["examination", "other"])
 
+    def test_term_recall_counts_clinical_vocabulary_with_spellings(self):
+        import tempfile
+        terms_file = Path(tempfile.mkdtemp()) / "terms.txt"
+        terms_file.write_text("diarrhoea|diarrhea\nblood pressure\nlisinopril\n# comment\n")
+        terms = score.load_terms(terms_file)
+        ref = score.normalise("diarrhea for three days, blood pressure 150/95, lisinopril 10 mg, lisinopril 20 mg")
+        hyp = score.normalise("die rule for three days, blood pressure 150/95, lecinopril 10 mg, lisinopril 20 mg")
+        r = score.term_recall(ref, hyp, terms)
+        self.assertEqual((r["terms_in_ref"], r["terms_found"]), (4, 2))
+        self.assertEqual(r["term_error_rate"], 0.5)
+        self.assertEqual(r["terms_missed"], ["diarrhoea ×1", "lisinopril ×1"])
+        # Terms the reference never says are not counted against anyone.
+        self.assertEqual(score.term_recall(score.normalise("hello"), [], terms)["term_error_rate"], None)
+
     def test_the_fetched_reference_parses(self):
         prefix = Path(__file__).parent / "fixtures" / "primock57" / "day1_consultation01"
         if not Path(f"{prefix}_doctor.TextGrid").exists():

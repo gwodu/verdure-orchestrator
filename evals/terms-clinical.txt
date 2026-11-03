@@ -1,0 +1,104 @@
+# Clinical vocabulary for the term error rate (evals/score.py --terms).
+# One term per line; `|` separates accepted spellings; multi-word terms allowed.
+# Drawn from the ten PriMock57 consultations' clinician and patient speech.
+diarrhoea|diarrhea
+stools|stool
+abdomen|abdominal
+cramp
+fever|fevers
+feverish
+vomiting
+vomited|vomit
+nausea
+nauseous
+appetite
+gastroenteritis
+antibiotics
+hydrated
+dioralyte
+paracetamol
+ibuprofen
+naproxen
+co-codamol|cocodamol
+aspirin
+anti-inflammatories|anti-inflammatory|antiinflammatories
+eczema
+steroid
+emollients|emollient
+antihistamines|antihistamine
+loratadine
+piriton
+fexofenadine
+cetirizine
+rash|rashes
+itchy
+itching
+asthma
+inhaler|inhalers
+salbutamol
+migraine|migraines
+meningitis
+tumour|tumor
+thyroid
+hyperthyroidism|hypothyroidism
+thyroxine
+microgynon
+contraception
+prophylactic
+palpitations
+tinnitus
+labyrinthitis
+polyps
+neurofibromatosis
+bell's palsy|bells palsy
+numbness
+numb
+dizziness
+dizzy
+discharge
+eardrum|ear drum
+wax
+anaphylactic|anaphylaxis
+allergy|allergies
+allergic
+prawn|prawns
+peanut
+injection
+swelling
+swollen
+breathless
+shortness of breath
+chest pain
+cholesterol
+hypertension
+blood pressure
+light-headed|lightheaded|light headed
+heart rate
+ambulance
+paramedics
+dengue
+mosquito
+blanching
+shivering
+temperature
+headache|headaches
+throbbing
+blurred|blurry
+pins and needles
+weakness
+coordination
+swallowing
+libido
+tingling
+cocaine
+marijuana
+blood tests
+examination
+latex
+rennies|rennie
+chemist
+pharmacy
+prescription
+dose|doses
+milligrams|mg
+symptoms

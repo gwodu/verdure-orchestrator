@@ -58,6 +58,12 @@ def main() -> int:
     ap.add_argument("--task", default="scribe")
     ap.add_argument("--transcript", help="skip speech recognition and extract from this saved transcript")
     ap.add_argument("--window-words", default=150, help="transcript words per extraction window (≈60 s of speech)")
+    ap.add_argument("--bundle", help="pin this bundle instead of recommend(task); judged with fit()")
+    ap.add_argument("--overcommit", action="store_true", help="load past the memory gate (measured machine only)")
+    ap.add_argument("--asr-only", action="store_true", help="skip fact extraction")
+    ap.add_argument("--keyterms", help="file of words to bias recognition toward, one per line")
+    ap.add_argument("--terms", default=str(ROOT / "evals" / "terms-clinical.txt"), help="clinical term list for the term error rate")
+    ap.add_argument("--tag", default="", help="suffix for output files, e.g. the model name")
     a = ap.parse_args()
 
     sys.path.insert(0, a.bindings)
@@ -75,8 +81,13 @@ def main() -> int:
 
     sdk.load_manifest((ROOT / "bundles/manifests/example.json").read_text(), (ROOT / "bundles/manifests/example.json.sig").read_text(), pub)
     task = {"scribe": v.Task.SCRIBE, "chw": v.Task.CHW_FORMS, "tutor": v.Task.TUTOR}[a.task]
-    bundle = sdk.recommend(task)
-    print(f"recommend({a.task}) → {bundle.id} (tier {bundle.tier}, needs {bundle.required_mb} MB); skipped: {list(bundle.skipped)}")
+    if a.bundle:
+        report_fit = sdk.fit(a.bundle)
+        bundle = report_fit.bundle
+        print(f"fit({a.bundle}) → fits={report_fit.fits} needs {bundle.required_mb} MB, {report_fit.available_ram_mb} MB available; problems: {list(report_fit.problems)}")
+    else:
+        bundle = sdk.recommend(task)
+        print(f"recommend({a.task}) → {bundle.id} (tier {bundle.tier}, needs {bundle.required_mb} MB); skipped: {list(bundle.skipped)}")
 
     # Seed the bundle directory from the local model cache so the run needs no network.
     bdir = Path(a.data_dir) / "bundles" / bundle.id
@@ -92,20 +103,24 @@ def main() -> int:
         sdk.download(bundle.id, Listener())
         print()
     t0 = time.time()
-    sdk.load(bundle.id)
+    if a.overcommit:
+        sdk.load_overcommit(bundle.id)
+    else:
+        sdk.load(bundle.id)
     print(f"loaded in {time.time() - t0:.1f}s")
 
     if a.transcript:
         transcript = Path(a.transcript).read_text()
         audio_seconds = asr_seconds = 0.0
     else:
-        transcript, audio_seconds, asr_seconds = run_asr(sdk, v, Path(a.audio), a.consultation)
+        keyterms = [l.strip() for l in Path(a.keyterms).read_text().splitlines() if l.strip() and not l.startswith("#")] if a.keyterms else []
+        transcript, audio_seconds, asr_seconds = run_asr(sdk, v, Path(a.audio), a.consultation, keyterms)
 
     # Facts the way the product does it: over each new stretch of transcript
     # (the platforms emit facts about every 60 s), accumulated — not one pass
     # over a whole consultation, which is beyond a floor-tier model.
     schema = (ROOT / "bundles/manifests/schema-facts.json").read_text()
-    words = transcript.split()
+    words = transcript.split() if not a.asr_only else []
     window = int(a.window_words)
     facts: list = []
     windows_ok = windows_failed = 0
@@ -126,20 +141,22 @@ def main() -> int:
     print(f"facts: {len(facts)} from {windows_ok} window(s), {windows_failed} failed, {extract_seconds:.0f}s")
     if windows_ok == 0:
         facts = None
+    tag = f".{a.tag}" if a.tag else ""
 
     outdir = Path(a.out)
     outdir.mkdir(parents=True, exist_ok=True)
-    (outdir / f"{a.consultation}.transcript.txt").write_text(transcript)
+    (outdir / f"{a.consultation}{tag}.transcript.txt").write_text(transcript)
     if facts is not None:
-        (outdir / f"{a.consultation}.facts.json").write_text(json.dumps({"facts": facts}, indent=2))
-    report = score.score(score.reference_text(ROOT / "evals/fixtures/primock57" / a.consultation), transcript, facts, audio_seconds or None, asr_seconds or None)
+        (outdir / f"{a.consultation}{tag}.facts.json").write_text(json.dumps({"facts": facts}, indent=2))
+    terms = score.load_terms(Path(a.terms)) if a.terms and Path(a.terms).exists() else None
+    report = score.score(score.reference_text(ROOT / "evals/fixtures/primock57" / a.consultation), transcript, facts, audio_seconds or None, asr_seconds or None, terms)
     report.update({"bundle": bundle.id, "tier": caps.tier, "os": caps.os, "available_ram_mb": caps.available_ram_mb, "extract_windows_ok": windows_ok, "extract_windows_failed": windows_failed, "extract_seconds": round(extract_seconds, 1)})
-    (outdir / f"{a.consultation}.score.json").write_text(json.dumps(report, indent=2))
+    (outdir / f"{a.consultation}{tag}.score.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2))
     return 0
 
 
-def run_asr(sdk, v, audio_dir: Path, consultation: str) -> tuple[str, float, float]:
+def run_asr(sdk, v, audio_dir: Path, consultation: str, keyterms: list[str]) -> tuple[str, float, float]:
     """Transcribe the two PriMock channels (doctor, patient) mixed into one conversation."""
     doc, rate = read_wav_f32(audio_dir / f"{consultation}_doctor.wav")
     pat, rate2 = read_wav_f32(audio_dir / f"{consultation}_patient.wav")
@@ -150,7 +167,7 @@ def run_asr(sdk, v, audio_dir: Path, consultation: str) -> tuple[str, float, flo
     mixed = [(x + y) * 0.5 for x, y in zip(doc, pat)]
     audio_seconds = n / rate
     print(f"audio: {audio_seconds:.0f}s at {rate} Hz")
-    stream = sdk.transcribe(v.AsrConfig(lang_hints=["en"], keyterms=[], replacements=[]))
+    stream = sdk.transcribe(v.AsrConfig(lang_hints=["en"], keyterms=keyterms, replacements=[]))
     chunk = rate // 2
     finals = []
     t0 = time.time()

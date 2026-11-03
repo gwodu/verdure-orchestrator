@@ -119,6 +119,62 @@
       "requires_acknowledgement": [],
       "attributions": [],
       "notes": "REAL hashes, measured 2026-10-27 (both files downloaded and hashed on the founder's Mac). The smallest scribe bundle: Whisper base + Qwen2.5 0.5B. Quality gates (knowledge/26 \u00a74.4) NOT run; this exists so the SDK can be exercised end to end on an 8 GB laptop."
+    },
+    {
+      "id": "asr-whisper-base",
+      "task": "scribe",
+      "tiers": [
+        "P1",
+        "P2",
+        "P3",
+        "L1",
+        "L2",
+        "L3"
+      ],
+      "models": [
+        {
+          "id": "whisper-base",
+          "kind": "asr",
+          "name": "Speech model",
+          "file": "ggml-base.bin",
+          "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
+          "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+          "size_bytes": 147951465,
+          "engine": "whisper",
+          "licence": "mit"
+        }
+      ],
+      "requires_acknowledgement": [],
+      "attributions": [],
+      "notes": "Speech only, for the speech bake-off (knowledge/26, [OQ-120])."
+    },
+    {
+      "id": "asr-whisper-small",
+      "task": "scribe",
+      "tiers": [
+        "P1",
+        "P2",
+        "P3",
+        "L1",
+        "L2",
+        "L3"
+      ],
+      "models": [
+        {
+          "id": "whisper-small",
+          "kind": "asr",
+          "name": "Speech model (multilingual, small)",
+          "file": "ggml-small.bin",
+          "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+          "sha256": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+          "size_bytes": 487601967,
+          "engine": "whisper",
+          "licence": "mit"
+        }
+      ],
+      "requires_acknowledgement": [],
+      "attributions": [],
+      "notes": "Speech only, for the speech bake-off ([OQ-120]). Hash is whisper.cpp's published one, verified after download 2026-11-03."
     }
   ]
 }

@@ -1,0 +1,43 @@
+# Words to bias recognition toward (AsrConfig.keyterms → whisper's initial prompt).
+# What a scribe vendor would ship for primary care: drug names and condition names.
+# Deliberately NOT the scoring list: generic words (fever, rash) are left out.
+diarrhoea
+gastroenteritis
+Dioralyte
+paracetamol
+ibuprofen
+naproxen
+co-codamol
+aspirin
+antibiotics
+antihistamines
+eczema
+emollients
+loratadine
+Piriton
+fexofenadine
+cetirizine
+asthma
+salbutamol
+inhaler
+migraine
+meningitis
+thyroxine
+hypothyroidism
+hyperthyroidism
+Microgynon
+palpitations
+tinnitus
+labyrinthitis
+polyps
+neurofibromatosis
+Bell's palsy
+anaphylactic
+anaphylaxis
+dengue
+hypertension
+cholesterol
+prophylactic
+lisinopril
+amoxicillin
+metformin

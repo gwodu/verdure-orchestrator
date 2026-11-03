@@ -77,7 +77,41 @@ def numbers(text: str) -> set[str]:
     return set(NUM.findall(text.replace(",", "")))
 
 
-def score(ref_text: str, hyp_text: str, facts: list[dict] | None, audio_seconds: float | None, processing_seconds: float | None) -> dict:
+def load_terms(path: Path) -> list[list[list[str]]]:
+    """Each term is a list of accepted spellings, each spelling a token list."""
+    terms = []
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        terms.append([normalise(alt) for alt in line.split("|") if normalise(alt)])
+    return terms
+
+
+def count_seq(tokens: list[str], seq: list[str]) -> int:
+    n = len(seq)
+    return sum(1 for i in range(len(tokens) - n + 1) if tokens[i : i + n] == seq)
+
+
+def term_recall(ref: list[str], hyp: list[str], terms: list[list[list[str]]]) -> dict:
+    """Of every clinical term the reference says, the share the hypothesis
+    also says (any accepted spelling), plus the misses — the clinician's
+    vocabulary, which plain WER buries under the small words."""
+    in_ref = found = 0
+    missed: list[str] = []
+    for alts in terms:
+        r = sum(count_seq(ref, a) for a in alts)
+        if r == 0:
+            continue
+        h = sum(count_seq(hyp, a) for a in alts)
+        in_ref += r
+        found += min(r, h)
+        if h < r:
+            missed.append(f"{' '.join(alts[0])} ×{r - min(r, h)}")
+    return {"terms_in_ref": in_ref, "terms_found": found, "term_error_rate": round(1 - found / in_ref, 4) if in_ref else None, "terms_missed": missed}
+
+
+def score(ref_text: str, hyp_text: str, facts: list[dict] | None, audio_seconds: float | None, processing_seconds: float | None, terms: list[list[list[str]]] | None = None) -> dict:
     ref, hyp = normalise(ref_text), normalise(hyp_text)
     ref_nums = numbers(ref_text)
     hyp_nums = numbers(hyp_text)
@@ -88,6 +122,8 @@ def score(ref_text: str, hyp_text: str, facts: list[dict] | None, audio_seconds:
         "reference_numbers": len(ref_nums),
         "numbers_kept": len(ref_nums & hyp_nums),
     }
+    if terms:
+        report.update(term_recall(ref, hyp, terms))
     if facts is not None:
         fact_nums = set()
         for f in facts:
@@ -109,9 +145,11 @@ def main() -> int:
     ap.add_argument("--facts", help="JSON with a top-level 'facts' list")
     ap.add_argument("--audio-seconds", type=float)
     ap.add_argument("--seconds", type=float, help="processing wall time")
+    ap.add_argument("--terms", help="clinical term list (one per line, | for spellings)")
     a = ap.parse_args()
     facts = json.loads(Path(a.facts).read_text()).get("facts") if a.facts else None
-    r = score(reference_text(Path(a.ref)), Path(a.hyp).read_text(), facts, a.audio_seconds, a.seconds)
+    terms = load_terms(Path(a.terms)) if a.terms else None
+    r = score(reference_text(Path(a.ref)), Path(a.hyp).read_text(), facts, a.audio_seconds, a.seconds, terms)
     print(json.dumps(r, indent=2))
     return 0
 
