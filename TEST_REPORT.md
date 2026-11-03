@@ -6,6 +6,12 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 Run: `cargo test --workspace` at the repo root (no models, seconds). CI: the `sdk` job (Linux) runs it plus `cargo check -p verdure-ffi --features llama,whisper` and `cargo fmt --check`.
 
+### 2026-11-03 — Ten PriMock57 consultations on the Pixel 8a (vendor's client, `scribe-floor`, Whisper base)
+
+- Weighted WER 25.2 % over 10 real two-speaker GP consultations (16.6–29.8 % per consultation; 11,786 reference words). Speed 0.71–1.83× real time on the phone — three of ten ran slower than live, so even the floor model is at the edge of a live stream on this hardware.
+- **Error classes, from the side-by-side:** (1) clinical vocabulary fails systematically — diarrhoea → "die rule"/"diary", eczema → "exam"/"X-ma"/"ex-mouth", antihistamines → "anti-fistamines"/"answers to me", loratadine → "lyracidine", Piriton → "piratin", cetirizine → "set cuisine", anaphylactic → "athletic"/"epileptic", antibiotics → "anti-barges", Dioralyte → "diorolite", labyrinthitis → "lab for inciters", Microgynon → "like going on", Bell's palsy → "Belf-Posy", tinnitus → "tenetis", emollients → "amolians", paracetamol → "parasitimal"; (2) hallucinated clauses on silence or overlap ("Russian Romance", "Thank you", "I'm going to work"); (3) deletions where both speakers talk; (4) everyday facts mostly survive — counts, sides, durations, doses in digits, names and dates of birth. The model knows English and not medicine. Keyterms were empty in this run (`AsrConfig(keyterms=[])`), so the one lever whisper offers for vocabulary was never pulled.
+- Recorded against `[OQ-120]`; the bake-off there is the response.
+
 ### 2026-11-03 — The first phone run, as reported by the vendor's client (Pixel 8a)
 
 - Chain green on the device: start 82 ms; recommend → `scribe-floor`; 639 MB in 26.3 s; load 1,240 ms; 8 segments / 93.7 s audio; 3 extractions (2 facts, 1 `SchemaInvalid`); reconnect catch-up 3 facts as `system`; online path unchanged. PSS 683 MB idle, 952 MB peak. No native crash across four visits with both engines in one process.
