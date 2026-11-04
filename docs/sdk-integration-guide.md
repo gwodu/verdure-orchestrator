@@ -45,7 +45,7 @@ The repository contains everything a test project needs:
 |---|---|
 | `bundles/sandbox.token` | A licence token for vendor `sandbox`, unlimited seats, valid for ten years. Signed by the development issuer key. |
 | `crates/verdure-ffi/keys/issuer.pub` | The development issuer's public key. `Verdure.start()` uses it automatically. |
-| `bundles/manifests/example.json` | An example manifest with three bundles. `scribe-floor` and `chw-forms-P1` carry real, measured hashes (Whisper base + Qwen2.5 0.5B, 609 MB) and download fine. `scribe-L2` has a placeholder hash and must not be downloaded. |
+| `bundles/manifests/example.json` | An example manifest with six bundles. `scribe-floor` and `chw-forms-P1` carry real, measured hashes (Whisper base + Qwen2.5 0.5B, 609 MB) and download fine; so do the speech-only `asr-whisper-base` and `asr-whisper-small`. `scribe-L2` has a placeholder hash and must not be downloaded; `asr-afrispeech-medium` has no download URL yet. Which speech model to pick: section 7b. |
 | `bundles/manifests/example.json.sig` | Its signature, made with the same development key, so the public key above verifies it. |
 | `bundles/manifests/schema-example-chw.json` | A JSON Schema for a community-health-worker antenatal visit form. |
 
@@ -268,6 +268,25 @@ Schema support for `extract`: objects with `properties`/`required`/`additionalPr
 - Do not hand-write a licence token or a signature. Use `bundles/sandbox.token` or mint one: `cargo run -p verdure-cli -- license issue --key ~/.verdure/issuer.key --vendor you`.
 - Do not catch errors with a blanket handler and print "failed". Every `VerdureError` carries a sentence meant for the screen; show it.
 - Do not add a workspace member or edit anything under `crates/`. Your project lives under `sandbox/`.
+
+## 7b. Which speech model to pick — our recommendation for clinical speech
+
+The SDK does not choose a speech model for you by quality; it chooses the bundle that fits the device from the menu the manifest offers (section 6, `recommend` and `fit`). What goes on that menu is a quality decision, and we have measured it, so here is our recommendation.
+
+**For medical or clinical speech, use Whisper small, not Whisper base.** We ran both through the SDK's own `transcribe()` on ten real two-speaker GP consultations (PriMock57, 14,700 reference words) and scored them on word error rate and on a list of a hundred clinical terms — drug names, symptoms, conditions — because the clinical words are what a note is made of.
+
+| speech model | download | word error rate | clinical terms missed | speed on an 8 GB Intel Mac |
+|---|---|---|---|---|
+| Whisper base (`scribe-floor` today) | 141 MB | 26.5 % | 1 in 3.6 | 0.28× real time |
+| **Whisper small** | 465 MB | **21.6 %** | **1 in 6** | 0.75× real time |
+
+Base turned *diarrhoea* into "die rule" and *eczema* into "exam"; small gets those right and still misses some (*stools* as "stall", *paracetamol* as "parasitibol"). Small is 3.3× the download and about 2.7× the compute. On a laptop that is comfortably live. On a phone it may lag the speaker; the bundle for phones is being measured on a Pixel 8a before we list it for phone tiers (`knowledge/26`, "The speech bake-off").
+
+**How to act on it.** Put Whisper small in your scribe bundle in the manifest (`asr-whisper-small`'s entry has the verified hash and URL to copy), or pin it from the app with `fit("your-small-bundle")` → `load`. Keep a base bundle listed for lower tiers so the tier walk always lands somewhere.
+
+**Two things not to do.** Do not fill `AsrConfig.keyterms` with a vocabulary list — a 40-word clinical list doubled the error rate in the same measurement; use `replacements` for spellings you need fixed. Do not assume a model fine-tuned "for medical speech" is better: the one we tried (a clinical Whisper medium fine-tuned on African-accented read speech) scored 83 % word error on these consultations.
+
+**What the recommendation does not cover yet:** Whisper medium and large-v3-turbo (bigger, likely better, not measured here), phones (speed), and languages other than English. The licence is the same for every Whisper size: MIT.
 
 ## 8. The developer tool
 
