@@ -8,6 +8,12 @@ export const RELEASES_PAGE = 'https://github.com/gwodu/Verdure-Releases/releases
 /** The macOS disk image, straight from the latest release. Universal (Intel + Apple Silicon). */
 export const MACOS_DMG = `${RELEASES_PAGE}/download/Verdure_0.1.0_universal.dmg`;
 
+/** Apple's TestFlight, open testing: anyone with the link can install (founder, 2026-11-04). */
+export const TESTFLIGHT_URL = 'https://testflight.apple.com/join/GwPMuPBV';
+
+/** Google Play internal testing: works only for an account we have added by hand first. */
+export const PLAY_TEST_URL = 'https://play.google.com/apps/internaltest/4700592011715207600';
+
 /** The founder's address on the company domain (founder, 2026-11-04). */
 export const CONTACT_EMAIL = 'wodu@verdureai.com';
 

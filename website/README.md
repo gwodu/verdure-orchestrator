@@ -9,7 +9,7 @@ What the site is for and why it is shaped this way: `knowledge/05-website-spec.m
 |---|---|
 | `/` | Anyone, technical or not, knows in one glance what Verdure is (AI that runs on your own device, offline) and sees the one thing to do: try the app. Then three plain things it does, the uses as rows you open, the app, a short door for developers, and how to reach the founder. |
 | `/developers` | (was `/sdk`, which redirects.) The white paper, navigable: what it is, how it works, the hello world (Kotlin, Rust, Python), the API, which model for which device, what we measured, privacy and licences, what is not done, how to get it. Facts are data in `lib/sdk-content.ts` and tested. |
-| `/try` | Get the app onto the reader's own device: the macOS download, and a "send me a test build" form for iPhone and Android (testers are added by hand). |
+| `/try` | Get the app onto the reader's own device: the macOS download, the open TestFlight link with a QR code, and for Android a "send me an invite" form (Play internal testing needs the account added by hand) with the Play link and QR code under it. QR codes are built from `lib/links.ts` at build time. |
 | `/privacy` | The privacy policy. Required by the app stores; written as a true description of the software. |
 | `/start/*` | The device recommender from Phase 0: pick what you want to do and your device, get an honest recommendation. Linked from `/try`, not from the nav. |
 | `/api/waitlist` | Where every form on the site lands (Google Sheets; `SETUP_SHEETS.md`). `intentText` says which form. |

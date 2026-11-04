@@ -683,7 +683,7 @@ The Linux job ("Decider + website", 47s) was green too: decider 64 tests, websit
 - **Website vitest 38 → 39:** `links.test.ts` gains "reaches the founder at the work address" — `CONTACT_EMAIL` is `wodu@verdureai.com` and `CONTACT_MAILTO` starts with it, so a personal address cannot creep back. The sample-vs-API test and the lockfile guard unchanged.
 - **Build:** `next build` clean; `/developers` static, `/sdk` → 308 → `/developers` checked with curl against the built server.
 - **Visual loop:** `npm run shots` 10/10 (home, developers, developers#hello, privacy, try, recommender states) plus a desktop pass at 1440 px; every page's `scrollWidth` equals the viewport at both widths. Reviewed: the hero reads in one glance on a phone, the four use-case rows close by default, the header button is the only filled element above the fold, the recommender and privacy pages survived the class rename (the "use this" card and the green "easiest" block still read).
-- **Not tested:** that mail to `wodu@verdureai.com` is delivered — only a real send shows that.
+- **Later the same day (40 tests):** `links.test.ts` checks the TestFlight and Play links have the stores' shapes. `/try` rebuilt and screenshotted at 390 and 1440 px with both QR codes rendered; scrollWidth equals the viewport. Lockfile guard held through `npm install qrcode`. A first screenshot pass hit a stale `next start` still holding the port (old page, no CSS) — kill by port (`lsof -ti tcp:PORT`), not by process name. Mail to `wodu@verdureai.com` confirmed by the founder.
 
 ### 2026-11-04 — The revamp (`website/lib/links.test.ts`, `website/lib/sdk-content.test.ts`, screenshots)
 

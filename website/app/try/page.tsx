@@ -1,16 +1,19 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import KeepPosted from '@/components/KeepPosted';
-import { MACOS_DMG, RELEASES_PAGE } from '@/lib/links';
+import QrCode from '@/components/QrCode';
+import { MACOS_DMG, PLAY_TEST_URL, RELEASES_PAGE, TESTFLIGHT_URL } from '@/lib/links';
 
 export const metadata: Metadata = {
   title: 'Try Verdure on your own device',
-  description: 'Verdure the app: a private chat with an AI on your own Mac, iPhone or Android, and dictation into it. Nothing sent anywhere. Download for Mac, or ask for a test build.',
+  description: 'Verdure the app: a private chat with an AI on your own Mac, iPhone or Android, and dictation into it. Nothing sent anywhere. Download for Mac, join on TestFlight, or ask for the Android test.',
 };
 
 // One page, one job: get Verdure onto the reader's own device. The Mac is a
-// download; iPhone and Android test builds need us to add the tester by hand,
-// so the honest button is "send me one", not a store badge that goes nowhere.
+// download and the iPhone an open TestFlight link, each with a QR code for the
+// person reading on a laptop. Android is Google Play internal testing, which
+// only works for an account we add by hand, so its honest button is "send me
+// an invite", with the Play link underneath for once that is done.
 export default function Try() {
   return (
     <main className="max-w-3xl mx-auto px-5 sm:px-8 pt-14 sm:pt-20">
@@ -35,16 +38,46 @@ export default function Try() {
           <a href={MACOS_DMG} className="btn-primary">Download for Mac</a>
         </div>
 
-        <KeepPosted
-          intent="beta build request"
-          title="iPhone, iPad or Android"
-          blurb="These builds go out through Apple's TestFlight and Google Play's closed testing, which means we add you by hand. Leave the email of the Apple ID or Google account on your phone and we will send the invite."
-          button="Send me a test build"
-          platforms={[
-            { id: 'ios', label: 'iPhone or iPad' },
-            { id: 'android', label: 'Android' },
-          ]}
-        />
+        <div className="card p-6 sm:p-8 grid sm:grid-cols-[1fr_auto] gap-5 items-center">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-semibold tracking-tight mb-2">iPhone and iPad</h2>
+            <p className="text-ink-2">
+              Through Apple&rsquo;s TestFlight. Open the link on your iPhone or iPad, install TestFlight if it asks,
+              then Verdure. No invite needed.
+            </p>
+            <a href={TESTFLIGHT_URL} className="btn-primary mt-4">Open in TestFlight</a>
+          </div>
+          <div className="flex sm:flex-col items-center gap-3 text-ink-soft text-xs text-center">
+            <QrCode url={TESTFLIGHT_URL} label="QR code for the TestFlight link" />
+            <span>Reading this on a laptop?<br />Scan with your phone.</span>
+          </div>
+        </div>
+
+        <div className="card p-6 sm:p-8">
+          <h2 className="text-xl sm:text-2xl font-semibold tracking-tight mb-2">Android</h2>
+          <p className="text-ink-2 mb-5">
+            Verdure is in Google Play&rsquo;s internal testing, which means we add you by hand first. Leave the
+            email of the Google account on your phone and we will add it and reply.
+          </p>
+          <KeepPosted
+            intent="beta build request"
+            title=""
+            blurb=""
+            button="Send me an invite"
+            platforms={[{ id: 'android', label: 'Android' }]}
+            bare
+          />
+          <div className="mt-6 pt-6 border-t border-line grid sm:grid-cols-[1fr_auto] gap-5 items-center">
+            <div>
+              <p className="text-ink-2">Once you have our reply, this opens Verdure on Google Play on your phone.</p>
+              <a href={PLAY_TEST_URL} className="btn-text !pl-0">Open on Google Play →</a>
+            </div>
+            <div className="flex sm:flex-col items-center gap-3 text-ink-soft text-xs text-center">
+              <QrCode url={PLAY_TEST_URL} label="QR code for the Google Play test link" />
+              <span>Scan with your phone.</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <section className="mt-16 text-ink-2 leading-relaxed space-y-4">
