@@ -21,8 +21,9 @@ const VIEWPORT = { width: 390, height: 844 }; // a common phone — our primary 
 const SHOTS = [
   { name: 'home', url: '/', full: true },
   { name: 'home-reduced-motion', url: '/', full: true, reducedMotion: 'reduce' },
-  { name: 'home-about', url: '/', scrollTo: 950 },
-  { name: 'home-founder', url: '/', scrollTo: 1750 },
+  { name: 'sdk', url: '/sdk', full: true },
+  { name: 'sdk-hello', url: '/sdk#hello' },
+  { name: 'try', url: '/try', full: true },
   { name: 'intent', url: '/start' },
   { name: 'device', url: '/start/device', session: { 'verdure.flow.intent': 'transcribe my recordings' } },
   { name: 'rec-audio', url: '/start/recommendation', session: { 'verdure.flow.intent': 'transcribe my recordings', 'verdure.flow.device': 'laptop' } },

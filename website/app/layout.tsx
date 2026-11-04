@@ -1,33 +1,29 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
+import type { Metadata } from 'next';
+import './globals.css';
+import SiteHeader from '@/components/SiteHeader';
+import SiteFooter from '@/components/SiteFooter';
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
+// System faces only, no webfont download — the identity in skills/design.md.
 export const metadata: Metadata = {
-  title: "Verdure - Building Your Personal AI",
-  description: "Personal AI that runs on your own device, not the cloud — so your information stays yours.",
+  title: 'Verdure — run local models with a few lines of code',
+  description:
+    'Verdure is a runtime that turns speech into text and text into structured JSON on the user’s own phone or laptop, offline. One library, one licence token, nothing leaves the device.',
+  metadataBase: new URL('https://verdureai.com'),
+  openGraph: {
+    title: 'Verdure — run local models with a few lines of code',
+    description: 'Speech to transcript to schema-valid JSON, on the device in front of you. Offline. Private.',
+    url: 'https://verdureai.com',
+    siteName: 'Verdure',
+  },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className="antialiased">
+        <SiteHeader />
         {children}
+        <SiteFooter />
       </body>
     </html>
   );

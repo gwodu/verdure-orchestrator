@@ -1,6 +1,6 @@
 # 05 — Website Spec (Phase 0)
 
-**Status:** 🟡 Largely superseded by the 2026-06-18 pivot (`18`): this specifies the Phase 0 *recommend-other-apps* funnel. What the site should do now that Verdure ships its own app is open in `[OQ-87]` — read this as the spec of what is live, not as direction.
+**Status:** 🟡 The four-screen funnel below is live at `/start` but no longer the site's front door. **What the site is now is specified in "The 2026-11-04 revamp" at the end of this file** (`[OQ-87]` resolved); read the sections between as the spec of the recommender only.
 
 This file specifies the Phase 0 recommendation website at verdureai.com. The website is the orchestration brain exposed publicly — the propositional knowledge base operationalized as a recommender. No binary, no installation, no model downloads through Verdure. Just intent-and-device → recommendation → install path.
 
@@ -88,3 +88,27 @@ Phase 0 is easier to ship and easier to iterate on than Phase 1. The temptation 
 - [OQ-10] Resolved (2026-05-29) — launch-list capture is a Google Sheet: the `/api/waitlist` route appends one row per signup via a service account. Implemented in `website/lib/sheets.ts` (setup in `website/SETUP_SHEETS.md`).
 - [OQ-11] Visual design language — needs to be defined before launch.
 - [OQ-12] Spec database for the free-text device parsing path — is LLM-only sufficient for v1, or do we need to integrate with EveryMac, Notebookcheck, or similar?
+
+## The 2026-11-04 revamp — the site is the SDK's front door
+
+The founder's brief (2026-11-04): "we're reaching out to people now… this is the first thing they're gonna see… simple, direct, what we're doing, try out the SDK, have a sample example." Three pieces of outside feedback on the old page were folded in (a Notion thread, Sept–Oct 2026): too plain for the promise, more pages, a permanent email form, some graphics, and the beta links on the site; keep the intro and the founder visible; add real user statements once there are any (not yet — none invented).
+
+**One job per page** (`skills/copywriting.md`):
+
+| Page | The reader | The one action |
+|---|---|---|
+| `/` | A company deciding whether Verdure goes in its app | See the hello world (`/sdk#hello`) |
+| `/sdk` | Their developer, with an afternoon | Email for the test kit |
+| `/try` | Anyone who wants to feel it on their own device | Download for macOS; ask for an iOS/Android test build |
+| `/privacy` | App-store reviewers and the careful user | Read |
+| `/start/*` | The Phase 0 recommender, kept and reachable from `/try` | Pick → device → recommendation |
+
+**What the home page says, in order:** the tagline ("Run your local models with a few lines of code."), one paragraph of what the runtime does and where, two buttons (hello world, how it works), the three things an app gets, the one picture (speech in, transcript and JSON out, all inside the device's dotted line), three measured numbers with their caveats, who it is for, the app, keep-me-posted, the founder. Nothing on it is a promise we have not measured; the "not done yet" list is one click away and linked from the numbers.
+
+**The SDK page is the white paper**, navigable like Stripe's docs: a sticky list of nine sections, each readable in a minute, the hello world in Kotlin, Rust and Python, the full API table, the tier table, the bake-off and phone tables, licences, and what is not done. Its facts are data (`website/lib/sdk-content.ts`) with a test that every method a sample calls is in the API table, so the sample cannot drift from the SDK.
+
+**Beta access, the third option.** iOS (TestFlight) and Android (Play closed testing) both need the tester added by hand, and a `mailto:` fails on most phones. So `/try` has one form — name, email, platform — that lands in the existing waitlist sheet with `intentText = "beta build request"`; the founder adds the tester and replies. The macOS build is a direct download from the public releases repository (`lib/links.ts`, tested to point there and never at the updater endpoint).
+
+**Identity.** The "midnight glass" tokens from `skills/design.md` (navy, mint, glass, system faces, no webfont) are the site's CSS now; the old pages' Tailwind names are re-pointed at them in `globals.css`, so the recommender and the privacy page changed palette without an edit. `backdrop-filter` is on the header only: on the panels it washed out full-page captures in Chromium and bought nothing over a static gradient; `background-attachment: fixed` was dropped for iOS Safari.
+
+**Not done, and known:** no analytics at all (the spec's Plausible/Fathom was never wired); the sheet is the only measure of interest; no real user statements yet; Swift/C bindings are mentioned as not packaged.

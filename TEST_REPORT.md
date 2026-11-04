@@ -678,6 +678,14 @@ The Linux job ("Decider + website", 47s) was green too: decider 64 tests, websit
 
 ## Website (Phase 0)
 
+### 2026-11-04 — The revamp (`website/lib/links.test.ts`, `website/lib/sdk-content.test.ts`, screenshots)
+
+- `npm test`: 38 passed (30 + 8). New: the macOS link points under `gwodu/Verdure-Releases/releases/latest/download/` and ends in `.dmg`, never at `verdureai.com/updates`; `mailto()` encodes spaces as `%20` and newlines as `%0A` (URLSearchParams' `+` is not decoded by mail clients); every `sdk.<name>(` call in the three hello-world samples names a method in the API table (snake_case accepted for Rust and Python) and each sample contains start, recommend, download, load, transcribe, extract; the speech table lists `scribe-floor` then `scribe-small` with the Pixel speed 3.2×; the tiers are in `02`'s order.
+- `npm run build`: clean, every page static except the two API routes.
+- Visual loop (`npm run shots`, plus a one-off 1280 px capture): three faults found and fixed before commit — (1) `backdrop-filter` on every glass panel washed out full-page captures from the first panel down, removed except on the header; (2) at 390 px the header was 14 px wider than the viewport, because the site's unlayered `.btn-primary` outranked Tailwind's `hidden` — the site's classes now live in `@layer components`; (3) the SDK page's section list overflowed the grid column, fixed with `min-w-0` on the nav and `max-w-full` on the list. A Playwright probe of `scrollWidth` on every page is now 390 at phone width.
+- Not tested: the forms against a configured Google Sheet from this machine (the route's unconfigured path logs and returns ok, as before); the live deployment is checked after the push.
+
+
 ### 2026-05-29 — Multimodal recommendation engine (`website/lib/intent.test.ts`, `website/lib/recommend.test.ts`)
 
 **Suite: 40 tests passing** (rewritten from the prior 13 text-only tests + 9 sheets tests).

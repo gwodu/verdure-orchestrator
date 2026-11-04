@@ -757,6 +757,17 @@ Three chat improvements:
 
 ## Website (Phase 0)
 
+### 2026-11-04 — The revamp: the site is the SDK's front door (`knowledge/05`, "The 2026-11-04 revamp")
+
+**What:** four pages with one job each — `/` (the tagline, what the runtime does, the picture, three measured numbers, who it is for, the app, keep-me-posted, the founder), `/sdk` (the navigable white paper: hello world in Kotlin/Rust/Python, API table, tiers, bake-off and phone tables, licences, what is not done, how to get it), `/try` (macOS download; a test-build form for iOS and Android that lands in the waitlist sheet), `/privacy` unchanged; the recommender kept at `/start`. A shared header and footer, an inline SVG of the pipeline, the midnight-glass identity as CSS tokens with the old Tailwind names re-pointed at them, system fonts (the Geist download is gone). Outward links in one tested module; the SDK page's facts in one tested module.
+
+**Why:** the founder is reaching out to companies and the site is the first thing they see. Outside feedback said the old page was too plain for its promise, wanted more pages, a permanent email form, graphics and the beta links; all folded in. The tagline is "run your local models with a few lines of code", so the page shows the few lines.
+
+**Simpler or more complex for the user?** Simpler: one sentence says what Verdure does, one click shows the code, one form gets a phone build. For the floor user, `/try` says in plain words what the app does and what reaches the internet (nothing, until they switch it on).
+
+**Tests:** 38 website tests (8 new: links point at the public releases repo and never the updater endpoint, mailto encoding; every `sdk.<method>(` in the samples is in the API table, every sample walks start → extract, the measured rows and tier order); `npm run build` clean; phone and laptop screenshots reviewed, two overflows found and fixed (TEST_REPORT).
+
+
 ### 2026-05-29 — Multimodal recommendations (audio · image · video)
 
 **What:** The recommendation engine went from text-LLM-only to multimodal. The classifier (`website/lib/intent.ts`) now resolves a request to a `(modality, task)` pair across text/audio/image/video (`website/lib/modality.ts`); the engine (`website/lib/recommend.ts`) dispatches by modality and returns one of three honest outcomes — `recommended`, `works-but-slow`, or `not-local-yet`.

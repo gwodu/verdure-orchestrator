@@ -1,142 +1,165 @@
-'use client';
+import Link from 'next/link';
+import Pipeline from '@/components/Pipeline';
+import KeepPosted from '@/components/KeepPosted';
+import { LINKEDIN, MACOS_DMG } from '@/lib/links';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-
+// The home page has one job: a company deciding whether to put Verdure in its
+// app should know in ten seconds what it does, and be one click from running
+// it. Everything else on the page earns the next sentence honestly
+// (skills/copywriting.md): what it does, where it runs, what we measured,
+// then the app for anyone who wants to feel it on their own device.
 export default function Home() {
-  const [scrollY, setScrollY] = useState(0);
-  const [animate, setAnimate] = useState(false);
-  const router = useRouter();
-
-  useEffect(() => {
-    // Only run the scroll-driven reveal when the user is fine with motion.
-    // Until this runs (SSR / pre-hydration / no-JS) and whenever reduced motion
-    // is preferred, `animate` stays false and every section renders fully
-    // visible and static — content is never hidden behind an animation.
-    // See ../../skills/design.md, "The visual self-review loop".
-    const motionOk = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    setAnimate(motionOk);
-    if (!motionOk) return;
-    const handleScroll = () => setScrollY(window.scrollY);
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  const handleStartClick = () => {
-    router.push('/start');
-  };
-
   return (
-    <div className="bg-slate-800 text-white min-h-screen">
-      {/* Hero Section */}
-      <section className="min-h-screen flex flex-col items-center justify-center px-6 sm:px-12">
-        <div 
-          className="text-center transition-all duration-700"
-          style={animate ? {
-            opacity: Math.max(1 - scrollY / 400, 0),
-            transform: `translateY(${scrollY * 0.3}px)`
-          } : undefined}
-        >
-          <h1 className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-bold text-emerald-400 mb-6 tracking-tight">
-            VERDURE
-          </h1>
-          <p className="text-xl sm:text-2xl md:text-3xl text-slate-200 mb-12 font-light">
-            building your personal AI
-          </p>
-          <button
-            onClick={handleStartClick}
-            className="bg-emerald-400 text-slate-900 px-8 py-4 rounded-full text-lg font-semibold hover:bg-emerald-300 transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-emerald-400/50"
-          >
-            Run your own local AI →
-          </button>
-          <p className="mt-4 text-sm text-slate-400">
-            60 seconds. No signup until the end.
-          </p>
-        </div>
-      </section>
-
-      {/* About Section */}
-      <section className="min-h-screen flex items-center justify-center px-6 sm:px-12 py-20">
-        <div 
-          className="max-w-4xl transition-all duration-700"
-          style={animate ? {
-            opacity: Math.min(Math.max((scrollY - 300) / 400, 0), 1),
-            transform: `translateY(${Math.max(50 - (scrollY - 300) / 8, 0)}px)`
-          } : undefined}
-        >
-          <h2 className="text-4xl sm:text-5xl md:text-6xl font-bold text-emerald-400 mb-8 text-center">
-            About Verdure
-          </h2>
-          <div className="text-lg sm:text-xl md:text-2xl text-slate-200 leading-relaxed space-y-6">
-            <p>
-              AI is becoming part of everyday life — but at a cost. The things you type are sent off to servers you don&rsquo;t control, feeding models you can&rsquo;t see.
-            </p>
-            <p className="text-emerald-400 font-semibold">
-              Verdure is personal AI that runs on your own device, not in the cloud — so your information never leaves your hands.
-            </p>
-            <p>
-              We&rsquo;re building it to run entirely on your phone. Everything happens right there in your pocket: private by default, fast because nothing has to travel to a server and back, and far cheaper than anything that leans on the cloud.
-            </p>
-            <p>
-              As you use it, Verdure learns what matters to you. Imagine waking up to a phone that has already sorted your email and messages down to the few things you actually need to see.
-            </p>
-            <p>
-              And it grows with you. Over time your Verdure does more — booking the trips you&rsquo;d actually choose, or preparing your tax return — always right on your device, never on someone else&rsquo;s servers.
-            </p>
-            <p className="text-emerald-400 font-semibold">
-              AI that works for you — and answers only to you.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Founder Section */}
-      <section className="min-h-screen flex items-center justify-center px-6 sm:px-12 py-20">
-        <div 
-          className="max-w-3xl transition-all duration-700"
-          style={animate ? {
-            opacity: Math.min(Math.max((scrollY - 1000) / 400, 0), 1),
-            transform: `translateY(${Math.max(50 - (scrollY - 1000) / 8, 0)}px)`
-          } : undefined}
-        >
-          <h2 className="text-4xl sm:text-5xl md:text-6xl font-bold text-emerald-400 mb-12 text-center">
-            Meet the Founder
-          </h2>
-          <div className="flex flex-col items-center text-center">
-            <div className="w-64 sm:w-72 aspect-[3/4] rounded-2xl bg-slate-800 border-2 border-emerald-400/30 mb-8 flex items-center justify-center overflow-hidden shadow-[0_0_40px_-15px_rgba(52,211,153,0.3)]">
-              <img 
-                src="/Founders-Portrait.jpg" 
-                alt="Gesi Wodu"
-                className="w-full h-full object-cover object-top"
-              />
-            </div>
-            <h3 className="text-3xl sm:text-4xl font-bold text-white mb-2">
-              Gesi Wodu
-            </h3>
-            <a
-              href="https://www.linkedin.com/in/gesikeme-wodu"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-emerald-400 hover:text-emerald-300 transition-colors mb-8 inline-flex items-center gap-2 text-lg"
-            >
-              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-              </svg>
-              Connect on LinkedIn
-            </a>
-            <p className="text-lg sm:text-xl md:text-2xl text-slate-200 leading-relaxed">
-              I studied computer science at the birthplace of AI, the University of Toronto, and I am ready to use that knowledge to bring affordable and power efficient AI direct to everyday people doing good work.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="py-12 text-center text-slate-400 border-t border-slate-700">
-        <p className="text-sm sm:text-base">
-          © {new Date().getFullYear()} Verdure. All rights reserved.
+    <main className="max-w-6xl mx-auto px-5 sm:px-8">
+      {/* Hero */}
+      <section className="pt-20 sm:pt-28 pb-16 sm:pb-20">
+        <p className="rise text-mint-bright text-xs sm:text-sm tracking-[0.2em] uppercase mb-5">The Verdure SDK</p>
+        <h1 className="rise text-4xl sm:text-6xl md:text-7xl font-bold leading-[1.05] tracking-tight max-w-4xl">
+          Run your local models with a few lines of code.
+        </h1>
+        <p className="rise-2 mt-7 text-lg sm:text-2xl text-slate-300 leading-relaxed max-w-3xl">
+          Verdure is a runtime your app embeds. On the user&rsquo;s own phone or laptop it turns speech into a
+          transcript, and the transcript into JSON that matches your schema. Offline. Nothing leaves the device.
         </p>
-      </footer>
+        <div className="rise-3 mt-10 flex flex-wrap items-center gap-4">
+          <a href="/sdk#hello" className="btn-primary text-base sm:text-lg">See the hello world →</a>
+          <Link href="/sdk" className="btn-secondary text-base sm:text-lg">Read how it works</Link>
+        </div>
+        <p className="rise-3 mt-5 text-ink-soft">
+          Not a developer? <Link href="/try" className="text-mint-bright hover:underline">Try Verdure on your own Mac, iPhone or Android.</Link>
+        </p>
+      </section>
+
+      {/* What the app gets */}
+      <section className="grid md:grid-cols-3 gap-5 mb-20">
+        {[
+          {
+            t: 'Speech to text',
+            d: 'Microphone audio in, transcript events out as the person speaks. The speech model is chosen for the device, not for the demo.',
+          },
+          {
+            t: 'Text to a filled form',
+            d: 'Hand Verdure your JSON Schema. You get JSON that validates against it, or an error that names each field that was wrong.',
+          },
+          {
+            t: 'The right model for the device',
+            d: 'Verdure reads the memory, the disk and the measured speed of the phone it is on, then picks the bundle that runs live, or says in a sentence why not.',
+          },
+        ].map((c) => (
+          <div key={c.t} className="glass p-6 sm:p-7">
+            <h2 className="text-xl font-bold text-mint-bright mb-2">{c.t}</h2>
+            <p className="text-slate-300 leading-relaxed">{c.d}</p>
+          </div>
+        ))}
+      </section>
+
+      {/* The picture */}
+      <section className="mb-20">
+        <div className="glass p-4 sm:p-8">
+          <Pipeline />
+        </div>
+        <p className="mt-4 text-ink-soft text-sm sm:text-base max-w-3xl">
+          One library (whisper.cpp and llama.cpp compiled in), one licence token verified offline, one signed
+          manifest that says which model files exist and where they come from. Your app keeps its screens and its
+          cloud. Verdure is the engine underneath.
+        </p>
+      </section>
+
+      {/* Measured, not promised */}
+      <section className="mb-20">
+        <h2 className="text-2xl sm:text-3xl font-bold mb-2">Measured, not promised</h2>
+        <p className="text-ink-soft mb-8 max-w-3xl">
+          Every number here comes from a run we can repeat: ten real two-speaker GP consultations, scored by word
+          error and by the clinical terms a note is made of, on an 8 GB Intel Mac and a Pixel 8a.
+        </p>
+        <div className="grid sm:grid-cols-3 gap-5">
+          <Stat big="1 in 6" small="clinical terms missed with Whisper small, down from 1 in 3.6 with Whisper base. Same result on the phone as on the laptop." />
+          <Stat big="54 s" small="to download the 979 MB clinical bundle on a Pixel 8a over Wi-Fi, verified by hash. 15 s to load it; 1.2 s for the smaller one." />
+          <Stat big="1.25×" small="real time for the live-speech bundle on a Pixel 8a, flat out and throttled. The larger model runs at 3.2×, so Verdure picks it only for recordings." />
+        </div>
+        <p className="mt-6 text-ink-soft">
+          <Link href="/sdk#measured" className="text-mint-bright hover:underline">All the numbers, including what is not done yet →</Link>
+        </p>
+      </section>
+
+      {/* Who it is for */}
+      <section className="mb-20 grid md:grid-cols-[1.2fr_1fr] gap-8 items-start">
+        <div>
+          <h2 className="text-2xl sm:text-3xl font-bold mb-4">For apps where the data has to stay in the room</h2>
+          <p className="text-slate-300 leading-relaxed mb-4">
+            A clinician dictating between patients. A lesson being recorded for a teacher&rsquo;s coaching. A community
+            health worker filling a form on a 4 GB phone after a home visit. Their words should not have to leave the
+            building to become a note.
+          </p>
+          <p className="text-slate-300 leading-relaxed">
+            Verdure runs on the phones and laptops those people already have, down to a 4 GB phone for form
+            filling and an 8 GB Intel laptop for a full scribe. Your cloud stays your fallback, through a hook you
+            implement; Verdure never opens that connection itself.
+          </p>
+        </div>
+        <ul className="glass p-6 space-y-3 text-slate-300">
+          <li><span className="text-mint-bright font-semibold">Clinical scribes</span> — offline transcript and facts, uploaded when the connection returns.</li>
+          <li><span className="text-mint-bright font-semibold">Education</span> — a tutor over lesson packs already on the device; coaching from a recorded lesson, never the audio.</li>
+          <li><span className="text-mint-bright font-semibold">Community health</span> — speak to fill the form, on the cheapest phones in the field.</li>
+        </ul>
+      </section>
+
+      {/* Try the app */}
+      <section className="mb-20">
+        <div className="glass p-6 sm:p-10 grid md:grid-cols-[1fr_auto] gap-6 items-center">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-2">Want to feel it first?</h2>
+            <p className="text-slate-300 leading-relaxed max-w-2xl">
+              Verdure the app runs on the same engine: a private chat with a model on your own device, dictation
+              into it, and nothing sent anywhere. Download it for your Mac now, or ask for a test build on iPhone
+              or Android.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3">
+            <a href={MACOS_DMG} className="btn-primary justify-center">Download for macOS</a>
+            <Link href="/try" className="btn-secondary justify-center">iPhone, iPad or Android</Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Keep me posted */}
+      <section className="mb-20 max-w-3xl">
+        <KeepPosted
+          intent="homepage: keep me posted"
+          title="Keep me posted"
+          blurb="A short note when there is something new to try: new builds, new platforms. No newsletter, no tracking."
+          button="Keep me posted"
+        />
+      </section>
+
+      {/* Founder */}
+      <section className="mb-10 flex flex-col sm:flex-row gap-6 sm:gap-10 items-center sm:items-start">
+        <img
+          src="/Founders-Portrait.jpg"
+          alt="Gesi Wodu"
+          className="w-36 h-44 object-cover object-top rounded-2xl border border-[rgba(76,216,173,0.3)]"
+        />
+        <div>
+          <h2 className="text-xl sm:text-2xl font-bold mb-1">Built by Gesi Wodu</h2>
+          <p className="text-slate-300 leading-relaxed max-w-2xl">
+            Computer science at the University of Toronto, then this: AI that is affordable, power-efficient and
+            runs where the person is, for people doing good work. If you are building for them, I would like to
+            hear from you.
+          </p>
+          <a href={LINKEDIN} target="_blank" rel="noopener noreferrer" className="inline-block mt-3 text-mint-bright hover:underline">
+            Connect on LinkedIn →
+          </a>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function Stat({ big, small }: { big: string; small: string }) {
+  return (
+    <div className="glass p-6">
+      <p className="text-4xl sm:text-5xl font-bold text-mint-bright mb-2">{big}</p>
+      <p className="text-slate-300 text-sm sm:text-base leading-relaxed">{small}</p>
     </div>
   );
 }

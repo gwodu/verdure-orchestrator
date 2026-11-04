@@ -1,26 +1,159 @@
 @import "tailwindcss";
 
+/*
+ * Midnight glass — the visual identity measured from the brand video
+ * (skills/design.md, "Visual identity"). Deep navy, aurora mint, frosted
+ * glass, system faces. The Tailwind names the older pages use (slate-*,
+ * emerald-*) are re-pointed at these tokens below, so every page on the site
+ * shares one palette without each being rewritten.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --navy-0: #021329;
+  --navy-1: #061b35;
+  --navy-2: #0c253e;
+  --teal-1: #14314a;
+  --teal-2: #1d4058;
+  --teal-3: #275168;
+  --mint: #34c69a;
+  --mint-bright: #4cd8ad;
+  --mint-pale: #b7f3e6;
+  --sea-1: #386a7e;
+  --sea-2: #479e96;
+  --ink: #eef6f2;
+  --ink-soft: #8fa8b5;
+  --on-mint: #04241c;
+  --coral: #ff9d8a;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--navy-0);
+  --color-foreground: var(--ink);
+  --color-emerald-300: var(--mint-bright);
+  --color-emerald-400: var(--mint);
+  --color-emerald-500: var(--sea-2);
+  --color-slate-100: var(--ink);
+  --color-slate-200: var(--ink);
+  --color-slate-300: #c3d3d8;
+  --color-slate-400: var(--ink-soft);
+  --color-slate-500: #6f8b99;
+  --color-slate-700: var(--teal-2);
+  --color-slate-800: var(--navy-1);
+  --color-slate-900: var(--navy-0);
+  --color-mint: var(--mint);
+  --color-mint-bright: var(--mint-bright);
+  --color-mint-pale: var(--mint-pale);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-on-mint: var(--on-mint);
+  --color-coral: var(--coral);
+  --font-sans: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-serif: ui-serif, "New York", Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(52, 198, 154, 0.14), transparent 60%),
+    radial-gradient(900px 500px at 90% 10%, rgba(71, 158, 150, 0.12), transparent 60%),
+    linear-gradient(180deg, var(--navy-0) 0%, var(--navy-1) 45%, var(--navy-2) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+@layer components {
+/* The wordmark: serif, wide, mint gradient — the "sleek" half of the brand. */
+.wordmark {
+  font-family: var(--font-serif);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, var(--mint-bright), var(--mint-pale) 60%, var(--mint-bright));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Frosted glass panels: translucent navy, mint-tinged border, soft glow. */
+.glass {
+  background: rgba(238, 246, 242, 0.05);
+  border: 1px solid rgba(76, 216, 173, 0.18);
+  border-radius: 20px;
+  box-shadow: 0 10px 40px -20px rgba(52, 198, 154, 0.35);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--mint);
+  color: var(--on-mint);
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.9rem 1.6rem;
+  box-shadow: 0 8px 30px -12px rgba(52, 198, 154, 0.8);
+  transition: background 150ms ease, transform 150ms ease;
+}
+.btn-primary:hover { background: var(--mint-bright); transform: translateY(-1px); }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink);
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.9rem 1.6rem;
+  border: 1px solid rgba(76, 216, 173, 0.35);
+  background: rgba(238, 246, 242, 0.04);
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.btn-secondary:hover { border-color: var(--mint-bright); background: rgba(238, 246, 242, 0.08); }
+
+/* Code: dark glass, mint keywords are not attempted — plain, readable, copyable. */
+pre.code {
+  background: rgba(2, 19, 41, 0.75);
+  border: 1px solid rgba(76, 216, 173, 0.18);
+  border-radius: 14px;
+  padding: 1rem 1.2rem;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+code.inline {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: rgba(238, 246, 242, 0.08);
+  border-radius: 6px;
+  padding: 0.1em 0.4em;
+}
+
+/* Documentation tables (the SDK page). */
+table.doc { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+table.doc th, table.doc td { text-align: left; vertical-align: top; padding: 0.6rem 0.75rem; border-bottom: 1px solid rgba(76, 216, 173, 0.15); }
+table.doc th { color: var(--mint-bright); font-weight: 600; }
+table.doc td { color: #c3d3d8; }
+table.doc td:first-child { color: var(--ink); }
+
+/* Section anchors land below the sticky header. */
+.anchor { scroll-margin-top: 5.5rem; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rise { animation: rise 600ms ease-out both; }
+  .rise-2 { animation: rise 600ms 120ms ease-out both; }
+  .rise-3 { animation: rise 600ms 240ms ease-out both; }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
 }
