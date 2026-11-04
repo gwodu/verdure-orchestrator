@@ -6,6 +6,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Started 2026-10-21 from the founder's nine-vendor teardown and build spec (`knowledge/26`). The long-term Rust core, real: `verdure-core` pure, I/O crates behind its ports, `verdure-ffi` the public surface. Three users in every decision: the end user who never sees Verdure, the developer with an afternoon, the customer's compliance team.
 
+### 2026-11-03 — `scribe-small`: the measured speech model becomes the bundle the SDK recommends, with base kept as the fallback and the developer's pick (`knowledge/26`, "What shipped from it")
+
+**What:** a new `scribe-small` bundle (Whisper small + Qwen2.5 0.5B, real hashes) leads the signed example manifest for P3/L2/L3; `scribe-floor` stays for every tier as the fallback and the everyday-dictation choice; `scribe-L2` gets a real hash for its 1.5B. No crate code changed — the tier walk, the memory rule and `fit()` already did the choosing; what changed is the menu. The integration guide (sections 3, 7, 7b) and the Android README say which bundle a device gets and how to pin the other one.
+
+**Why:** the bake-off's answer was worth nothing until the SDK handed it to a device. The founder's framing: small where clinical vocabulary matters, base where it does not, the developer decides for their use case.
+
+**Simpler or more complex for the user?** Simpler for the clinician on an 8 GB phone or a laptop: one clinical word in six missed instead of one in four, with no change to the app. For the developer, one more bundle name to know, documented in the table they already read.
+
+**Tests:** workspace 90 (unchanged); manifest check/verify; `recommend` per tier and the memory fallback checked from the CLI; one end-to-end run on the Mac through `recommend()` → `scribe-small` (TEST_REPORT).
+
 ### 2026-11-03 — The speech bake-off: Whisper small is the next bundle's speech model; keyterms and Intron's medium ruled out as run (`knowledge/26`, "The speech bake-off")
 
 **What:** four recogniser configurations through the SDK's own `transcribe()` on ten PriMock57 consultations, scored on WER and a clinical-term error rate. Whisper small cuts clinical-term misses from 27.8 % to 16.8 % against base; a 40-word keyterms prompt doubles errors (`[OQ-121]`); Intron's AfriSpeech Whisper medium, converted to ggml and registered as `asr-afrispeech-medium`, scores 83 % WER on this audio (cause not separated from conversion). MedASR could not be run from the autonomous session. Harness additions: `evals/rescore.py` (re-score saved transcripts after a scorer or term-list change), a hyphen-spelling fix in the term list that had hidden ten correct recognitions, `summarise.py` labelling of pre-bake-off runs.

@@ -6,6 +6,13 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 Run: `cargo test --workspace` at the repo root (no models, seconds). CI: the `sdk` job (Linux) runs it plus `cargo check -p verdure-ffi --features llama,whisper` and `cargo fmt --check`.
 
+### 2026-11-03 — `scribe-small` end to end on the Mac, chosen by `recommend()`, nothing pinned
+
+- Manifest: `verdure manifest check` 7 bundles, `verify` ok after re-signing. `recommend --task scribe` per tier at 3600 MB: P1/P2/L1 → `scribe-floor`, P3/L2/L3 → `scribe-small`; P3 at 1500 MB → `scribe-floor` with `skipped: ["scribe-small: needs 1667 MB of memory, 1500 MB available"]`.
+- `cargo test --workspace`: 90 passed.
+- `run-primock.py day1_consultation01` (no `--bundle`, extraction on): bundle `scribe-small` at L2, 2457 MB available; WER 20.4 % (1,321 reference words), terms 47/57, RTF 0.56 (457.9 s of audio in 257.4 s); extraction 11 facts from 4 of 9 windows in 87 s, 5 windows schema-invalid (missing `group`, placeholder text copied — the 0.5B, `[OQ-118]`), invented numbers 0.
+- Not measured: small on the Pixel (new zip dispatched for the vendor's client); `scribe-L2`'s 1.5B download and extraction.
+
 ### 2026-11-03 — The speech bake-off on the Mac (`evals/bakeoff.sh`, ten PriMock57 consultations, `--asr-only`)
 
 | configuration | n | WER | clinical term error | RTF (Intel Mac) |

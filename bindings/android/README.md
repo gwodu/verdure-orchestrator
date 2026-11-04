@@ -6,7 +6,7 @@ Produced by `.github/workflows/build-sdk-android.yml`. Contents:
 jniLibs/arm64-v8a/libverdure.so     the runtime: whisper.cpp + llama.cpp compiled in, arm64, 16 KB page aligned
 jniLibs/arm64-v8a/libc++_shared.so  the C++ runtime libverdure.so needs (from the NDK) — ship BOTH files
 kotlin/uniffi/verdure/verdure.kt    the Kotlin binding (UniFFI); loads libverdure.so through JNA
-bundles/example.json + .sig         a signed example manifest (scribe-floor and chw-forms-P1 have real hashes)
+bundles/example.json + .sig         a signed example manifest: scribe-small (Whisper small, recommended for clinical speech), scribe-floor (Whisper base), scribe-L2, chw-forms-P1
 bundles/schema-facts.json           a facts schema; schema-example-chw.json a CHW form schema
 bundles/sandbox.token               a ten-year sandbox licence; bundles/issuer.pub its issuer's public key
 sdk-integration-guide.md            the full guide; this file is the Android-specific part
@@ -43,7 +43,7 @@ val sdk = Verdure.start(assets.open("verdure/sandbox.token").readBytes().decodeT
 val caps = sdk.capabilities()                     // caps.tier e.g. "P3", caps.availableRamMb
 
 sdk.loadManifest(asset("verdure/example.json"), asset("verdure/example.json.sig"), asset("verdure/issuer.pub").trim())
-val bundle = sdk.recommend(Task.SCRIBE)           // or sdk.fit("scribe-floor") to judge a pin
+val bundle = sdk.recommend(Task.SCRIBE)           // scribe-small on an 8 GB phone; or sdk.fit("scribe-small") / sdk.fit("scribe-floor") to judge your own pick
 if (!sdk.isDownloaded(bundle.id)) sdk.download(bundle.id, object : ProgressListener {
     override fun onProgress(done: ULong, total: ULong) { /* bytes */ }
     override fun onStatus(message: String) { }
@@ -93,7 +93,7 @@ engines that stream and never arrives from this one.
 process already holds, never below the kernel's `MemAvailable` — and refuse with the numbers when a
 bundle does not fit. The figure falls after a `load` because the models now count against it. The
 `scribe-floor` bundle needs about 1.3 GB (measured on a Pixel 8a: 683 MB PSS idle after load, 952 MB
-peak during `extract`); a 1.5B-class bundle about 2.2 GB.
+peak during `extract`); `scribe-small` about 1.7 GB by the same rule (Pixel measurement pending); a 1.5B-class bundle about 2.5 GB.
 
 The engines live inside the `Verdure` object: keep one instance for as long as your foreground service
 records, in a scope that outlives the Activity (an application-level holder or the service itself). Drop
