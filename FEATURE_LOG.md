@@ -6,6 +6,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Started 2026-10-21 from the founder's nine-vendor teardown and build spec (`knowledge/26`). The long-term Rust core, real: `verdure-core` pure, I/O crates behind its ports, `verdure-ffi` the public surface. Three users in every decision: the end user who never sees Verdure, the developer with an afternoon, the customer's compliance team.
 
+### 2026-11-03 — The speech bake-off: Whisper small is the next bundle's speech model; keyterms and Intron's medium ruled out as run (`knowledge/26`, "The speech bake-off")
+
+**What:** four recogniser configurations through the SDK's own `transcribe()` on ten PriMock57 consultations, scored on WER and a clinical-term error rate. Whisper small cuts clinical-term misses from 27.8 % to 16.8 % against base; a 40-word keyterms prompt doubles errors (`[OQ-121]`); Intron's AfriSpeech Whisper medium, converted to ggml and registered as `asr-afrispeech-medium`, scores 83 % WER on this audio (cause not separated from conversion). MedASR could not be run from the autonomous session. Harness additions: `evals/rescore.py` (re-score saved transcripts after a scorer or term-list change), a hyphen-spelling fix in the term list that had hidden ten correct recognitions, `summarise.py` labelling of pre-bake-off runs.
+
+**Why:** the founder's verdict on the phone baseline was "totally unusable" for the clinical words; the choice of speech model had to be made on the same audio, the same way, for every candidate — not by model card.
+
+**Simpler or more complex for the user?** Simpler for the clinician once the small bundle ships (one clinical word in six missed instead of one in four), at a model 3.3× larger to download and 2.7× the compute. For the developer, nothing changes in the API; `keyterms` must be documented as experimental until `[OQ-121]` is measured.
+
+**Tests:** evals 5 → 6 (hyphenated spelling counts via a two-word alternative). Workspace unchanged (no crate code touched). Manifest re-signed and verified (`verdure manifest verify`: 6 bundles).
+
 ### 2026-11-03 — From the first phone run: an honest Android memory budget, one generation at a time, and the threading contract (`knowledge/26`, "The first phone run")
 
 **What:** the vendor's report from the Pixel 8a produced one bug fix and one safety change in the SDK, and seven documentation corrections. `verdure-hw`'s Android budget now subtracts the process's own resident set, so `capabilities()` and the `load` gate fall after a model is loaded instead of reporting the same number forever. `LlamaEngine` holds a lock around `generate`, so two concurrent `extract` calls queue instead of each building a context. The threading contract (runtime and streams separately locked; transcription and extraction may overlap; generations queue) is written where a developer looks: the FFI crate docs, the guide, the Android README. The guide gained "What `extract` returns" (`attempts`, `used_grammar` and why it is false, `warnings`, when `SchemaInvalid` is thrown) and corrected its stale bundle text; the README gained a threads section, engine ownership for a foreground service, and the `Throwable` note.

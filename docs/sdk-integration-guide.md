@@ -238,7 +238,7 @@ Every method on `Verdure`. All calls block; call them off your UI thread.
 | `is_downloaded(bundle_id)` | All files present and hashes match | — |
 | `load(bundle_id)` | Load engines; refuses with numbers if memory is short | `Memory`, `EngineUnavailable`, `Engine` |
 | `load_overcommit(bundle_id)` | Same without the memory gate; may crash the host process | as above |
-| `transcribe(config)` | Open an `AsrStream`: `push_pcm(samples, rate)` → events, `finish()` | `EngineUnavailable` |
+| `transcribe(config)` | Open an `AsrStream`: `push_pcm(samples, rate)` → events, `finish()`. `config.lang_hints = ["en"]`; leave `keyterms` empty — measured to make recognition worse (`knowledge/26`, "The speech bake-off"); use `replacements` to fix spellings | `EngineUnavailable` |
 | `chat(messages, sink)` | One conversation turn, streamed to `sink` | `EngineUnavailable`, `Engine` |
 | `extract(text, schema_json)` | Schema-valid JSON, or the cloud hook if set and no engine. Blocks for the whole generation: tens of seconds on a phone. See "What `extract` returns" below | `EngineUnavailable`, `InvalidSchema`, `SchemaInvalid` |
 | `index(collection, docs)` | Chunk and index; returns chunk count | `Storage` |

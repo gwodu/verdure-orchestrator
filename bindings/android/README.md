@@ -52,6 +52,7 @@ if (!sdk.isDownloaded(bundle.id)) sdk.download(bundle.id, object : ProgressListe
 sdk.load(bundle.id)
 
 // Microphone: AudioRecord at 16 kHz, 16-bit mono. Convert each buffer to floats in [-1, 1].
+// keyterms stays empty: a 40-word clinical list made recognition worse in our measurements; use replacements for spellings.
 val stream = sdk.transcribe(AsrConfig(langHints = listOf("en"), keyterms = listOf(), replacements = listOf()))
 for (ev in stream.pushPcm(floats, 16000u)) when (ev) {
     is TranscriptEvent.Final -> show(ev.text, ev.startMs)

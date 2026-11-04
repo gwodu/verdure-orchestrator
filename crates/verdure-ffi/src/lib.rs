@@ -188,7 +188,12 @@ pub enum Role {
 
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct AsrConfig {
+    /// Language codes to force, first one wins ("en"); empty = auto-detect.
     pub lang_hints: Vec<String>,
+    /// Experimental — words fed to the recogniser as its initial prompt. On
+    /// ten real consultations a 40-word clinical list made recognition
+    /// *worse* (dropped speech, error rates doubled); leave empty until
+    /// `[OQ-121]` finds a form that helps. `replacements` is the safe bias.
     pub keyterms: Vec<String>,
     /// Pairs applied to final text: [["b p", "BP"], …].
     pub replacements: Vec<Vec<String>>,

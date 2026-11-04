@@ -6,6 +6,24 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 Run: `cargo test --workspace` at the repo root (no models, seconds). CI: the `sdk` job (Linux) runs it plus `cargo check -p verdure-ffi --features llama,whisper` and `cargo fmt --check`.
 
+### 2026-11-03 — The speech bake-off on the Mac (`evals/bakeoff.sh`, ten PriMock57 consultations, `--asr-only`)
+
+| configuration | n | WER | clinical term error | RTF (Intel Mac) |
+|---|---|---|---|---|
+| whisper-base | 10 | 26.5 % | 27.8 % | 0.28 |
+| whisper-small | 10 | 21.6 % | 16.8 % | 0.75 |
+| whisper-base + 40 keyterms | 1 | 51.8 % | 36.8 % | 4.40 |
+| whisper-small + 40 keyterms | 3 | 41.6 % | 31.3 % | 1.09 |
+| afrispeech-medium (Intron, ggml-converted) | 3 | 83.3 % | 78.2 % | 1.66 |
+| MedASR | 0 | not run — `transcribe.cpp` build blocked for the autonomous session; Transformers 5 needs torch ≥ 2.6 | | |
+
+- Per consultation, small ranged 16.1–26.3 % WER and 15/21–55/62 terms found; base 19.6–32.1 %. Small's remaining misses are the clinical class: stools → "stall", paracetamol → "parasitibol", migraines → "my grains", throbbing → "frobbing".
+- **Keyterms hurt:** transcripts 20 % shorter (1,248 → 985 words on consultation 01), both error rates doubled. Negative result → `[OQ-121]`.
+- **Intron's model:** 973/1,321, 1,180/1,604, 1,036/1,524 hypothesis/reference words; fluent English unrelated to the audio, with Nigerian names surfacing. Conversion log clean (standard 80-mel, standard vocabulary). Model-vs-conversion not separated: the safetensors were deleted for disk before the HF reference run could be made.
+- **Scorer bug found:** "antihistamines" ×10 missed was "anti-histamines" correctly recognised and split at the hyphen by `normalise()`. Fixed in the term list (two-word spelling accepted); `test_a_hyphenated_spelling_counts_when_listed_as_a_two_word_alternative`; `evals/rescore.py` re-scored all 26 transcripts; the table is the corrected one (small's term error moved 18.0 → 16.8 %, base's 28.3 → 27.8 %). `python3 -B -m unittest discover -s evals`: 6/6.
+- **Harness faults on the way:** the first Intron conversion died at 1.2 GB written when the disk hit 0 (`OSError: 4194304 requested and 0 written`); the stale venv5 and pip cache were removed and the model hard-linked (not copied) into the SDK data dir. `summarise.py` had labelled the untagged 2026-10-27 runs "score"; now "(untagged)".
+- **Not measured:** extraction, the phone, VAD, Whisper medium/large-v3-turbo, Qwen3-ASR.
+
 ### 2026-11-03 — Ten PriMock57 consultations on the Pixel 8a (vendor's client, `scribe-floor`, Whisper base)
 
 - Weighted WER 25.2 % over 10 real two-speaker GP consultations (16.6–29.8 % per consultation; 11,786 reference words). Speed 0.71–1.83× real time on the phone — three of ten ran slower than live, so even the floor model is at the edge of a live stream on this hardware.
