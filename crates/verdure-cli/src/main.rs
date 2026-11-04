@@ -11,7 +11,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use verdure_core::signing::KeyPair;
-use verdure_core::{Issuer, LicenseClaims, Manifest, Task, Tier, Verifier};
+use verdure_core::{Issuer, LicenseClaims, Manifest, Pace, Task, Tier, Verifier};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -33,7 +33,7 @@ const USAGE: &str = "usage:
   verdure manifest check FILE
   verdure manifest sign --key FILE FILE             (writes FILE.sig)
   verdure manifest verify --public KEY FILE
-  verdure recommend --manifest FILE --task scribe|tutor|chw_forms [--tier L2] [--ram MB] [--disk MB]
+  verdure recommend --manifest FILE --task scribe|tutor|chw_forms [--pace live|recorded] [--tier L2] [--ram MB] [--disk MB]
   verdure grammar SCHEMA.json";
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -124,14 +124,20 @@ fn run(args: &[String]) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
             for b in &m.bundles {
                 let tiers: Vec<String> = b.tiers.iter().map(|t| t.to_string()).collect();
+                let speed: Vec<String> = b
+                    .speed
+                    .iter()
+                    .map(|(t, s)| format!("{t} {s:.2}×"))
+                    .collect();
                 println!(
-                    "{}  task={}  tiers={}  download={} MB  needs {} MB of memory  {} model(s)",
+                    "{}  task={}  tiers={}  download={} MB  needs {} MB of memory  {} model(s)  speed: {}",
                     b.id,
                     b.task,
                     tiers.join(","),
-                    b.download_bytes() / 1_048_576,
+                    b.download_bytes() / 1_000_000,
                     b.required_mb(),
-                    b.models.len()
+                    b.models.len(),
+                    if speed.is_empty() { "not measured".to_string() } else { speed.join(", ") }
                 );
             }
         }
@@ -168,6 +174,11 @@ fn run(args: &[String]) -> Result<(), String> {
                 "chw_forms" | "chw" => Task::ChwForms,
                 other => return Err(format!("unknown task {other}")),
             };
+            let pace = match a.opt("--pace").as_deref() {
+                None | Some("live") => Pace::Live,
+                Some("recorded") => Pace::Recorded,
+                Some(other) => return Err(format!("--pace must be live or recorded, not {other}")),
+            };
             let m = Manifest::parse(&fs::read(&path).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
             let profile = verdure_hw::probe(&std::env::temp_dir());
@@ -196,9 +207,16 @@ fn run(args: &[String]) -> Result<(), String> {
                 bundles: vec!["*".into()],
                 acknowledgements: vec!["llama-community".into(), "gemma-terms".into()],
             };
-            match verdure_core::registry::resolve(&m, task, tier, ram, disk, &licence) {
+            match verdure_core::registry::resolve(&m, task, pace, tier, ram, disk, &licence) {
                 Ok(r) => {
                     println!("{}", serde_json::to_string_pretty(&r.bundle).unwrap());
+                    match r.bundle.speed {
+                        Some(s) => println!(
+                            "speed: {s:.2}× real time on {} (measured by the vendor)",
+                            r.bundle.tier
+                        ),
+                        None => println!("speed: not measured on {}", r.bundle.tier),
+                    }
                     if let Some(from) = r.downgraded_from {
                         println!("downgraded from {from}");
                     }

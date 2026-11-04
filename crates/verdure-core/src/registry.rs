@@ -7,6 +7,8 @@
 //! Store size rules, knowledge/26 Part 2); the manifest tells the runtime
 //! where each file is, how big, and its SHA-256.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::license::LicenseClaims;
@@ -55,13 +57,39 @@ impl ModelRef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// How soon the transcript must arrive — the one question about speed a
+/// developer answers. `Live`: it keeps pace with the speaker (an ambient
+/// scribe, dictation). `Recorded`: the speech is already captured and a
+/// transcript later is fine, so a slower, better model may be chosen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Pace {
+    Live,
+    Recorded,
+}
+
+/// Processing seconds per second of speech above which a bundle is not
+/// offered for `Pace::Live`. The manifest's `speed` numbers are measured
+/// flat out and sustained (a throttled phone), and real speech has pauses:
+/// on the Pixel 8a, Whisper base at 1.25× kept pace through a live visit
+/// while Whisper small at 3.2× finished twenty minutes after a ten-minute
+/// one (knowledge/26, "Small on the Pixel"). Provisional — one phone, two
+/// bundles (`[OQ-120]`).
+pub const LIVE_MAX_SPEED: f32 = 1.5;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Bundle {
     pub id: String,
     pub task: Task,
     /// Device tiers this bundle is built for.
     pub tiers: Vec<Tier>,
     pub models: Vec<ModelRef>,
+    /// Measured speech-recognition speed per tier, as × real time
+    /// (processing seconds per second of speech, fed flat out, sustained),
+    /// keyed by tier name: `{"P3": 3.2, "L2": 0.75}`. A tier that was not
+    /// measured is simply absent, and nothing is assumed about it.
+    #[serde(default)]
+    pub speed: BTreeMap<String, f32>,
     /// Model licences that need the vendor's acknowledgement in the licence
     /// token before this bundle may be used (Llama, Gemma — knowledge/09).
     #[serde(default)]
@@ -79,6 +107,15 @@ impl Bundle {
     }
     pub fn model(&self, kind: ModelKind) -> Option<&ModelRef> {
         self.models.iter().find(|m| m.kind == kind)
+    }
+    /// The vendor's measured speed on `tier` (× real time), if measured.
+    pub fn speed_on(&self, tier: Tier) -> Option<f32> {
+        self.speed.get(tier.as_str()).copied()
+    }
+    /// Whether the bundle keeps pace with live speech on `tier`: `None`
+    /// when unmeasured — an unknown is not held against a bundle.
+    pub fn keeps_pace_on(&self, tier: Tier) -> Option<bool> {
+        self.speed_on(tier).map(|s| s <= LIVE_MAX_SPEED)
     }
     /// Resident memory needed with the LLM loaded and the ASR beside it. The
     /// rule is applied to the LLM (the big one); the ASR and embedder add
@@ -98,7 +135,7 @@ impl Bundle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Manifest {
     /// Manifest format version; this crate reads 1.
     pub schema: u32,
@@ -116,6 +153,28 @@ impl Manifest {
                 m.schema
             )));
         }
+        for b in &m.bundles {
+            for (tier, speed) in &b.speed {
+                let t: Tier = tier.parse().map_err(|_| {
+                    VError::InvalidInput(format!(
+                        "manifest: bundle {}: speed names {tier:?}, which is not a tier",
+                        b.id
+                    ))
+                })?;
+                if !b.tiers.contains(&t) {
+                    return Err(VError::InvalidInput(format!(
+                        "manifest: bundle {}: speed is given for {tier}, a tier the bundle is not built for",
+                        b.id
+                    )));
+                }
+                if !(speed.is_finite() && *speed > 0.0) {
+                    return Err(VError::InvalidInput(format!(
+                        "manifest: bundle {}: speed on {tier} must be a positive number of × real time, not {speed}",
+                        b.id
+                    )));
+                }
+            }
+        }
         Ok(m)
     }
     pub fn bundle(&self, id: &str) -> Option<&Bundle> {
@@ -124,7 +183,7 @@ impl Manifest {
 }
 
 /// What `recommend()` hands back: the chosen bundle and the story of how.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BundleRef {
     pub id: String,
     pub task: Task,
@@ -133,9 +192,11 @@ pub struct BundleRef {
     pub download_bytes: u64,
     pub required_mb: u64,
     pub attributions: Vec<String>,
+    /// Measured speech speed on `tier`, × real time; `None` = not measured.
+    pub speed: Option<f32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Resolution {
     pub bundle: BundleRef,
     /// Set when a bundle built for a lower tier than the device's was chosen.
@@ -148,11 +209,14 @@ pub struct Resolution {
 /// Disk headroom kept free after a download (MB).
 const DISK_MARGIN_MB: u64 = 500;
 
-/// Everything that would stop `bundle` from being used on this device, one
-/// sentence each; empty means it fits. One function, so `recommend()`'s
-/// walk and a developer's explicit pick cannot disagree about what "fits".
+/// Everything that would stop `bundle` from being used on this device for
+/// this `pace`, one sentence each; empty means it fits. One function, so
+/// `recommend()`'s walk and a developer's explicit pick cannot disagree
+/// about what "fits". `tier` is the one the speed is judged on.
 pub fn problems(
     bundle: &Bundle,
+    tier: Tier,
+    pace: Pace,
     available_ram_mb: u64,
     free_disk_mb: u64,
     licence: &LicenseClaims,
@@ -185,13 +249,20 @@ pub fn problems(
             bundle.id
         ));
     }
+    if pace == Pace::Live && bundle.keeps_pace_on(tier) == Some(false) {
+        out.push(format!(
+            "{}: runs at {:.1}× real time on {tier}, too slow to keep pace with live speech",
+            bundle.id,
+            bundle.speed_on(tier).unwrap_or_default()
+        ));
+    }
     out
 }
 
 /// A developer's explicit pick, judged: the bundle, the numbers, and every
 /// problem spelled out. Unlike `resolve`, nothing is substituted — the
 /// developer asked for this bundle and gets the truth about it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FitReport {
     pub bundle: BundleRef,
     pub fits: bool,
@@ -200,10 +271,14 @@ pub struct FitReport {
     pub problems: Vec<String>,
 }
 
-/// Judge one named bundle for this device and licence.
+/// Judge one named bundle for this device, pace and licence. Speed is
+/// judged on `device_tier`; the report's `tier` is the highest the bundle
+/// is built for.
 pub fn fit(
     manifest: &Manifest,
     bundle_id: &str,
+    device_tier: Tier,
+    pace: Pace,
     available_ram_mb: u64,
     free_disk_mb: u64,
     licence: &LicenseClaims,
@@ -211,9 +286,18 @@ pub fn fit(
     let b = manifest
         .bundle(bundle_id)
         .ok_or_else(|| VError::NoBundle(format!("{bundle_id} is not in the manifest")))?;
-    let problems = problems(b, available_ram_mb, free_disk_mb, licence);
+    let problems = problems(
+        b,
+        device_tier,
+        pace,
+        available_ram_mb,
+        free_disk_mb,
+        licence,
+    );
+    let mut bundle = bundle_ref(b, *b.tiers.iter().max().unwrap_or(&Tier::P1));
+    bundle.speed = b.speed_on(device_tier);
     Ok(FitReport {
-        bundle: bundle_ref(b, *b.tiers.iter().max().unwrap_or(&Tier::P1)),
+        bundle,
         fits: problems.is_empty(),
         available_ram_mb,
         free_disk_mb,
@@ -229,15 +313,18 @@ fn bundle_ref(b: &Bundle, tier: Tier) -> BundleRef {
         download_bytes: b.download_bytes(),
         required_mb: b.required_mb(),
         attributions: b.attributions.clone(),
+        speed: b.speed_on(tier),
     }
 }
 
-/// Pick the best bundle for `task` on a device of `device_tier` with
-/// `available_ram_mb` and `free_disk_mb`, within what `licence` allows.
-/// Walks the tier down and explains every refusal.
+/// Pick the best bundle for `task` at `pace` on a device of `device_tier`
+/// with `available_ram_mb` and `free_disk_mb`, within what `licence`
+/// allows. Walks the tier down, in the manifest's order within a tier, and
+/// explains every refusal.
 pub fn resolve(
     manifest: &Manifest,
     task: Task,
+    pace: Pace,
     device_tier: Tier,
     available_ram_mb: u64,
     free_disk_mb: u64,
@@ -250,7 +337,7 @@ pub fn resolve(
             .iter()
             .filter(|b| b.task == task && b.tiers.contains(&tier));
         for b in candidates {
-            let mut p = problems(b, available_ram_mb, free_disk_mb, licence);
+            let mut p = problems(b, tier, pace, available_ram_mb, free_disk_mb, licence);
             if !p.is_empty() {
                 // One sentence per bundle in the walk: the first problem is
                 // the decisive one (licence before memory before disk).
@@ -324,6 +411,7 @@ pub(crate) mod fixtures {
                     requires_acknowledgement: vec![],
                     attributions: vec![],
                     notes: String::new(),
+                    speed: BTreeMap::new(),
                 },
                 Bundle {
                     id: "scribe-L2".into(),
@@ -336,6 +424,7 @@ pub(crate) mod fixtures {
                     requires_acknowledgement: vec!["llama-community".into()],
                     attributions: vec![],
                     notes: String::new(),
+                    speed: BTreeMap::from([("L2".to_string(), 0.75)]),
                 },
                 Bundle {
                     id: "scribe-L1".into(),
@@ -348,6 +437,7 @@ pub(crate) mod fixtures {
                     requires_acknowledgement: vec![],
                     attributions: vec![],
                     notes: String::new(),
+                    speed: BTreeMap::from([("L1".to_string(), 0.6), ("L2".to_string(), 0.28)]),
                 },
                 Bundle {
                     id: "chw-P1".into(),
@@ -360,6 +450,45 @@ pub(crate) mod fixtures {
                     requires_acknowledgement: vec![],
                     attributions: vec!["Speech model: Moonshine (MIT)".into()],
                     notes: String::new(),
+                    speed: BTreeMap::new(),
+                },
+            ],
+        }
+    }
+
+    /// The phone ladder the Pixel 8a measured (knowledge/26, "Small on the
+    /// Pixel"): the better speech model first, as a vendor would list it,
+    /// then the one that keeps pace.
+    pub fn phone_manifest() -> Manifest {
+        Manifest {
+            schema: 1,
+            issued_at: 1,
+            bundles: vec![
+                Bundle {
+                    id: "scribe-small".into(),
+                    task: Task::Scribe,
+                    tiers: vec![Tier::P3],
+                    models: vec![
+                        model("whisper-small", ModelKind::Asr, 465, "mit"),
+                        model("qwen2.5-0.5b", ModelKind::Llm, 469, "apache-2.0"),
+                    ],
+                    requires_acknowledgement: vec![],
+                    attributions: vec![],
+                    notes: String::new(),
+                    speed: BTreeMap::from([("P3".to_string(), 3.2)]),
+                },
+                Bundle {
+                    id: "scribe-floor".into(),
+                    task: Task::Scribe,
+                    tiers: vec![Tier::P1, Tier::P2, Tier::P3],
+                    models: vec![
+                        model("whisper-base", ModelKind::Asr, 141, "mit"),
+                        model("qwen2.5-0.5b", ModelKind::Llm, 469, "apache-2.0"),
+                    ],
+                    requires_acknowledgement: vec![],
+                    attributions: vec![],
+                    notes: String::new(),
+                    speed: BTreeMap::from([("P3".to_string(), 1.25)]),
                 },
             ],
         }
@@ -387,6 +516,7 @@ mod tests {
         let r = resolve(
             &manifest(),
             Task::Scribe,
+            Pace::Live,
             Tier::L3,
             16_000,
             20_000,
@@ -406,6 +536,7 @@ mod tests {
         let r = resolve(
             &manifest(),
             Task::Scribe,
+            Pace::Live,
             Tier::L3,
             3_000,
             20_000,
@@ -434,6 +565,7 @@ mod tests {
         let r = resolve(
             &manifest(),
             Task::Scribe,
+            Pace::Live,
             Tier::L3,
             16_000,
             20_000,
@@ -454,7 +586,16 @@ mod tests {
             acknowledgements: vec![],
             ..licence_all()
         };
-        let r = resolve(&manifest(), Task::Scribe, Tier::L2, 8_000, 20_000, &no_ack).unwrap();
+        let r = resolve(
+            &manifest(),
+            Task::Scribe,
+            Pace::Live,
+            Tier::L2,
+            8_000,
+            20_000,
+            &no_ack,
+        )
+        .unwrap();
         assert_eq!(
             r.bundle.id, "scribe-L1",
             "the Llama bundle needs an acknowledgement"
@@ -473,6 +614,7 @@ mod tests {
         let err = resolve(
             &manifest(),
             Task::Scribe,
+            Pace::Live,
             Tier::L1,
             4_000,
             1_000,
@@ -489,6 +631,7 @@ mod tests {
         let err = resolve(
             &manifest(),
             Task::Tutor,
+            Pace::Live,
             Tier::L3,
             16_000,
             20_000,
@@ -503,6 +646,7 @@ mod tests {
         let err = resolve(
             &manifest(),
             Task::Scribe,
+            Pace::Live,
             Tier::P3,
             6_000,
             20_000,
@@ -517,6 +661,7 @@ mod tests {
         let r = resolve(
             &manifest(),
             Task::ChwForms,
+            Pace::Live,
             Tier::P2,
             3_000,
             5_000,
@@ -539,7 +684,16 @@ mod tests {
     #[test]
     fn a_developer_pick_is_judged_not_substituted() {
         // The L3 bundle on a tight machine: resolve would walk down; fit says no, with numbers.
-        let r = fit(&manifest(), "scribe-L3", 3_000, 20_000, &licence_all()).unwrap();
+        let r = fit(
+            &manifest(),
+            "scribe-L3",
+            Tier::L3,
+            Pace::Live,
+            3_000,
+            20_000,
+            &licence_all(),
+        )
+        .unwrap();
         assert!(!r.fits);
         assert_eq!(r.bundle.id, "scribe-L3");
         assert_eq!(
@@ -552,16 +706,184 @@ mod tests {
             acknowledgements: vec![],
             ..licence_all()
         };
-        let r = fit(&manifest(), "scribe-L2", 1_000, 100, &no_ack).unwrap();
+        let r = fit(
+            &manifest(),
+            "scribe-L2",
+            Tier::L2,
+            Pace::Live,
+            1_000,
+            100,
+            &no_ack,
+        )
+        .unwrap();
         assert_eq!(r.problems.len(), 4, "{:?}", r.problems);
         // A pick that fits reports so, with the tier it was built for.
-        let r = fit(&manifest(), "chw-P1", 3_000, 5_000, &licence_all()).unwrap();
+        let r = fit(
+            &manifest(),
+            "chw-P1",
+            Tier::P2,
+            Pace::Live,
+            3_000,
+            5_000,
+            &licence_all(),
+        )
+        .unwrap();
         assert!(r.fits && r.problems.is_empty());
         assert_eq!(r.bundle.tier, Tier::P2, "the highest tier it serves");
+        assert_eq!(
+            r.bundle.speed, None,
+            "never measured, so nothing is claimed"
+        );
         assert!(matches!(
-            fit(&manifest(), "nope", 1, 1, &licence_all()),
+            fit(
+                &manifest(),
+                "nope",
+                Tier::P1,
+                Pace::Live,
+                1,
+                1,
+                &licence_all()
+            ),
             Err(VError::NoBundle(_))
         ));
+    }
+
+    /// The measurement this rule covers (knowledge/26, "Small on the Pixel",
+    /// 2026-11-04): Whisper small at 3.2× real time on a Pixel 8a finished a
+    /// ten-minute visit twenty minutes late; Whisper base at 1.25× kept pace.
+    #[test]
+    fn a_bundle_too_slow_for_live_speech_is_passed_over_with_its_speed_and_kept_for_recordings() {
+        let live = resolve(
+            &phone_manifest(),
+            Task::Scribe,
+            Pace::Live,
+            Tier::P3,
+            4_000,
+            20_000,
+            &licence_all(),
+        )
+        .unwrap();
+        assert_eq!(live.bundle.id, "scribe-floor");
+        assert_eq!(live.bundle.speed, Some(1.25));
+        assert_eq!(live.downgraded_from, None, "same tier, so not a downgrade");
+        assert_eq!(
+            live.skipped,
+            vec!["scribe-small: runs at 3.2× real time on P3, too slow to keep pace with live speech"]
+        );
+        let recorded = resolve(
+            &phone_manifest(),
+            Task::Scribe,
+            Pace::Recorded,
+            Tier::P3,
+            4_000,
+            20_000,
+            &licence_all(),
+        )
+        .unwrap();
+        assert_eq!(recorded.bundle.id, "scribe-small");
+        assert_eq!(recorded.bundle.speed, Some(3.2));
+        assert!(recorded.skipped.is_empty());
+        // Memory still comes first: a device that cannot hold small says so, not "too slow".
+        let tight = resolve(
+            &phone_manifest(),
+            Task::Scribe,
+            Pace::Recorded,
+            Tier::P3,
+            1_500,
+            20_000,
+            &licence_all(),
+        )
+        .unwrap();
+        assert_eq!(tight.bundle.id, "scribe-floor");
+        assert!(
+            tight.skipped[0].starts_with("scribe-small: needs"),
+            "{:?}",
+            tight.skipped
+        );
+        // The developer's pin gets the same judgement, and the same escape.
+        let pin = fit(
+            &phone_manifest(),
+            "scribe-small",
+            Tier::P3,
+            Pace::Live,
+            4_000,
+            20_000,
+            &licence_all(),
+        )
+        .unwrap();
+        assert!(!pin.fits);
+        assert_eq!(pin.problems, vec!["scribe-small: runs at 3.2× real time on P3, too slow to keep pace with live speech"]);
+        assert_eq!(pin.bundle.speed, Some(3.2));
+        let pin = fit(
+            &phone_manifest(),
+            "scribe-small",
+            Tier::P3,
+            Pace::Recorded,
+            4_000,
+            20_000,
+            &licence_all(),
+        )
+        .unwrap();
+        assert!(pin.fits, "{:?}", pin.problems);
+    }
+
+    #[test]
+    fn an_unmeasured_speed_is_not_held_against_a_bundle() {
+        // scribe-L3 has no speed entry: it is chosen for live use and says so with `None`.
+        let r = resolve(
+            &manifest(),
+            Task::Scribe,
+            Pace::Live,
+            Tier::L3,
+            16_000,
+            20_000,
+            &licence_all(),
+        )
+        .unwrap();
+        assert_eq!((r.bundle.id.as_str(), r.bundle.speed), ("scribe-L3", None));
+        // scribe-L1 measured on L2 at 0.28: reported on the tier it was chosen for.
+        let r = resolve(
+            &manifest(),
+            Task::Scribe,
+            Pace::Live,
+            Tier::L2,
+            3_000,
+            20_000,
+            &licence_all(),
+        )
+        .unwrap();
+        assert_eq!(
+            (r.bundle.id.as_str(), r.bundle.speed),
+            ("scribe-L1", Some(0.28))
+        );
+        assert_eq!(
+            phone_manifest().bundles[0].keeps_pace_on(Tier::P2),
+            None,
+            "a tier the bundle is not measured on"
+        );
+    }
+
+    #[test]
+    fn a_manifest_speed_must_name_a_tier_the_bundle_is_built_for_and_be_positive() {
+        let mut v = serde_json::to_value(phone_manifest()).unwrap();
+        v["bundles"][0]["speed"] = serde_json::json!({"L2": 0.75});
+        let err = Manifest::parse(&serde_json::to_vec(&v).unwrap()).unwrap_err();
+        assert!(
+            matches!(&err, VError::InvalidInput(m) if m.contains("scribe-small: speed is given for L2, a tier the bundle is not built for")),
+            "{err}"
+        );
+        v["bundles"][0]["speed"] = serde_json::json!({"P3": 0});
+        assert!(
+            matches!(Manifest::parse(&serde_json::to_vec(&v).unwrap()), Err(VError::InvalidInput(m)) if m.contains("positive"))
+        );
+        v["bundles"][0]["speed"] = serde_json::json!({"phone": 1});
+        assert!(
+            matches!(Manifest::parse(&serde_json::to_vec(&v).unwrap()), Err(VError::InvalidInput(m)) if m.contains("not a tier"))
+        );
+        // Absent is fine and means unmeasured.
+        v["bundles"][0].as_object_mut().unwrap().remove("speed");
+        let m = Manifest::parse(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert!(m.bundles[0].speed.is_empty());
     }
 
     #[test]

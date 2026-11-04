@@ -7,6 +7,11 @@
 //! request from its length, SHA-256 over the *whole* file (the already-present
 //! part is hashed first), and an atomic rename only once the hash matches.
 //! The policy decides which hosts may be contacted; this crate only asks.
+//!
+//! A model file is stored once per device, whatever bundles use it
+//! (`model_store_path`); bundle directories hold hard links to it. The second
+//! phone run downloaded the same 491 MB language model twice because two
+//! bundles listed it — one download and one copy is the rule now.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -87,11 +92,34 @@ pub fn bundle_dir(data_dir: &Path, bundle_id: &str) -> PathBuf {
     data_dir.join("bundles").join(bundle_id)
 }
 
-/// Download every file of `bundle` into `bundle_dir`, resuming partial files
-/// and skipping verified complete ones. Progress is in bytes across the
-/// whole bundle; cancellation leaves `.part` files in place for next time.
+/// Where a verified model file lives once, whatever bundles use it:
+/// `<data_dir>/models/<sha256>`. Bundle directories hard-link to it, so two
+/// bundles that share a model cost one download and one copy. A filesystem
+/// that refuses the link leaves the bundle its own copy; nothing else changes.
+pub fn model_store_path(data_dir: &Path, sha256: &str) -> PathBuf {
+    data_dir.join("models").join(sha256.to_ascii_lowercase())
+}
+
+/// Download every file of `bundle` into its directory, reusing any file the
+/// device already holds (this bundle's or another's), resuming partial ones
+/// and verifying every byte. Progress is in bytes across the whole bundle;
+/// status lines say what is happening to each file; cancellation leaves
+/// `.part` files in place for next time. The policy is asked about every
+/// URL before any socket opens.
 pub fn download_bundle(
     policy: &Policy,
+    bundle: &Bundle,
+    data_dir: &Path,
+    progress: &dyn Progress,
+) -> Result<PathBuf, VError> {
+    for m in &bundle.models {
+        policy.permits_download(&m.url)?;
+    }
+    fetch_bundle(bundle, data_dir, progress)
+}
+
+/// `download_bundle` after the policy has said yes to every URL.
+fn fetch_bundle(
     bundle: &Bundle,
     data_dir: &Path,
     progress: &dyn Progress,
@@ -103,17 +131,118 @@ pub fn download_bundle(
     let mut done_before: u64 = 0;
     for m in &bundle.models {
         let dest = dir.join(&m.file);
-        download_model(policy, m, &dest, &mut |bytes| {
-            progress.on_event(Event::Progress {
-                done: done_before + bytes,
-                total,
-            });
-            progress.is_cancelled()
-        })?;
+        let shared = model_store_path(data_dir, &m.sha256);
+        let mb = m.size_bytes / 1_000_000;
+        if dest.is_file() || shared.is_file() {
+            progress.on_event(Event::Status(format!("Checking {}…", m.name)));
+        }
+        match place_from_store(m, &dest, &shared)? {
+            Placed::Already => {
+                progress.on_event(Event::Status(format!(
+                    "{} is already on this device.",
+                    m.name
+                )));
+            }
+            Placed::Shared => {
+                progress.on_event(Event::Status(format!(
+                    "{}: reusing the copy another bundle downloaded ({mb} MB not downloaded again).",
+                    m.name
+                )));
+            }
+            Placed::Missing => {
+                progress.on_event(Event::Status(format!("Downloading {} ({mb} MB)…", m.name)));
+                fetch_file(m, &dest, &mut |bytes| {
+                    progress.on_event(Event::Progress {
+                        done: done_before + bytes,
+                        total,
+                    });
+                    progress.is_cancelled()
+                })?;
+                progress.on_event(Event::Status(format!(
+                    "{} downloaded and verified.",
+                    m.name
+                )));
+                // Make it available to other bundles; a refused link is not an error.
+                if fs::create_dir_all(shared.parent().unwrap()).is_ok() && !shared.exists() {
+                    fs::hard_link(&dest, &shared).ok();
+                }
+            }
+        }
+        progress.on_event(Event::Progress {
+            done: done_before + m.size_bytes,
+            total,
+        });
         done_before += m.size_bytes;
     }
-    progress.on_event(Event::Progress { done: total, total });
     Ok(dir)
+}
+
+enum Placed {
+    /// The bundle already holds a verified copy.
+    Already,
+    /// Another bundle's verified copy was linked (or copied) in.
+    Shared,
+    /// Nothing usable on the device: fetch it.
+    Missing,
+}
+
+/// Settle `dest` from what the device holds, verifying hashes. Also the
+/// moment two bundles' separate copies of one model become one file: a
+/// verified `dest` that is not yet the store's file is replaced by a link to
+/// it (or becomes it), freeing the duplicate.
+fn place_from_store(model: &ModelRef, dest: &Path, shared: &Path) -> Result<Placed, VError> {
+    let want = model.sha256.to_ascii_lowercase();
+    let good = |p: &Path| p.is_file() && file_sha256(p).map(|h| h == want).unwrap_or(false);
+    if dest.is_file() {
+        if good(dest) {
+            if !shared.exists() {
+                if fs::create_dir_all(shared.parent().unwrap()).is_ok() {
+                    fs::hard_link(dest, shared).ok();
+                }
+            } else if !same_file(dest, shared) {
+                if good(shared) {
+                    // Two copies of one verified file: keep the store's, link to it.
+                    let tmp = dest.with_extension("link.tmp");
+                    fs::remove_file(&tmp).ok();
+                    if fs::hard_link(shared, &tmp).is_ok() && fs::rename(&tmp, dest).is_err() {
+                        fs::remove_file(&tmp).ok();
+                    }
+                } else {
+                    // The store's copy is damaged; this one is good — it takes over.
+                    fs::remove_file(shared).ok();
+                    fs::hard_link(dest, shared).ok();
+                }
+            }
+            return Ok(Placed::Already);
+        }
+        // A complete-looking file with the wrong hash is corrupt: start over.
+        fs::remove_file(dest).map_err(|e| VError::Storage(e.to_string()))?;
+    }
+    if shared.is_file() {
+        if good(shared) {
+            if fs::hard_link(shared, dest).is_err() {
+                fs::copy(shared, dest).map_err(|e| VError::Storage(e.to_string()))?;
+            }
+            return Ok(Placed::Shared);
+        }
+        fs::remove_file(shared).ok();
+    }
+    Ok(Placed::Missing)
+}
+
+#[cfg(unix)]
+fn same_file(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (a.metadata(), b.metadata()) {
+        (Ok(x), Ok(y)) => x.ino() == y.ino() && x.dev() == y.dev(),
+        _ => false,
+    }
+}
+
+#[cfg(not(unix))]
+fn same_file(_a: &Path, _b: &Path) -> bool {
+    // Without an inode to compare, leave two verified copies alone.
+    true
 }
 
 /// One file: resume, verify, rename. `tick(bytes_of_this_file)` returns true
@@ -467,6 +596,183 @@ mod tests {
         assert_eq!(fs::read(&dest).unwrap(), data);
     }
 
+    /// Events collected from a bundle download, for the assertions below.
+    #[derive(Default)]
+    struct Log(Mutex<Vec<Event>>);
+    impl verdure_core::Progress for Log {
+        fn on_event(&self, e: Event) {
+            self.0.lock().unwrap().push(e);
+        }
+    }
+    impl Log {
+        fn statuses(&self) -> Vec<String> {
+            self.0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter_map(|e| match e {
+                    Event::Status(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect()
+        }
+    }
+
+    fn bundle(id: &str, models: Vec<ModelRef>) -> Bundle {
+        Bundle {
+            id: id.into(),
+            task: verdure_core::Task::Scribe,
+            tiers: vec![verdure_core::Tier::P3],
+            models,
+            requires_acknowledgement: vec![],
+            attributions: vec![],
+            notes: String::new(),
+            speed: Default::default(),
+        }
+    }
+
+    #[cfg(unix)]
+    fn inode(p: &Path) -> u64 {
+        use std::os::unix::fs::MetadataExt;
+        p.metadata().unwrap().ino()
+    }
+
+    /// The second phone run (2026-11-04) fetched the 491 MB language model a
+    /// second time because `scribe-small` and `scribe-floor` both list it.
+    #[test]
+    fn two_bundles_sharing_a_model_download_it_once_and_hold_one_copy() {
+        let data = body();
+        let srv = serve(data.clone(), None, false);
+        let dir = tempfile::tempdir().unwrap();
+        let mut llm = model(&format!("{}/m.gguf", srv.url), &data);
+        llm.name = "Language model".into();
+        let floor = bundle("scribe-floor", vec![llm.clone()]);
+        let small = bundle("scribe-small", vec![llm.clone()]);
+
+        let log = Log::default();
+        fetch_bundle(&floor, dir.path(), &log).unwrap();
+        assert_eq!(srv.requests.lock().unwrap().len(), 1);
+        assert_eq!(
+            log.statuses(),
+            vec![
+                "Downloading Language model (0 MB)…",
+                "Language model downloaded and verified."
+            ]
+        );
+
+        let log = Log::default();
+        fetch_bundle(&small, dir.path(), &log).unwrap();
+        assert_eq!(srv.requests.lock().unwrap().len(), 1, "no second download");
+        assert_eq!(
+            log.statuses(),
+            vec![
+                "Checking Language model…",
+                "Language model: reusing the copy another bundle downloaded (0 MB not downloaded again)."
+            ]
+        );
+        let a = bundle_dir(dir.path(), "scribe-floor").join("m.gguf");
+        let b = bundle_dir(dir.path(), "scribe-small").join("m.gguf");
+        let store = model_store_path(dir.path(), &llm.sha256);
+        assert_eq!(fs::read(&b).unwrap(), data);
+        #[cfg(unix)]
+        {
+            assert_eq!(
+                inode(&a),
+                inode(&store),
+                "the first download became the store's file"
+            );
+            assert_eq!(inode(&b), inode(&store), "the second bundle links to it");
+        }
+        // Progress still reaches the whole-bundle total when nothing was fetched.
+        let last = log.0.lock().unwrap().iter().rev().find_map(|e| match e {
+            Event::Progress { done, total } => Some((*done, *total)),
+            _ => None,
+        });
+        assert_eq!(last, Some((data.len() as u64, data.len() as u64)));
+
+        // A third call on a bundle that is complete says so and fetches nothing.
+        let log = Log::default();
+        fetch_bundle(&floor, dir.path(), &log).unwrap();
+        assert_eq!(srv.requests.lock().unwrap().len(), 1);
+        assert_eq!(
+            log.statuses(),
+            vec![
+                "Checking Language model…",
+                "Language model is already on this device."
+            ]
+        );
+    }
+
+    /// Devices that downloaded before the store existed hold one copy per
+    /// bundle; the next `download` of either bundle folds them into one.
+    #[cfg(unix)]
+    #[test]
+    fn separate_copies_from_before_the_store_are_folded_into_one_file() {
+        let data = body();
+        let srv = serve(data.clone(), None, false);
+        let dir = tempfile::tempdir().unwrap();
+        let llm = model(&format!("{}/m.gguf", srv.url), &data);
+        for id in ["scribe-floor", "scribe-small"] {
+            let d = bundle_dir(dir.path(), id);
+            fs::create_dir_all(&d).unwrap();
+            fs::write(d.join("m.gguf"), &data).unwrap(); // two independent copies, no store
+        }
+        let a = bundle_dir(dir.path(), "scribe-floor").join("m.gguf");
+        let b = bundle_dir(dir.path(), "scribe-small").join("m.gguf");
+        assert_ne!(inode(&a), inode(&b));
+
+        fetch_bundle(
+            &bundle("scribe-floor", vec![llm.clone()]),
+            dir.path(),
+            &Log::default(),
+        )
+        .unwrap();
+        fetch_bundle(
+            &bundle("scribe-small", vec![llm.clone()]),
+            dir.path(),
+            &Log::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            srv.requests.lock().unwrap().len(),
+            0,
+            "both were verified, nothing fetched"
+        );
+        let store = model_store_path(dir.path(), &llm.sha256);
+        assert_eq!(inode(&a), inode(&store));
+        assert_eq!(
+            inode(&b),
+            inode(&store),
+            "the duplicate was replaced by a link"
+        );
+        assert_eq!(fs::read(&b).unwrap(), data);
+
+        // A damaged store copy is replaced by a bundle's good one, never trusted.
+        fs::remove_file(&store).unwrap();
+        fs::write(&store, b"damaged").unwrap();
+        fetch_bundle(
+            &bundle("scribe-floor", vec![llm.clone()]),
+            dir.path(),
+            &Log::default(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(&store).unwrap(), data);
+        assert_eq!(inode(&a), inode(&store));
+        // And a damaged store copy with no good bundle copy is fetched afresh.
+        fs::remove_file(&store).unwrap();
+        fs::write(&store, b"damaged").unwrap();
+        let d = bundle_dir(dir.path(), "scribe-L2");
+        fetch_bundle(
+            &bundle("scribe-L2", vec![llm.clone()]),
+            dir.path(),
+            &Log::default(),
+        )
+        .unwrap();
+        assert_eq!(srv.requests.lock().unwrap().len(), 1);
+        assert_eq!(fs::read(d.join("m.gguf")).unwrap(), data);
+        assert_eq!(fs::read(&store).unwrap(), data);
+    }
+
     #[test]
     fn the_policy_is_consulted_before_any_socket_opens() {
         let m = model("https://cdn.example.org/m.gguf", b"x");
@@ -496,6 +802,15 @@ mod tests {
             ),
             Err(VError::PolicyDenied(_))
         ));
+        // A bundle is refused whole before any file moves: the second model's
+        // host is not allowed, so the first is not fetched either.
+        let allowed = model("https://cdn.vendor.com/a.gguf", b"a");
+        let b = bundle("mixed", vec![allowed, m]);
+        assert!(matches!(
+            download_bundle(&gated, &b, dir.path(), &Log::default()),
+            Err(VError::PolicyDenied(_))
+        ));
+        assert!(!bundle_dir(dir.path(), "mixed").exists());
     }
 
     #[test]

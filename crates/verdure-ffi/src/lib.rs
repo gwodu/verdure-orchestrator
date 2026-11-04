@@ -107,6 +107,26 @@ impl From<Task> for CoreTask {
     }
 }
 
+/// How soon the transcript must arrive. `Live`: it keeps pace with the
+/// speaker, so a bundle the vendor measured as too slow on this device is
+/// passed over with its speed in `skipped`. `Recorded`: the speech is already
+/// captured and a transcript later is fine, so the better, slower bundle may
+/// be chosen. `recommend(task)` and `fit(bundle_id)` mean `Live`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum Pace {
+    Live,
+    Recorded,
+}
+
+impl From<Pace> for verdure_core::Pace {
+    fn from(p: Pace) -> verdure_core::Pace {
+        match p {
+            Pace::Live => verdure_core::Pace::Live,
+            Pace::Recorded => verdure_core::Pace::Recorded,
+        }
+    }
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct Capabilities {
     /// knowledge/02 tier: "P1".."P3" phones, "L1".."L3" laptops.
@@ -136,6 +156,11 @@ pub struct BundleRef {
     pub downgraded_from: Option<String>,
     /// Why better-placed bundles were passed over, one sentence each.
     pub skipped: Vec<String>,
+    /// The vendor's measured speech speed on this tier, as × real time
+    /// (processing seconds per second of speech, fed flat out): 1.25 keeps
+    /// pace with a speaker, 3.2 finishes a ten-minute visit twenty minutes
+    /// late. `None` when the manifest has no measurement for this tier.
+    pub speed_x_real_time: Option<f32>,
 }
 
 /// A developer's explicit bundle choice, judged for this device.
@@ -454,8 +479,17 @@ impl Verdure {
         Ok(())
     }
 
-    /// The bundle for `task` that fits this device now, within the licence.
+    /// The bundle for `task` that fits this device now, within the licence,
+    /// and keeps pace with live speech where the vendor measured it
+    /// (`Pace::Live`). For speech that is already recorded, `recommend_for`.
     pub fn recommend(&self, task: Task) -> Result<BundleRef, VerdureError> {
+        self.recommend_for(task, Pace::Live)
+    }
+
+    /// `recommend` with the pace stated: `Recorded` lets the walk choose a
+    /// bundle that is slower than real time on this device because the
+    /// transcript may arrive after the speech did.
+    pub fn recommend_for(&self, task: Task, pace: Pace) -> Result<BundleRef, VerdureError> {
         let inner = self.inner.lock().unwrap();
         let manifest = inner.manifest.as_ref().ok_or_else(|| {
             VerdureError::NoBundle(
@@ -466,6 +500,7 @@ impl Verdure {
         let r = verdure_core::registry::resolve(
             manifest,
             task.into(),
+            pace.into(),
             profile.tier(),
             profile.available_ram_mb,
             profile.free_disk_mb,
@@ -480,14 +515,21 @@ impl Verdure {
             attributions: r.bundle.attributions,
             downgraded_from: r.downgraded_from.map(|t| t.to_string()),
             skipped: r.skipped,
+            speed_x_real_time: r.bundle.speed,
         })
     }
 
     /// Judge a bundle the developer picked themselves — no substitution, no
     /// walk-down. The vendor already chose the models by writing the
     /// manifest; this is the developer's hand on the dial at runtime: pin
-    /// `scribe-L2` and learn, in sentences, whether this device can run it.
+    /// `scribe-small` and learn, in sentences, whether this device can run
+    /// it and keep pace with live speech. For recorded speech, `fit_for`.
     pub fn fit(&self, bundle_id: String) -> Result<FitReport, VerdureError> {
+        self.fit_for(bundle_id, Pace::Live)
+    }
+
+    /// `fit` with the pace stated; `Recorded` drops the speed problem.
+    pub fn fit_for(&self, bundle_id: String, pace: Pace) -> Result<FitReport, VerdureError> {
         let inner = self.inner.lock().unwrap();
         let manifest = inner
             .manifest
@@ -497,6 +539,8 @@ impl Verdure {
         let r = verdure_core::registry::fit(
             manifest,
             &bundle_id,
+            profile.tier(),
+            pace.into(),
             profile.available_ram_mb,
             profile.free_disk_mb,
             &inner.claims,
@@ -515,6 +559,7 @@ impl Verdure {
                 attributions: r.bundle.attributions,
                 downgraded_from: None,
                 skipped: vec![],
+                speed_x_real_time: r.bundle.speed,
             },
             fits: r.fits,
             available_ram_mb: r.available_ram_mb,
@@ -978,15 +1023,21 @@ mod tests {
     }
 
     fn manifest_json() -> String {
+        let tiny = serde_json::json!({
+            "id": "tiny-llm", "kind": "llm", "name": "Tiny", "file": "tiny.gguf",
+            "url": "https://cdn.example.org/tiny.gguf", "sha256": "00", "size_bytes": 1048576,
+            "engine": "llama", "prompt_style": "chatml", "licence": "apache-2.0"
+        });
         serde_json::json!({
             "schema": 1, "issued_at": 1,
             "bundles": [{
+                // Listed first, measured too slow for live speech on every tier.
+                "id": "chw-slow", "task": "chw_forms", "tiers": ["P1","P2","P3","L1","L2","L3"],
+                "models": [tiny],
+                "speed": {"P1": 3.2, "P2": 3.2, "P3": 3.2, "L1": 3.2, "L2": 3.2, "L3": 3.2}
+            }, {
                 "id": "chw-P1", "task": "chw_forms", "tiers": ["P1","P2","P3","L1","L2","L3"],
-                "models": [{
-                    "id": "tiny-llm", "kind": "llm", "name": "Tiny", "file": "tiny.gguf",
-                    "url": "https://cdn.example.org/tiny.gguf", "sha256": "00", "size_bytes": 1048576,
-                    "engine": "llama", "prompt_style": "chatml", "licence": "apache-2.0"
-                }],
+                "models": [tiny],
                 "attributions": ["Speech model: Moonshine (MIT)"]
             }]
         })
@@ -1048,10 +1099,24 @@ mod tests {
         ));
         v.load_manifest(m.clone(), kp.sign(m.as_bytes()), kp.public_b64())
             .unwrap();
+        // `recommend` means live speech: the slow bundle is passed over with its speed.
         let r = v.recommend(Task::ChwForms).unwrap();
         assert_eq!(r.id, "chw-P1");
         assert_eq!(r.attributions, vec!["Speech model: Moonshine (MIT)"]);
         assert!(r.downgraded_from.is_none());
+        assert_eq!(r.speed_x_real_time, None, "chw-P1 was never measured");
+        assert_eq!(r.skipped.len(), 1);
+        assert!(
+            r.skipped[0].starts_with("chw-slow: runs at 3.2× real time on")
+                && r.skipped[0].ends_with("too slow to keep pace with live speech"),
+            "{:?}",
+            r.skipped
+        );
+        // For a recording, the slower bundle is the pick, speed stated.
+        let r = v.recommend_for(Task::ChwForms, Pace::Recorded).unwrap();
+        assert_eq!(r.id, "chw-slow");
+        assert_eq!(r.speed_x_real_time, Some(3.2));
+        assert!(r.skipped.is_empty());
         assert!(matches!(
             v.recommend(Task::Tutor),
             Err(VerdureError::NoBundle(_))
@@ -1072,6 +1137,14 @@ mod tests {
         assert!(r.available_ram_mb > 0);
         // A 1 MB model fits any machine this test runs on.
         assert!(r.fits && r.problems.is_empty(), "{r:?}");
+        // The pin is judged for live speech unless told otherwise.
+        let slow = v.fit("chw-slow".into()).unwrap();
+        assert!(!slow.fits);
+        assert_eq!(slow.problems.len(), 1, "{:?}", slow.problems);
+        assert!(slow.problems[0].contains("too slow to keep pace with live speech"));
+        assert_eq!(slow.bundle.speed_x_real_time, Some(3.2));
+        let slow = v.fit_for("chw-slow".into(), Pace::Recorded).unwrap();
+        assert!(slow.fits, "{:?}", slow.problems);
         assert!(matches!(
             v.fit("nope".into()),
             Err(VerdureError::NoBundle(_))

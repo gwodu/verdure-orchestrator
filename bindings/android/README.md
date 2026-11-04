@@ -6,11 +6,12 @@ Produced by `.github/workflows/build-sdk-android.yml`. Contents:
 jniLibs/arm64-v8a/libverdure.so     the runtime: whisper.cpp + llama.cpp compiled in, arm64, 16 KB page aligned
 jniLibs/arm64-v8a/libc++_shared.so  the C++ runtime libverdure.so needs (from the NDK) — ship BOTH files
 kotlin/uniffi/verdure/verdure.kt    the Kotlin binding (UniFFI); loads libverdure.so through JNA
-bundles/example.json + .sig         a signed example manifest: scribe-small (Whisper small, recommended for clinical speech), scribe-floor (Whisper base), scribe-L2, chw-forms-P1
+bundles/example.json + .sig         a signed example manifest: scribe-small (Whisper small, recommended for clinical speech), scribe-floor (Whisper base, the live-speech pick on phones), scribe-L2, chw-forms-P1 — each with the speeds we measured per tier
 bundles/schema-facts.json           a facts schema; schema-example-chw.json a CHW form schema
 bundles/sandbox.token               a ten-year sandbox licence; bundles/issuer.pub its issuer's public key
 sdk-integration-guide.md            the full guide; this file is the Android-specific part
 VERSION                             commit and build time
+CHANGELOG.md                        what changed in this build and the ones before it — read it when you update
 ```
 
 ## Add it to an Android app (minSdk 26, arm64)
@@ -43,13 +44,15 @@ val sdk = Verdure.start(assets.open("verdure/sandbox.token").readBytes().decodeT
 val caps = sdk.capabilities()                     // caps.tier e.g. "P3", caps.availableRamMb
 
 sdk.loadManifest(asset("verdure/example.json"), asset("verdure/example.json.sig"), asset("verdure/issuer.pub").trim())
-val bundle = sdk.recommend(Task.SCRIBE)           // scribe-small on an 8 GB phone (about 3× real time on a Pixel 8a: better words, finishes after the visit); sdk.fit("scribe-floor") if the transcript must keep pace
+val bundle = sdk.recommend(Task.SCRIBE)           // live speech: scribe-floor on a Pixel 8a — scribe-small is passed over at 3.2× real time, and bundle.skipped says so
+// val bundle = sdk.recommendFor(Task.SCRIBE, Pace.RECORDED)  // audio already captured, transcript may come later: scribe-small, the better words
+// bundle.speedXRealTime: the measured speed on this tier (1.25 for scribe-floor on a Pixel 8a), or null when we have not measured it
 if (!sdk.isDownloaded(bundle.id)) sdk.download(bundle.id, object : ProgressListener {
-    override fun onProgress(done: ULong, total: ULong) { /* bytes */ }
-    override fun onStatus(message: String) { }
+    override fun onProgress(done: ULong, total: ULong) { /* bytes across the whole bundle */ }
+    override fun onStatus(message: String) { Log.i("Verdure", message) }  // "Downloading Speech model (Whisper small) (488 MB)…", "… reusing the copy another bundle downloaded", "… downloaded and verified."
     override fun isCancelled() = false
 })
-sdk.load(bundle.id)
+sdk.load(bundle.id)                               // 1.2 s for scribe-floor, 15 s for scribe-small on a Pixel 8a; nothing runs until it returns
 
 // Microphone: AudioRecord at 16 kHz, 16-bit mono. Convert each buffer to floats in [-1, 1].
 // keyterms stays empty: a 40-word clinical list made recognition worse in our measurements; use replacements for spellings.
@@ -80,8 +83,9 @@ missing file is a sentence, not a silent no-op. Note that `UnsatisfiedLinkError`
 
 ## Threads
 
-Every call blocks. `pushPcm` blocks for a few seconds when a 12 s segment completes; `extract` blocks for
-20–35 s on a Pixel 8a with the floor model; `download` for the whole download. `Verdure` and each
+Every call blocks. `pushPcm` blocks when a 12 s segment completes — a few seconds with `scribe-floor`, up to
+two minutes with `scribe-small` on a Pixel 8a, where it runs at 3.2× real time; `extract` blocks for 16–114 s
+on a Pixel 8a with the 0.5B model; `download` for the whole download; `load` for 1–15 s. `Verdure` and each
 `AsrStream` are locked separately, so run transcription on one dispatcher and extraction on another and
 they overlap — the transcript does not wait for the facts. Two `extract` calls queue inside the engine.
 Nothing on the main thread. The whisper engine emits `TranscriptEvent.Final` only; `Partial` is for
@@ -94,10 +98,14 @@ process already holds, never below the kernel's `MemAvailable` — and refuse wi
 bundle does not fit. The figure falls after a `load` because the models now count against it. The
 `scribe-floor` bundle needs about 1.3 GB (measured on a Pixel 8a: 683 MB PSS idle after load, 952 MB
 peak during `extract`); `scribe-small` about 1.7 GB by the same rule (measured on a Pixel 8a: 635 MB PSS idle, 1,143 MB peak during transcription, 1,106 MB during `extract`); a 1.5B-class bundle about 2.5 GB.
+Storage: a model is kept once per device, under `models/<sha256>`, and bundle folders link to it — `scribe-floor`
+and `scribe-small` share the 491 MB language model, so holding both costs 1,127 MB of flash and the second
+download is 488 MB, not 979. Sizes are decimal MB (1 MB = 1,000,000 bytes), as `downloadBytes` counts them.
 
 The engines live inside the `Verdure` object: keep one instance for as long as your foreground service
 records, in a scope that outlives the Activity (an application-level holder or the service itself). Drop
-it only when the service stops; `load` after that is as fast as the first time (1.2 s on the Pixel 8a).
+it only when the service stops; `load` after that is as fast as the first time (1.2 s for `scribe-floor`,
+15 s for `scribe-small` on the Pixel 8a).
 `delete(DeleteScope.All)` is not "unload" — it erases downloaded bundles and indexes.
 
 ## Not in this zip

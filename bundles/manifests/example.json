@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "issued_at": 1793000000,
+  "issued_at": 1793807712,
   "bundles": [
     {
       "id": "scribe-small",
@@ -10,6 +10,10 @@
         "L2",
         "L3"
       ],
+      "speed": {
+        "P3": 3.2,
+        "L2": 0.75
+      },
       "models": [
         {
           "id": "whisper-small",
@@ -41,7 +45,7 @@
       "attributions": [
         "Speech: OpenAI Whisper (MIT), ggml conversion by whisper.cpp (MIT). Language model: Qwen2.5 (Apache-2.0)."
       ],
-      "notes": "REAL hashes (both files downloaded and hashed on the founder's Mac). The recommended scribe bundle for clinical speech, 2026-11-03: Whisper small cut clinical-term misses from 1 in 3.6 to 1 in 6 against base over ten PriMock57 consultations (knowledge/26, \"The speech bake-off\"); the 0.5B extractor is unchanged. Listed first so the tier walk prefers it where it is listed; scribe-floor remains the fallback when it does not fit. Phone speed measured next on a Pixel 8a before P1/P2 are added."
+      "notes": "REAL hashes (both files downloaded and hashed on the founder's Mac). The recommended scribe bundle for clinical speech: Whisper small cut clinical-term misses from 1 in 3.6 to 1 in 5.8 against base over ten PriMock57 consultations, on the Mac and on a Pixel 8a alike (knowledge/26, \"The speech bake-off\", \"Small on the Pixel\"). Speed, measured flat out and sustained: 0.75× real time on an 8 GB Intel Mac (L2), 3.2× on a Pixel 8a (P3) — so recommend() takes it for live speech on laptops, passes it over on P3 phones with the speed as the reason, and takes it on P3 for recorded speech (Pace::Recorded). The 0.5B extractor is unchanged and still fails the schema on most windows ([OQ-118])."
     },
     {
       "id": "scribe-L2",
@@ -50,6 +54,9 @@
         "L2",
         "L3"
       ],
+      "speed": {
+        "L2": 0.75
+      },
       "models": [
         {
           "id": "whisper-small",
@@ -92,6 +99,9 @@
         "P3",
         "L1"
       ],
+      "speed": {
+        "P3": 1.25
+      },
       "models": [
         {
           "id": "whisper-base",
@@ -132,6 +142,10 @@
         "L2",
         "L3"
       ],
+      "speed": {
+        "P3": 1.25,
+        "L2": 0.28
+      },
       "models": [
         {
           "id": "whisper-base",
@@ -163,7 +177,7 @@
       "attributions": [
         "Speech: OpenAI Whisper (MIT), ggml conversion by whisper.cpp (MIT). Language model: Qwen2.5 (Apache-2.0)."
       ],
-      "notes": "REAL hashes, measured 2026-10-27. The smallest scribe bundle: Whisper base + Qwen2.5 0.5B. Since 2026-11-03 the fallback for P1/P2/L1 and for any device where scribe-small does not fit; base missed 1 clinical term in 3.6 on PriMock57 (knowledge/26)."
+      "notes": "REAL hashes, measured 2026-10-27. The smallest scribe bundle: Whisper base + Qwen2.5 0.5B. The live-speech pick on 8 GB phones (1.25× real time on a Pixel 8a, kept pace through a live visit), the only pick on 4–6 GB phones, and the fallback wherever scribe-small does not fit; base missed 1 clinical term in 3.6 on PriMock57 (knowledge/26). Shares the 0.5B language model with scribe-small: one download, one copy on disk."
     },
     {
       "id": "asr-whisper-base",
@@ -176,6 +190,10 @@
         "L2",
         "L3"
       ],
+      "speed": {
+        "P3": 1.25,
+        "L2": 0.28
+      },
       "models": [
         {
           "id": "whisper-base",
@@ -204,6 +222,10 @@
         "L2",
         "L3"
       ],
+      "speed": {
+        "P3": 3.2,
+        "L2": 0.75
+      },
       "models": [
         {
           "id": "whisper-small",
@@ -229,6 +251,9 @@
         "L2",
         "L3"
       ],
+      "speed": {
+        "L2": 1.66
+      },
       "models": [
         {
           "id": "afrispeech-whisper-medium",
@@ -246,7 +271,7 @@
       "attributions": [
         "Speech model: Intron Health, AfriSpeech Whisper medium (Apache-2.0), converted to ggml by Verdure"
       ],
-      "notes": "Converted locally 2026-11-03 (evals/convert-intron.sh); the url is the source repo, not a ggml download \u2014 a mirror is needed before this bundle can be downloaded ([OQ-96])."
+      "notes": "Converted locally 2026-11-03 (evals/convert-intron.sh); the url is the source repo, not a ggml download — a mirror is needed before this bundle can be downloaded ([OQ-96])."
     }
   ]
 }

@@ -36,7 +36,9 @@ pub use event::{Event, Progress};
 pub use extract::{extract, ExtractOptions, Extraction};
 pub use license::{Issuer, LicenseClaims, Verifier};
 pub use policy::{Fallback, NetworkPolicy, Policy, Retention, Storage, Telemetry};
-pub use registry::{Bundle, BundleRef, FitReport, Manifest, ModelKind, ModelRef, Resolution};
+pub use registry::{
+    Bundle, BundleRef, FitReport, Manifest, ModelKind, ModelRef, Pace, Resolution, LIVE_MAX_SPEED,
+};
 pub use task::Task;
 pub use tier::{DeviceProfile, FormFactor, GpuClass, Tier};
 

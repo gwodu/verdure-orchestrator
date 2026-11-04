@@ -171,7 +171,7 @@ pub fn extract(
         }
         messages.push(Msg::assistant(reply));
         messages.push(Msg::user(format!(
-            "That JSON has problems:\n- {}\nReturn the corrected JSON only.",
+            "That JSON has problems:\n- {}\nFor each one, put the value the text gives, or null when the text does not say. Return the corrected JSON only.",
             violations.join("\n- ")
         )));
     }
@@ -194,9 +194,10 @@ fn placeholders_left(
         {
             out.push(verdure_grammar::Violation {
                 path: path.to_string(),
-                message: format!(
-                    "still holds the placeholder {s:?}; put the value from the text, or null"
-                ),
+                // What went wrong, not what to do about it: this sentence
+                // reaches the developer's log through `SchemaInvalid`. The
+                // instruction belongs to the repair turn below.
+                message: format!("still holds the placeholder {s:?}"),
             })
         }
         Value::Object(map) => {

@@ -6,6 +6,23 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 Run: `cargo test --workspace` at the repo root (no models, seconds). CI: the `sdk` job (Linux) runs it plus `cargo check -p verdure-ffi --features llama,whisper` and `cargo fmt --check`.
 
+### 2026-11-04 — Production pass: speed-aware `recommend`, one copy per model, a download that talks, plainer errors
+
+- `cargo test --workspace`: **95 passed** (90 + 5). New: registry `a_bundle_too_slow_for_live_speech_is_passed_over_with_its_speed_and_kept_for_recordings` (the Pixel numbers — small 3.2× skipped for Live with the exact sentence, chosen for Recorded; memory still comes first; the pin is judged the same and has the same escape), `an_unmeasured_speed_is_not_held_against_a_bundle`, `a_manifest_speed_must_name_a_tier_the_bundle_is_built_for_and_be_positive`; download `two_bundles_sharing_a_model_download_it_once_and_hold_one_copy` (one request for two bundles, inodes equal, the status lines verbatim, progress still reaches the bundle total), `separate_copies_from_before_the_store_are_folded_into_one_file` (pre-store duplicates become one link; a damaged store copy is replaced by a good bundle copy, or refetched when none is good). Extended: the FFI's `recommend` skips the slow bundle with its speed and `recommend_for(Recorded)` takes it; `fit` and `fit_for` agree with the walk; `the_policy_is_consulted_before_any_socket_opens` also proves a bundle with one disallowed URL is refused whole, before any file moves. The extract tests pass unchanged with the shorter violation text.
+- Manifest: `speed` written for all seven bundles (P3 and L2 measurements), re-signed; `manifest check` and `verify` ok. `verdure recommend` against it, 3600 MB RAM:
+
+| tier, pace | chosen | speed | skipped |
+|---|---|---|---|
+| P3 live | `scribe-floor` | 1.25× | `scribe-small: runs at 3.2× real time on P3, too slow to keep pace with live speech` |
+| P3 recorded | `scribe-small` | 3.2× | — |
+| P3 live, 1500 MB | `scribe-floor` | 1.25× | `scribe-small: needs 1667 MB of memory, 1500 MB available` |
+| L2 live | `scribe-small` | 0.75× | — |
+| P1, P2, L1 live | `scribe-floor` | not measured | — |
+| L3 live | `scribe-small` | not measured | — |
+
+- Edge cases met while writing: `f32` speeds cost `Eq` on `Bundle`, `Manifest`, `BundleRef`, `Resolution`, `FitReport` (nothing used them as keys); a map keyed by `Tier` would lean on serde's map-key support, so `speed` is keyed by the tier's name and validated in `Manifest::parse`; the fold-in must link to a temporary name and rename over the duplicate, never remove-then-link, or a refused link would lose the file; `download_bundle` asks the policy about every URL first, so a bundle is refused whole rather than half-fetched.
+- Not run here: the engine builds (no disk; CI's `sdk` job compiles them), the Android zip (dispatched after this commit), the phone (the vendor's next run).
+
 ### 2026-11-04 — Ten PriMock57 consultations on the Pixel 8a with `scribe-small` (vendor's client, `recommend()` unpinned, overnight on mains power)
 
 | | phone, Whisper small | phone, Whisper base (2026-11-03, rescored with `evals/score.py`) | Mac, Whisper small (bake-off) |

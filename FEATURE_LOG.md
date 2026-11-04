@@ -6,6 +6,16 @@ Living record of features built across the Verdure monorepo — the **Verdure de
 
 > Started 2026-10-21 from the founder's nine-vendor teardown and build spec (`knowledge/26`). The long-term Rust core, real: `verdure-core` pure, I/O crates behind its ports, `verdure-ffi` the public surface. Three users in every decision: the end user who never sees Verdure, the developer with an afternoon, the customer's compliance team.
 
+### 2026-11-04 — Production pass after the second phone run: speed is part of "fits", one copy per model, a download that talks, a changelog in the zip (`knowledge/26`, "Production pass")
+
+**What:** `Pace { Live, Recorded }` with `recommend_for` and `fit_for` (`recommend`/`fit` mean Live); a `speed` map per bundle in the manifest and `LIVE_MAX_SPEED` = 1.5× real time in the core; `BundleRef.speed_x_real_time`; `verdure-download`'s content-addressed store (`models/<sha256>`, hard links, old copies folded in); per-file `Event::Status` during downloads; violation messages without the model's instruction; `docs/sdk-changelog.md` shipped in the zip as `CHANGELOG.md`; guide and README exact on sizes (decimal MB), `load` time and blocking.
+
+**Why:** the vendor's second report, after a 4-of-4 swap: "`recommend` chose a bundle the phone cannot run live" and "the 491 MB model was downloaded a second time". The tagline is a few lines of code; the few lines have to produce a model that runs usefully, and the SDK, not the developer's four-hour benchmark, has to be what knows the speed.
+
+**Simpler or more complex for the user?** Simpler for the clinician: the phone gets a transcript that keeps pace by default, and the better one when the product can wait. Simpler for the developer: existing code compiles unchanged and now gets the live-safe answer; one word more to know (`Pace`), one less thing to discover (the changelog), half the download the second time. One rule more in the brain, with its measurement in the test.
+
+**Tests:** 95 workspace (five new, see TEST_REPORT); the CLI walk per tier and pace against the signed manifest.
+
 ### 2026-11-03 — `scribe-small`: the measured speech model becomes the bundle the SDK recommends, with base kept as the fallback and the developer's pick (`knowledge/26`, "What shipped from it")
 
 **What:** a new `scribe-small` bundle (Whisper small + Qwen2.5 0.5B, real hashes) leads the signed example manifest for P3/L2/L3; `scribe-floor` stays for every tier as the fallback and the everyday-dictation choice; `scribe-L2` gets a real hash for its 1.5B. No crate code changed — the tier walk, the memory rule and `fit()` already did the choosing; what changed is the menu. The integration guide (sections 3, 7, 7b) and the Android README say which bundle a device gets and how to pin the other one.

@@ -128,6 +128,7 @@ jobs:
           cp crates/verdure-ffi/keys/issuer.pub "$D/bundles/"
           cp docs/sdk-integration-guide.md "$D/"
           cp bindings/android/README.md "$D/README.md"
+          cp docs/sdk-changelog.md "$D/CHANGELOG.md"
           echo "commit ${GITHUB_SHA} · $(date -u +%Y-%m-%dT%H:%MZ) · $(rustc --version)" > "$D/VERSION"
           (cd out && zip -qr verdure-android-arm64.zip verdure-android-arm64)
           ls -l out/verdure-android-arm64.zip
