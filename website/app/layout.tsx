@@ -3,15 +3,15 @@ import './globals.css';
 import SiteHeader from '@/components/SiteHeader';
 import SiteFooter from '@/components/SiteFooter';
 
-// System faces only, no webfont download — the identity in skills/design.md.
+// System faces only, no webfont download (skills/design.md).
 export const metadata: Metadata = {
-  title: 'Verdure — run local models with a few lines of code',
+  title: 'Verdure — run your own AI, offline, on your own device',
   description:
-    'Verdure is a runtime that turns speech into text and text into structured JSON on the user’s own phone or laptop, offline. One library, one licence token, nothing leaves the device.',
+    'Verdure runs AI on the phone or computer you already have. What you say and type stays on it. An app you can use today, and a few lines of code for developers who want it inside their own app.',
   metadataBase: new URL('https://verdureai.com'),
   openGraph: {
-    title: 'Verdure — run local models with a few lines of code',
-    description: 'Speech to transcript to schema-valid JSON, on the device in front of you. Offline. Private.',
+    title: 'Verdure — run your own AI, offline, on your own device',
+    description: 'AI that runs on the phone or computer you already have. Nothing you say or type leaves it.',
     url: 'https://verdureai.com',
     siteName: 'Verdure',
   },
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className="antialiased">
+      <body>
         <SiteHeader />
         {children}
         <SiteFooter />

@@ -1,53 +1,38 @@
 @import "tailwindcss";
 
 /*
- * Midnight glass — the visual identity measured from the brand video
- * (skills/design.md, "Visual identity"). Deep navy, aurora mint, frosted
- * glass, system faces. The Tailwind names the older pages use (slate-*,
- * emerald-*) are re-pointed at these tokens below, so every page on the site
- * shares one palette without each being rewritten.
+ * The site's look (2026-11-04, second pass): plain. One off-white page, navy
+ * ink, one green for the one action that matters on each screen. No gradients,
+ * no glass, no glow, no lines that are not doing a job. System faces only —
+ * no webfont download (skills/design.md). The founder's brief: "simple,
+ * direct; no lines where they do not need to be; no glowing buttons unless
+ * it is important."
  */
 :root {
-  --navy-0: #021329;
-  --navy-1: #061b35;
-  --navy-2: #0c253e;
-  --teal-1: #14314a;
-  --teal-2: #1d4058;
-  --teal-3: #275168;
-  --mint: #34c69a;
-  --mint-bright: #4cd8ad;
-  --mint-pale: #b7f3e6;
-  --sea-1: #386a7e;
-  --sea-2: #479e96;
-  --ink: #eef6f2;
-  --ink-soft: #8fa8b5;
-  --on-mint: #04241c;
-  --coral: #ff9d8a;
+  --paper: #fcfcfa;
+  --card: #f1f4f1;
+  --line: #e2e7e3;
+  --ink: #10212f;
+  --ink-2: #3f515d;
+  --ink-soft: #66767f;
+  --green: #137a5b;
+  --green-dark: #0f6549;
+  --green-pale: #e4f2eb;
 }
 
 @theme inline {
-  --color-background: var(--navy-0);
+  --color-background: var(--paper);
   --color-foreground: var(--ink);
-  --color-emerald-300: var(--mint-bright);
-  --color-emerald-400: var(--mint);
-  --color-emerald-500: var(--sea-2);
-  --color-slate-100: var(--ink);
-  --color-slate-200: var(--ink);
-  --color-slate-300: #c3d3d8;
-  --color-slate-400: var(--ink-soft);
-  --color-slate-500: #6f8b99;
-  --color-slate-700: var(--teal-2);
-  --color-slate-800: var(--navy-1);
-  --color-slate-900: var(--navy-0);
-  --color-mint: var(--mint);
-  --color-mint-bright: var(--mint-bright);
-  --color-mint-pale: var(--mint-pale);
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-line: var(--line);
   --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
   --color-ink-soft: var(--ink-soft);
-  --color-on-mint: var(--on-mint);
-  --color-coral: var(--coral);
-  --font-sans: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-serif: ui-serif, "New York", Georgia, "Times New Roman", serif;
+  --color-green: var(--green);
+  --color-green-dark: var(--green-dark);
+  --color-green-pale: var(--green-pale);
+  --font-sans: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
@@ -58,11 +43,9 @@ html {
 body {
   min-height: 100vh;
   color: var(--ink);
+  background: var(--paper);
   font-family: var(--font-sans);
-  background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(52, 198, 154, 0.14), transparent 60%),
-    radial-gradient(900px 500px at 90% 10%, rgba(71, 158, 150, 0.12), transparent 60%),
-    linear-gradient(180deg, var(--navy-0) 0%, var(--navy-1) 45%, var(--navy-2) 100%);
+  -webkit-font-smoothing: antialiased;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -70,58 +53,54 @@ body {
 }
 
 @layer components {
-/* The wordmark: serif, wide, mint gradient — the "sleek" half of the brand. */
-.wordmark {
-  font-family: var(--font-serif);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  background: linear-gradient(90deg, var(--mint-bright), var(--mint-pale) 60%, var(--mint-bright));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-/* Frosted glass panels: translucent navy, mint-tinged border, soft glow. */
-.glass {
-  background: rgba(238, 246, 242, 0.05);
-  border: 1px solid rgba(76, 216, 173, 0.18);
-  border-radius: 20px;
-  box-shadow: 0 10px 40px -20px rgba(52, 198, 154, 0.35);
-}
-
+/* The one filled button. Used for the one action a screen is for. */
 .btn-primary {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
-  background: var(--mint);
-  color: var(--on-mint);
-  font-weight: 700;
-  border-radius: 999px;
-  padding: 0.9rem 1.6rem;
-  box-shadow: 0 8px 30px -12px rgba(52, 198, 154, 0.8);
-  transition: background 150ms ease, transform 150ms ease;
+  background: var(--green);
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 0.8rem 1.3rem;
+  line-height: 1.2;
+  transition: background 150ms ease;
 }
-.btn-primary:hover { background: var(--mint-bright); transform: translateY(-1px); }
+.btn-primary:hover { background: var(--green-dark); }
+.btn-primary:disabled { opacity: 0.5; }
 
-.btn-secondary {
+/* The quiet second choice: a sentence with an arrow, no box. */
+.btn-text {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  color: var(--ink);
+  gap: 0.35rem;
+  color: var(--green);
   font-weight: 600;
-  border-radius: 999px;
-  padding: 0.9rem 1.6rem;
-  border: 1px solid rgba(76, 216, 173, 0.35);
-  background: rgba(238, 246, 242, 0.04);
-  transition: border-color 150ms ease, background 150ms ease;
+  padding: 0.8rem 0.25rem;
+  line-height: 1.2;
 }
-.btn-secondary:hover { border-color: var(--mint-bright); background: rgba(238, 246, 242, 0.08); }
+.btn-text:hover { color: var(--green-dark); text-decoration: underline; text-underline-offset: 3px; }
 
-/* Code: dark glass, mint keywords are not attempted — plain, readable, copyable. */
+/* A tinted panel instead of a border, where grouping helps. */
+.card {
+  background: var(--card);
+  border-radius: 16px;
+}
+
+/* Plain links inside running text. */
+.link {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(19, 122, 91, 0.35);
+}
+.link:hover { color: var(--green-dark); text-decoration-color: currentColor; }
+
+/* Code: readable and copyable. */
 pre.code {
-  background: rgba(2, 19, 41, 0.75);
-  border: 1px solid rgba(76, 216, 173, 0.18);
-  border-radius: 14px;
+  background: var(--card);
+  border-radius: 12px;
   padding: 1rem 1.2rem;
   overflow-x: auto;
   font-family: var(--font-mono);
@@ -132,28 +111,42 @@ pre.code {
 code.inline {
   font-family: var(--font-mono);
   font-size: 0.9em;
-  background: rgba(238, 246, 242, 0.08);
+  background: var(--card);
   border-radius: 6px;
   padding: 0.1em 0.4em;
 }
 
-/* Documentation tables (the SDK page). */
+/* Documentation tables (the developers page). Hairlines between rows are the
+   one line that earns its place: a table without them does not read. */
 table.doc { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
-table.doc th, table.doc td { text-align: left; vertical-align: top; padding: 0.6rem 0.75rem; border-bottom: 1px solid rgba(76, 216, 173, 0.15); }
-table.doc th { color: var(--mint-bright); font-weight: 600; }
-table.doc td { color: #c3d3d8; }
+table.doc th, table.doc td { text-align: left; vertical-align: top; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--line); }
+table.doc th { color: var(--ink); font-weight: 600; }
+table.doc td { color: var(--ink-2); }
 table.doc td:first-child { color: var(--ink); }
+
+/* Expandable rows (the use cases on the home page). */
+details.row { background: var(--card); border-radius: 14px; }
+details.row > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 1.1rem 1.25rem;
+}
+details.row > summary::-webkit-details-marker { display: none; }
+details.row > summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-weight: 400;
+  font-size: 1.25rem;
+  line-height: 1;
+  flex: none;
+}
+details.row[open] > summary::after { content: "–"; }
+details.row > div { padding: 0 1.25rem 1.25rem; }
 
 /* Section anchors land below the sticky header. */
 .anchor { scroll-margin-top: 5.5rem; }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .rise { animation: rise 600ms ease-out both; }
-  .rise-2 { animation: rise 600ms 120ms ease-out both; }
-  .rise-3 { animation: rise 600ms 240ms ease-out both; }
-}
-@keyframes rise {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: none; }
 }

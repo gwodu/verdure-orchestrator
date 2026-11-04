@@ -24,6 +24,9 @@ const nextConfig: NextConfig = {
   // route must keep working for as long as anyone runs that build.
   async redirects() {
     return [
+      // The developers page was /sdk for a day (2026-11-04); the word is
+      // jargon to half the people who get sent the link, so it moved.
+      { source: "/sdk", destination: "/developers", permanent: true },
       {
         source: "/updates/:file",
         destination:

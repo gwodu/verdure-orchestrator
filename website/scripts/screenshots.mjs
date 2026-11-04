@@ -20,9 +20,9 @@ const VIEWPORT = { width: 390, height: 844 }; // a common phone — our primary 
 // sessionStorage so the recommendation pages render without clicking through.
 const SHOTS = [
   { name: 'home', url: '/', full: true },
-  { name: 'home-reduced-motion', url: '/', full: true, reducedMotion: 'reduce' },
-  { name: 'sdk', url: '/sdk', full: true },
-  { name: 'sdk-hello', url: '/sdk#hello' },
+  { name: 'developers', url: '/developers', full: true },
+  { name: 'developers-hello', url: '/developers#hello' },
+  { name: 'privacy', url: '/privacy' },
   { name: 'try', url: '/try', full: true },
   { name: 'intent', url: '/start' },
   { name: 'device', url: '/start/device', session: { 'verdure.flow.intent': 'transcribe my recordings' } },

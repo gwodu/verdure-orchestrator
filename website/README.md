@@ -1,14 +1,14 @@
 # verdureai.com
 
 The public site, Next.js on Vercel. Every push to `main` deploys it (knowledge/21, "How to build / ship").
-What the site is for and why it is shaped this way: `knowledge/05-website-spec.md`, "The 2026-11-04 revamp".
+What the site is for and why it is shaped this way: `knowledge/05-website-spec.md`, "The 2026-11-04 revamp" and "The same day, plainer".
 
 ## Pages
 
 | Route | Job |
 |---|---|
-| `/` | A company deciding whether to put Verdure in its app knows in ten seconds what it does and is one click from running it. Then: what we measured, who it is for, the app, keep-me-posted, the founder. |
-| `/sdk` | The white paper, navigable: what it is, how it works, the hello world (Kotlin, Rust, Python), the API, which model for which device, what we measured, privacy and licences, what is not done, how to get it. Facts are data in `lib/sdk-content.ts` and tested. |
+| `/` | Anyone, technical or not, knows in one glance what Verdure is (AI that runs on your own device, offline) and sees the one thing to do: try the app. Then three plain things it does, the uses as rows you open, the app, a short door for developers, and how to reach the founder. |
+| `/developers` | (was `/sdk`, which redirects.) The white paper, navigable: what it is, how it works, the hello world (Kotlin, Rust, Python), the API, which model for which device, what we measured, privacy and licences, what is not done, how to get it. Facts are data in `lib/sdk-content.ts` and tested. |
 | `/try` | Get the app onto the reader's own device: the macOS download, and a "send me a test build" form for iPhone and Android (testers are added by hand). |
 | `/privacy` | The privacy policy. Required by the app stores; written as a true description of the software. |
 | `/start/*` | The device recommender from Phase 0: pick what you want to do and your device, get an honest recommendation. Linked from `/try`, not from the nav. |

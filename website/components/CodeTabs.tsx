@@ -21,7 +21,7 @@ export default function CodeTabs() {
   };
 
   return (
-    <div className="glass p-3 sm:p-4">
+    <div className="card p-3 sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div role="tablist" aria-label="Language" className="flex gap-1">
           {SAMPLES.map((s) => (
@@ -31,18 +31,18 @@ export default function CodeTabs() {
               aria-selected={s.id === active}
               onClick={() => { setActive(s.id); setCopied(false); }}
               className={`px-3 py-1.5 rounded-full text-sm font-semibold transition-colors ${
-                s.id === active ? 'bg-mint text-on-mint' : 'text-ink-soft hover:text-ink'
+                s.id === active ? 'bg-green text-white' : 'text-ink-soft hover:text-ink'
               }`}
             >
               {s.label}
             </button>
           ))}
         </div>
-        <button onClick={copy} className="text-sm text-ink-soft hover:text-mint-bright">
+        <button onClick={copy} className="text-sm text-ink-soft hover:text-ink">
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      <pre className="code" tabIndex={0}><code>{sample.code}</code></pre>
+      <pre className="code !bg-white" tabIndex={0}><code>{sample.code}</code></pre>
     </div>
   );
 }

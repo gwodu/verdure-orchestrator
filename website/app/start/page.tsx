@@ -27,13 +27,13 @@ export default function IntentScreen() {
   };
 
   return (
-    <main className="bg-slate-800 text-white min-h-screen px-6 sm:px-12 py-16">
+    <main className="bg-paper text-ink min-h-screen px-6 sm:px-12 py-16">
       <div className="max-w-3xl mx-auto">
-        <p className="text-emerald-400 text-sm mb-3 tracking-widest uppercase">Step 1 of 4</p>
+        <p className="text-green text-sm mb-3 tracking-widest uppercase">Step 1 of 4</p>
         <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-3 leading-tight">
           What do you want to do?
         </h1>
-        <p className="text-slate-300 text-lg mb-10">
+        <p className="text-ink-2 text-lg mb-10">
           Pick the closest match. We&rsquo;ll find AI that runs on the computer you already have — private and free — and show you exactly how to start.
         </p>
 
@@ -42,20 +42,20 @@ export default function IntentScreen() {
             <button
               key={card.id}
               onClick={() => pick(card)}
-              className="text-left p-6 bg-slate-900 border border-slate-700 rounded-xl hover:border-emerald-400 hover:bg-slate-900/60 transition group"
+              className="text-left p-6 bg-white border border-line rounded-xl hover:border-green hover:bg-white/60 transition group"
             >
               <div className="text-3xl mb-3" aria-hidden="true">{card.emoji}</div>
-              <h2 className="text-xl font-semibold mb-1 text-white group-hover:text-emerald-400 transition-colors">
+              <h2 className="text-xl font-semibold mb-1 text-ink group-hover:text-green-dark transition-colors">
                 {card.title}
               </h2>
-              <p className="text-slate-400 text-sm">{card.description}</p>
+              <p className="text-ink-soft text-sm">{card.description}</p>
             </button>
           ))}
         </div>
 
         {/* Free-text fallback — the long tail, and the path the future LLM classifier improves. */}
-        <form onSubmit={submit} className="mt-10 border-t border-slate-700 pt-8">
-          <label htmlFor="intent" className="block text-slate-300 text-lg font-semibold mb-3">
+        <form onSubmit={submit} className="mt-10 border-t border-line pt-8">
+          <label htmlFor="intent" className="block text-ink-2 text-lg font-semibold mb-3">
             Something else? Describe it in your own words.
           </label>
           <textarea
@@ -63,17 +63,17 @@ export default function IntentScreen() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="e.g. make a picture for my blog, write a song, summarize a PDF…"
-            className="w-full min-h-[96px] p-4 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:border-emerald-400 focus:outline-none text-lg resize-y"
+            className="w-full min-h-[96px] p-4 bg-white border border-line rounded-xl text-ink placeholder-ink-soft focus:border-green focus:outline-none text-lg resize-y"
           />
           <div className="flex items-center gap-4 mt-4">
             <button
               type="submit"
               disabled={!text.trim()}
-              className="bg-emerald-400 text-slate-900 px-8 py-4 rounded-full text-lg font-semibold hover:bg-emerald-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className="bg-green text-white px-8 py-4 rounded-full text-lg font-semibold hover:bg-green-dark transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Continue →
             </button>
-            <Link href="/" className="text-slate-400 hover:text-white text-sm">
+            <Link href="/" className="text-ink-soft hover:text-ink text-sm">
               ← Back home
             </Link>
           </div>

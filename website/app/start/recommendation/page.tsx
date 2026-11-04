@@ -32,25 +32,25 @@ export default function RecommendationScreen() {
   const notLocal = rec.feasibility === 'not-local-yet';
 
   return (
-    <main className="bg-slate-800 text-white min-h-screen px-6 sm:px-12 py-16">
+    <main className="bg-paper text-ink min-h-screen px-6 sm:px-12 py-16">
       <div className="max-w-3xl mx-auto">
-        <p className="text-emerald-400 text-sm mb-3 tracking-widest uppercase">Step 4 of 4</p>
+        <p className="text-green text-sm mb-3 tracking-widest uppercase">Step 4 of 4</p>
 
         {/* Verb-first headline: the benefit. The bold solution lands right below. */}
         <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-5 leading-tight">
           {rec.headline}
         </h1>
-        <p className="text-lg text-slate-300 mb-8 leading-relaxed">{rec.body}</p>
+        <p className="text-lg text-ink-2 mb-8 leading-relaxed">{rec.body}</p>
 
         {/* The solution — bold and unmistakable, so no one has to hunt for the answer. */}
         {rec.model && (
-          <div className="bg-slate-900 border-2 border-emerald-400/50 rounded-2xl p-6 sm:p-8 mb-8 shadow-lg">
+          <div className="bg-white border-2 border-green rounded-2xl p-6 sm:p-8 mb-8 shadow-lg">
             <div className="flex flex-wrap items-center gap-3 mb-2">
-              <p className="text-emerald-400 text-xs sm:text-sm uppercase tracking-widest font-bold">
+              <p className="text-green text-xs sm:text-sm uppercase tracking-widest font-bold">
                 Use this
               </p>
               {rec.feasibility === 'works-but-slow' && (
-                <span className="bg-amber-400/15 text-amber-300 text-xs px-2.5 py-1 rounded-full font-medium">
+                <span className="bg-amber-400/15 text-amber-700 text-xs px-2.5 py-1 rounded-full font-medium">
                   Works, but slow on your device
                 </span>
               )}
@@ -60,15 +60,15 @@ export default function RecommendationScreen() {
                 href={rec.model.infoUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-block text-4xl sm:text-5xl font-bold text-emerald-400 hover:text-emerald-300 underline-offset-8 hover:underline transition-colors"
+                className="inline-block text-4xl sm:text-5xl font-bold text-green hover:text-green-dark underline-offset-8 hover:underline transition-colors"
               >
                 {rec.model.name}
               </a>
             ) : (
-              <span className="text-4xl sm:text-5xl font-bold text-emerald-400">{rec.model.name}</span>
+              <span className="text-4xl sm:text-5xl font-bold text-green">{rec.model.name}</span>
             )}
             {rec.model.note && (
-              <p className="text-slate-300 text-base sm:text-lg mt-3">{rec.model.note}</p>
+              <p className="text-ink-2 text-base sm:text-lg mt-3">{rec.model.note}</p>
             )}
           </div>
         )}
@@ -96,12 +96,12 @@ export default function RecommendationScreen() {
         {/* Alternatives */}
         {rec.alternatives.length > 0 && (
           <div className="mb-10">
-            <h3 className="text-lg font-semibold mb-3 text-slate-300">Other options</h3>
+            <h3 className="text-lg font-semibold mb-3 text-ink-2">Other options</h3>
             <div className="space-y-2">
               {rec.alternatives.map((alt) => (
-                <div key={alt.name} className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                  <p className="font-semibold text-slate-200">{alt.name}</p>
-                  <p className="text-slate-400 text-sm">{alt.reason}</p>
+                <div key={alt.name} className="bg-white/50 border border-line rounded-lg p-4">
+                  <p className="font-semibold text-ink-2">{alt.name}</p>
+                  <p className="text-ink-soft text-sm">{alt.reason}</p>
                 </div>
               ))}
             </div>
@@ -109,7 +109,7 @@ export default function RecommendationScreen() {
         )}
 
         <div className="mt-12 text-center">
-          <Link href="/start" className="text-slate-400 hover:text-white text-sm">
+          <Link href="/start" className="text-ink-soft hover:text-ink text-sm">
             ← Start over with different choices
           </Link>
         </div>
@@ -165,29 +165,29 @@ function VerdureWaitlist({
     : 'We’ll do all of it for you. No setup, no settings, nothing technical — as easy as installing any app. Join the waitlist and we’ll email you the moment it’s ready.';
 
   return (
-    <div className="bg-emerald-400 text-slate-900 rounded-xl p-6 shadow-lg">
+    <div className="bg-green text-white rounded-xl p-6 shadow-lg">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
         <div>
           <p className="text-xs uppercase tracking-wider font-bold opacity-70">Easiest</p>
           <h3 className="text-2xl font-bold">Let Verdure do it for you</h3>
         </div>
-        <span className="bg-slate-900 text-emerald-400 text-xs px-3 py-1 rounded-full font-semibold">
+        <span className="bg-white text-green text-xs px-3 py-1 rounded-full font-semibold">
           Coming soon
         </span>
       </div>
-      <p className="text-slate-900/80 mb-4">{blurb}</p>
+      <p className="text-white/80 mb-4">{blurb}</p>
 
       {status === 'success' ? (
-        <div className="bg-slate-900/10 border border-slate-900/20 rounded-lg p-4">
+        <div className="bg-white/10 border border-line rounded-lg p-4">
           <p className="font-semibold">You&rsquo;re on the list.</p>
-          <p className="text-sm text-slate-900/80 mt-1">
+          <p className="text-sm text-white/80 mt-1">
             We&rsquo;ll email {email} when Verdure is ready. Thanks for telling us what you want to use it for — that&rsquo;s how we build the right thing first.
           </p>
         </div>
       ) : !open ? (
         <button
           onClick={() => setOpen(true)}
-          className="bg-slate-900 text-emerald-400 px-6 py-3 rounded-full font-semibold hover:bg-slate-800 transition"
+          className="bg-white text-green px-6 py-3 rounded-full font-semibold hover:bg-card transition"
         >
           Join the waitlist
         </button>
@@ -201,7 +201,7 @@ function VerdureWaitlist({
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
               placeholder="First name"
-              className="w-full p-3 bg-slate-900 text-white placeholder-slate-500 border border-slate-700 rounded-lg focus:border-emerald-300 focus:outline-none"
+              className="w-full p-3 bg-white text-ink placeholder-ink-soft border border-line rounded-lg focus:border-green focus:outline-none"
             />
             <input
               type="email"
@@ -209,21 +209,21 @@ function VerdureWaitlist({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="w-full p-3 bg-slate-900 text-white placeholder-slate-500 border border-slate-700 rounded-lg focus:border-emerald-300 focus:outline-none"
+              className="w-full p-3 bg-white text-ink placeholder-ink-soft border border-line rounded-lg focus:border-green focus:outline-none"
             />
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="submit"
               disabled={status === 'submitting'}
-              className="bg-slate-900 text-emerald-400 px-6 py-3 rounded-full font-semibold hover:bg-slate-800 transition disabled:opacity-50"
+              className="bg-white text-green px-6 py-3 rounded-full font-semibold hover:bg-card transition disabled:opacity-50"
             >
               {status === 'submitting' ? 'Joining…' : 'Join the waitlist'}
             </button>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="text-slate-900/70 hover:text-slate-900 text-sm"
+              className="text-white/70 hover:text-white text-sm"
             >
               Cancel
             </button>
@@ -233,7 +233,7 @@ function VerdureWaitlist({
               {errorMsg || 'Something went wrong. Please try again.'}
             </p>
           )}
-          <p className="text-xs text-slate-900/70">
+          <p className="text-xs text-white/70">
             We save your name, email, and what you typed so we can tell you when Verdure is ready and build the things people actually want.
           </p>
         </form>
@@ -259,20 +259,20 @@ function InstallCard({ option }: { option: InstallOption }) {
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
+    <div className="bg-white border border-line rounded-xl p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
         <h3 className="text-xl font-bold">{option.name}</h3>
-        {option.platforms && <span className="text-slate-500 text-xs">{option.platforms}</span>}
+        {option.platforms && <span className="text-ink-soft text-xs">{option.platforms}</span>}
       </div>
-      <p className="text-slate-300 mb-4">{option.detail}</p>
+      <p className="text-ink-2 mb-4">{option.detail}</p>
 
       {option.command && (
         <div className="mb-4">
-          <div className="flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-lg p-3 font-mono text-sm text-emerald-300">
+          <div className="flex items-center gap-2 bg-paper border border-line rounded-lg p-3 font-mono text-sm text-green">
             <code className="flex-1 overflow-x-auto whitespace-nowrap">{option.command}</code>
             <button
               onClick={copy}
-              className="text-xs text-slate-400 hover:text-emerald-400 px-2 py-1 rounded transition shrink-0"
+              className="text-xs text-ink-soft hover:text-green-dark px-2 py-1 rounded transition shrink-0"
             >
               {copied ? 'Copied!' : 'Copy'}
             </button>
@@ -284,7 +284,7 @@ function InstallCard({ option }: { option: InstallOption }) {
         href={option.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-block border border-slate-600 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:border-emerald-400 transition"
+        className="inline-block border border-line text-ink px-5 py-2.5 rounded-full text-sm font-semibold hover:border-green transition"
       >
         Get {option.name} ↗
       </a>

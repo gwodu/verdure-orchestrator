@@ -678,6 +678,13 @@ The Linux job ("Decider + website", 47s) was green too: decider 64 tests, websit
 
 ## Website (Phase 0)
 
+### 2026-11-04 — The same day, plainer (`website/lib/links.test.ts`, screenshots at 390 and 1440 px)
+
+- **Website vitest 38 → 39:** `links.test.ts` gains "reaches the founder at the work address" — `CONTACT_EMAIL` is `wodu@verdureai.com` and `CONTACT_MAILTO` starts with it, so a personal address cannot creep back. The sample-vs-API test and the lockfile guard unchanged.
+- **Build:** `next build` clean; `/developers` static, `/sdk` → 308 → `/developers` checked with curl against the built server.
+- **Visual loop:** `npm run shots` 10/10 (home, developers, developers#hello, privacy, try, recommender states) plus a desktop pass at 1440 px; every page's `scrollWidth` equals the viewport at both widths. Reviewed: the hero reads in one glance on a phone, the four use-case rows close by default, the header button is the only filled element above the fold, the recommender and privacy pages survived the class rename (the "use this" card and the green "easiest" block still read).
+- **Not tested:** that mail to `wodu@verdureai.com` is delivered — only a real send shows that.
+
 ### 2026-11-04 — The revamp (`website/lib/links.test.ts`, `website/lib/sdk-content.test.ts`, screenshots)
 
 - `npm test`: 38 passed (30 + 8). New: the macOS link points under `gwodu/Verdure-Releases/releases/latest/download/` and ends in `.dmg`, never at `verdureai.com/updates`; `mailto()` encodes spaces as `%20` and newlines as `%0A` (URLSearchParams' `+` is not decoded by mail clients); every `sdk.<name>(` call in the three hello-world samples names a method in the API table (snake_case accepted for Rust and Python) and each sample contains start, recommend, download, load, transcribe, extract; the speech table lists `scribe-floor` then `scribe-small` with the Pixel speed 3.2×; the tiers are in `02`'s order.

@@ -8,8 +8,8 @@ export const RELEASES_PAGE = 'https://github.com/gwodu/Verdure-Releases/releases
 /** The macOS disk image, straight from the latest release. Universal (Intel + Apple Silicon). */
 export const MACOS_DMG = `${RELEASES_PAGE}/download/Verdure_0.1.0_universal.dmg`;
 
-/** The only address that reaches a person today (verdureai.com has no mail). */
-export const CONTACT_EMAIL = 'glwodu@gmail.com';
+/** The founder's address on the company domain (founder, 2026-11-04). */
+export const CONTACT_EMAIL = 'wodu@verdureai.com';
 
 export const LINKEDIN = 'https://www.linkedin.com/in/gesikeme-wodu';
 
@@ -26,3 +26,5 @@ export const SDK_REQUEST_MAILTO = mailto(
   'Verdure SDK: send me the test kit',
   'Hi Gesi,\n\nI would like to try the Verdure SDK.\n\nPlatform (Android / macOS / Linux / Windows / Python):\nWhat we are building:\n',
 );
+
+export const CONTACT_MAILTO = mailto('Verdure', 'Hi Gesi,\n\n');

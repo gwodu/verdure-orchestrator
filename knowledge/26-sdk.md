@@ -175,7 +175,7 @@ The vendor's second report rated the SDK swap 4 of 4 — unzip, copy, build, no 
 
 Still not production, and said so: the 0.5B extractor fails the schema on 7 of 10 phone windows (`[OQ-118]`; the 1.5B is the next measurement); speeds exist for P3 and L2 only (`[OQ-122]`); the two-ggml link (`[OQ-114]`); grammar off (`[OQ-108]`).
 
-**Public face (2026-11-04).** verdureai.com/sdk is the white paper for a company's developer — what it is, the hello world in three languages, the API, the tiers, the measured tables, licences, what is not done — with its facts held as tested data in `website/lib/sdk-content.ts`. When a number in this file changes, that file changes in the same commit (`05`, "The 2026-11-04 revamp").
+**Public face (2026-11-04).** verdureai.com/developers (`/sdk` redirects; the word is jargon to the home page's reader) is the white paper for a company's developer — what it is, the hello world in three languages, the API, the tiers, the measured tables, licences, what is not done — with its facts held as tested data in `website/lib/sdk-content.ts`. When a number in this file changes, that file changes in the same commit (`05`, "The 2026-11-04 revamp" and "The same day, plainer").
 
 ## Rules for anyone adding to the crates
 

@@ -14,10 +14,9 @@ export const metadata: Metadata = {
     'Verdure runs AI on your own device. Your conversations never leave it. No telemetry, no accounts, no tracking.',
 };
 
-// Contact is a personal address on purpose: verdureai.com has no MX records, so
-// privacy@verdureai.com would BOUNCE, and a deletion request that silently fails
-// is worse than an unpolished address. Swap this the moment domain mail exists —
-// app stores and users both rely on it working.
+// Contact is the founder's address on the company domain (founder, 2026-11-04;
+// it replaced a personal address). App stores and users rely on it working: if
+// mail on the domain ever lapses, change it here the same day.
 //
 // Last substantive review of this page's claims against the shipping code.
 const UPDATED = '14 September 2026';
@@ -25,8 +24,8 @@ const UPDATED = '14 September 2026';
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-12">
-      <h2 className="text-2xl sm:text-3xl font-bold text-emerald-400 mb-4">{title}</h2>
-      <div className="text-slate-200 text-base sm:text-lg leading-relaxed space-y-4">
+      <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-4">{title}</h2>
+      <div className="text-ink-2 text-base sm:text-lg leading-relaxed space-y-4">
         {children}
       </div>
     </section>
@@ -35,17 +34,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function Privacy() {
   return (
-    <div className="bg-slate-800 text-white min-h-screen">
-      <main className="max-w-3xl mx-auto px-6 sm:px-12 py-16 sm:py-24">
-        <Link href="/" className="text-emerald-400 hover:text-emerald-300 text-sm">
-          ← verdureai.com
-        </Link>
+    <div className="min-h-screen">
+      <main className="max-w-3xl mx-auto px-5 sm:px-8 pt-14 sm:pt-20">
+        <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight mb-3">Privacy</h1>
+        <p className="text-ink-soft mb-12 text-sm">Last updated {UPDATED}</p>
 
-        <h1 className="text-4xl sm:text-5xl font-bold text-emerald-400 mt-8 mb-3">Privacy</h1>
-        <p className="text-slate-400 mb-12 text-sm">Last updated {UPDATED}</p>
-
-        <div className="border-l-2 border-emerald-400 pl-6 mb-14">
-          <p className="text-lg sm:text-xl text-slate-100 leading-relaxed">
+        <div className="mb-14">
+          <p className="text-lg sm:text-xl text-ink leading-relaxed">
             Verdure runs AI models on your own device. Your conversations, your recordings
             and your files stay there. We do not run a server that sees them, we do not
             collect analytics, and there is no account to create.
@@ -72,15 +67,15 @@ export default function Privacy() {
 
         <Section title="Every time Verdure uses the internet">
           <p>This is the complete list.</p>
-          <ol className="list-decimal pl-6 space-y-4 marker:text-emerald-400">
+          <ol className="list-decimal pl-6 space-y-4 marker:text-green">
             <li>
-              <span className="font-semibold text-white">Downloading an AI model.</span>{' '}
+              <span className="font-semibold text-ink">Downloading an AI model.</span>{' '}
               Models are fetched from Hugging Face, a public host we do not operate. Like any
               download, it shows them your IP address. It happens when you choose a model, and
               not again.
             </li>
             <li>
-              <span className="font-semibold text-white">
+              <span className="font-semibold text-ink">
                 Checking for updates — desktop only, and only if you turn it on.
               </span>{' '}
               Verdure for Mac can check verdureai.com for a new version. That request would
@@ -98,7 +93,7 @@ export default function Privacy() {
         </Section>
 
         <Section title="What we collect">
-          <p className="text-xl text-white font-semibold">
+          <p className="text-xl text-ink font-semibold">
             From the app: nothing.
           </p>
           <p>
@@ -111,13 +106,13 @@ export default function Privacy() {
 
         <Section title="Permissions the app asks for">
           <p>
-            <span className="font-semibold text-white">Microphone</span> — only used while you
+            <span className="font-semibold text-ink">Microphone</span> — only used while you
             are actively dictating, and released as soon as you stop. Audio is transcribed on
             your device and discarded. You can refuse it and everything except dictation still
             works.
           </p>
           <p>
-            <span className="font-semibold text-white">Network and storage</span> — to download
+            <span className="font-semibold text-ink">Network and storage</span> — to download
             AI models and keep them on your device.
           </p>
         </Section>
@@ -153,10 +148,10 @@ export default function Privacy() {
           <p>
             Questions, deletion requests, or anything else:{' '}
             <a
-              href="mailto:glwodu@gmail.com"
-              className="text-emerald-400 hover:text-emerald-300 underline"
+              href="mailto:wodu@verdureai.com"
+              className="text-green hover:text-green-dark underline"
             >
-              glwodu@gmail.com
+              wodu@verdureai.com
             </a>
           </p>
         </Section>

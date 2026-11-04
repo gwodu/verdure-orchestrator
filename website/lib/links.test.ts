@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONTACT_EMAIL, MACOS_DMG, RELEASES_PAGE, SDK_REQUEST_MAILTO, mailto } from './links';
+import { CONTACT_EMAIL, CONTACT_MAILTO, MACOS_DMG, RELEASES_PAGE, SDK_REQUEST_MAILTO, mailto } from './links';
 
 describe('the links the site hands out', () => {
   it('points downloads at the public releases repository, never at the private source or the updater endpoint', () => {
@@ -7,6 +7,11 @@ describe('the links the site hands out', () => {
     expect(MACOS_DMG.startsWith(RELEASES_PAGE + '/download/')).toBe(true);
     expect(MACOS_DMG).toMatch(/\.dmg$/);
     expect(MACOS_DMG).not.toContain('verdureai.com/updates');
+  });
+
+  it('reaches the founder at the work address, not a personal one (founder, 2026-11-04)', () => {
+    expect(CONTACT_EMAIL).toBe('wodu@verdureai.com');
+    expect(CONTACT_MAILTO.startsWith('mailto:wodu@verdureai.com?')).toBe(true);
   });
 
   it('builds a mailto that mail clients decode, spaces and newlines included', () => {

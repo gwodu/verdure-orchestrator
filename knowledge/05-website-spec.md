@@ -1,6 +1,6 @@
 # 05 — Website Spec (Phase 0)
 
-**Status:** 🟡 The four-screen funnel below is live at `/start` but no longer the site's front door. **What the site is now is specified in "The 2026-11-04 revamp" at the end of this file** (`[OQ-87]` resolved); read the sections between as the spec of the recommender only.
+**Status:** 🟡 The four-screen funnel below is live at `/start` but no longer the site's front door. **What the site is now is specified in "The 2026-11-04 revamp" and "The same day, plainer" at the end of this file** (`[OQ-87]` resolved); read the sections between as the spec of the recommender only.
 
 This file specifies the Phase 0 recommendation website at verdureai.com. The website is the orchestration brain exposed publicly — the propositional knowledge base operationalized as a recommender. No binary, no installation, no model downloads through Verdure. Just intent-and-device → recommendation → install path.
 
@@ -112,3 +112,19 @@ The founder's brief (2026-11-04): "we're reaching out to people now… this is t
 **Identity.** The "midnight glass" tokens from `skills/design.md` (navy, mint, glass, system faces, no webfont) are the site's CSS now; the old pages' Tailwind names are re-pointed at them in `globals.css`, so the recommender and the privacy page changed palette without an edit. `backdrop-filter` is on the header only: on the panels it washed out full-page captures in Chromium and bought nothing over a static gradient; `background-attachment: fixed` was dropped for iOS Safari.
 
 **Not done, and known:** no analytics at all (the spec's Plausible/Fathom was never wired); the sheet is the only measure of interest; no real user statements yet; Swift/C bindings are mentioned as not packaged.
+
+## The same day, plainer — the founder's second brief (2026-11-04)
+
+The founder saw the revamp above and rejected it: "very clunky… a lot of buttons… no clear message on what or who we are… the medical scribe is one use case, it doesn't have to take up the entire screen… who really knows what an SDK is?… our customer is highly untechnical, think a random business owner or truck drivers… the colors are kind of off… no lines where they don't need to be, no glowing buttons unless it's important. Simple." The structure below replaces the previous section's home page; the developers page, the Try page and the forms are kept.
+
+**The first thing anyone sees:** *Run your own AI. Offline, on your own device.* One sentence under it in plain words (runs on the phone or computer you already have; what you say and type stays on it; no account; no internet needed), one filled button (**Try the app** → `/try`) and one text link (**For developers →**). The same button sits in the header on every page, which is the "call to action up top" from the outside feedback.
+
+**The word "SDK" is not on the home page.** The page is `/developers` (`/sdk` redirects permanently); the nav, the footer and the home section all say "For developers". The developers page itself may say SDK, runtime and schema: its reader is the developer.
+
+**The uses are rows you open, not a wall.** "Where it fits": doctors and clinics, field teams and forms, schools and teachers, trades/drivers/small businesses — each one line closed, a short paragraph open (`<details>`). The clinical scribe is one of four and carries its honest caveat (the transcript is measured; the note-filling is "further behind", linked to the developers page's numbers). Nothing claims a customer; the rows say "the ones we are working on".
+
+**Everything else is short:** three plain things it does (ask it anything; speak instead of typing; nothing to set up), the app in one tinted panel ("There is also the app." — the founder's own phrase — Download for Mac, iPhone or Android →), four sentences for developers with one link, and "Talk to us" with the address and the founder's face small. The keep-me-posted form left the home page; the only form is the test-build one on `/try`.
+
+**The look:** off-white page, navy ink, one green (`#137a5b`, 5:1 on the page) used for the filled button and links, tinted panels instead of borders, hairlines only inside tables, no gradients, no glass, no glow, no entry animation, system sans. The "midnight glass" identity in `skills/design.md` stays the app's; the website renders the same two ideas (green, calm) on paper. The recommender and privacy pages were re-pointed to the same tokens by a class rename, not a redesign. The address everywhere is the founder's on the company domain, `wodu@verdureai.com` (`website/lib/links.ts`, tested).
+
+**Not done, and known:** the same list as the section above (no analytics, no real user statements), plus: whether mail on verdureai.com is live has to be confirmed by sending to it — the privacy page's old note said the domain had no mail, and a deletion request that bounces would be a real failure.

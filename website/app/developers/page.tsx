@@ -6,14 +6,17 @@ import { API, LICENCES, SPEECH, TIERS } from '@/lib/sdk-content';
 import { SDK_REQUEST_MAILTO } from '@/lib/links';
 
 export const metadata: Metadata = {
-  title: 'The Verdure SDK — how it works, the API, what we measured',
+  title: 'Verdure for developers — how it works, the code, what we measured',
   description:
-    'Speech to transcript to schema-valid JSON on the user’s own device. One library, one licence token, offline. The hello world in Kotlin, Rust and Python, the API, and every measured number.',
+    'Put Verdure inside your own app: speech to text and text to a filled form, offline, on the user’s own device. The hello world in Kotlin, Rust and Python, the API, and every number we measured.',
 };
 
-// The white paper, navigable: a sticky list of sections on the left, plain
-// sections on the right, each short enough to read in a minute. The facts
-// (API rows, samples, numbers) are data in lib/sdk-content.ts and tested there.
+// The page for a developer with an afternoon, navigable like good docs: a
+// sticky list of sections on the left, plain sections on the right, each short
+// enough to read in a minute. The facts (API rows, samples, numbers) are data
+// in lib/sdk-content.ts and tested there. It lives at /developers because the
+// people who send a colleague here do not all know the word "SDK"; /sdk
+// redirects (next.config.ts).
 const SECTIONS = [
   ['what', 'What it is'],
   ['how', 'How it works'],
@@ -23,19 +26,20 @@ const SECTIONS = [
   ['measured', 'What we measured'],
   ['privacy', 'Privacy and licences'],
   ['not-yet', 'What is not done yet'],
-  ['get', 'Get the SDK'],
+  ['get', 'Get the test kit'],
 ] as const;
 
 export default function Sdk() {
   return (
-    <main className="max-w-6xl mx-auto px-5 sm:px-8 pt-12 sm:pt-16">
-      <p className="text-mint-bright text-xs sm:text-sm tracking-[0.2em] uppercase mb-4">The Verdure SDK</p>
-      <h1 className="text-3xl sm:text-5xl font-bold leading-tight max-w-3xl">
-        Speech to transcript to structured JSON, on the device in front of your user.
+    <main className="max-w-6xl mx-auto px-5 sm:px-8 pt-14 sm:pt-20">
+      <p className="text-ink-soft text-sm mb-4">For developers</p>
+      <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight leading-tight max-w-3xl">
+        Put Verdure inside your own app.
       </h1>
-      <p className="mt-5 text-lg sm:text-xl text-slate-300 max-w-3xl leading-relaxed">
-        This page is the whole story: what the runtime does, the code you write, how it chooses a model, and the
-        numbers we measured, including the ones that are not good enough yet.
+      <p className="mt-5 text-lg sm:text-xl text-ink-2 max-w-3xl leading-relaxed">
+        Speech to text, and text to a filled form, on your user&rsquo;s own device with no internet. This page is
+        the whole story: what the runtime does, the code you write, how it chooses a model, and the numbers we
+        measured, including the ones that are not good enough yet.
       </p>
 
       <div className="mt-12 grid lg:grid-cols-[220px_1fr] gap-10">
@@ -44,8 +48,8 @@ export default function Sdk() {
           <ol className="flex lg:flex-col gap-x-5 gap-y-2 max-w-full overflow-x-auto whitespace-nowrap pb-2 lg:pb-0 text-sm">
             {SECTIONS.map(([id, label], i) => (
               <li key={id}>
-                <a href={`#${id}`} className="text-ink-soft hover:text-mint-bright">
-                  <span className="text-mint-bright/70 mr-2">{i + 1}</span>{label}
+                <a href={`#${id}`} className="text-ink-soft hover:text-ink">
+                  <span className="text-ink-soft/60 mr-2">{i + 1}</span>{label}
                 </a>
               </li>
             ))}
@@ -59,9 +63,9 @@ export default function Sdk() {
               three things:
             </p>
             <ol className="list-decimal pl-6 space-y-2">
-              <li><b>Speech to text.</b> Microphone audio in, transcript events out.</li>
-              <li><b>Text to a filled form.</b> You give it free text and a JSON Schema you wrote; it returns JSON that matches the schema, or an error that says exactly which fields were wrong.</li>
-              <li><b>Search over documents already on the device.</b> You index documents; you ask a question; you get the best passages back.</li>
+              <li><b className="text-ink">Speech to text.</b> Microphone audio in, transcript events out.</li>
+              <li><b className="text-ink">Text to a filled form.</b> You give it free text and a JSON Schema you wrote; it returns JSON that matches the schema, or an error that says exactly which fields were wrong.</li>
+              <li><b className="text-ink">Search over documents already on the device.</b> You index documents; you ask a question; you get the best passages back.</li>
             </ol>
             <p>
               The company keeps its own app, screens and cloud. Verdure is the engine underneath. It never opens a
@@ -76,16 +80,16 @@ export default function Sdk() {
           </Section>
 
           <Section id="how" title="How it works">
-            <div className="glass p-3 sm:p-6"><Pipeline /></div>
+            <Pipeline />
             <p>The flow your code drives, in order:</p>
             <ol className="list-decimal pl-6 space-y-2">
-              <li><b>start</b> — verify the licence token, read the device: tier, free memory, free disk, cores. No network.</li>
-              <li><b>loadManifest</b> — trust the signed list of bundles. A bundle is one set of model files for one task on certain device tiers.</li>
-              <li><b>recommend</b> — the bundle this device can run now, for live speech. Everything passed over is explained in a sentence: not enough memory, not enough disk, too slow to keep pace.</li>
-              <li><b>download</b> — every file, resumable, verified by SHA-256, shared between bundles that use the same model.</li>
-              <li><b>load</b> — the engines into memory. Refused with the numbers if memory is short.</li>
-              <li><b>transcribe</b> — push 16 kHz audio, get transcript events.</li>
-              <li><b>extract</b> — the transcript plus your schema in, valid JSON out. The model only ever sees an outline of the schema and the rule &ldquo;never invent numbers, names or dates&rdquo;; the output is validated against the real schema, and one repair round is attempted before an error is returned.</li>
+              <li><b className="text-ink">start</b> — verify the licence token, read the device: tier, free memory, free disk, cores. No network.</li>
+              <li><b className="text-ink">loadManifest</b> — trust the signed list of bundles. A bundle is one set of model files for one task on certain device tiers.</li>
+              <li><b className="text-ink">recommend</b> — the bundle this device can run now, for live speech. Everything passed over is explained in a sentence: not enough memory, not enough disk, too slow to keep pace.</li>
+              <li><b className="text-ink">download</b> — every file, resumable, verified by SHA-256, shared between bundles that use the same model.</li>
+              <li><b className="text-ink">load</b> — the engines into memory. Refused with the numbers if memory is short.</li>
+              <li><b className="text-ink">transcribe</b> — push 16 kHz audio, get transcript events.</li>
+              <li><b className="text-ink">extract</b> — the transcript plus your schema in, valid JSON out. The model only ever sees an outline of the schema and the rule &ldquo;never invent numbers, names or dates&rdquo;; the output is validated against the real schema, and one repair round is attempted before an error is returned.</li>
             </ol>
           </Section>
 
@@ -166,11 +170,11 @@ export default function Sdk() {
               </table>
             </div>
             <ul className="list-disc pl-6 space-y-2">
-              <li><b>Quality travels.</b> The phone produced the same transcript quality as the laptop, file for file, with the same words missed.</li>
-              <li><b>Memory on the Pixel 8a:</b> the base bundle 683 MB idle and 952 MB peak; the small bundle 635 MB idle and 1,143 MB peak. No out-of-memory kill in 79 minutes of audio.</li>
-              <li><b>Download and load:</b> 979 MB in 54 s over Wi-Fi, verified; load 15 s (small) and 1.2 s (base). Two bundles that share a model download it once.</li>
-              <li><b>Keyterms hurt.</b> Feeding a 40-word vocabulary list to the recogniser doubled the error rate. It is documented as experimental and off by default.</li>
-              <li><b>A medical fine-tune was worse.</b> A clinical Whisper medium fine-tuned on African-accented read speech scored 83 % word error on these consultations as converted. We do not ship it.</li>
+              <li><b className="text-ink">Quality travels.</b> The phone produced the same transcript quality as the laptop, file for file, with the same words missed.</li>
+              <li><b className="text-ink">Memory on the Pixel 8a:</b> the base bundle 683 MB idle and 952 MB peak; the small bundle 635 MB idle and 1,143 MB peak. No out-of-memory kill in 79 minutes of audio.</li>
+              <li><b className="text-ink">Download and load:</b> 979 MB in 54 s over Wi-Fi, verified; load 15 s (small) and 1.2 s (base). Two bundles that share a model download it once.</li>
+              <li><b className="text-ink">Keyterms hurt.</b> Feeding a 40-word vocabulary list to the recogniser doubled the error rate. It is documented as experimental and off by default.</li>
+              <li><b className="text-ink">A medical fine-tune was worse.</b> A clinical Whisper medium fine-tuned on African-accented read speech scored 83 % word error on these consultations as converted. We do not ship it.</li>
             </ul>
             <p className="text-ink-soft text-sm">
               Full tables and method in the repository&rsquo;s <code className="inline">TEST_REPORT.md</code> and <code className="inline">knowledge/26-sdk.md</code>; they come with the SDK.
@@ -203,15 +207,15 @@ export default function Sdk() {
 
           <Section id="not-yet" title="What is not done yet">
             <ul className="list-disc pl-6 space-y-2">
-              <li><b>Extraction on the smallest language model is not good enough.</b> The 0.5B model returned schema-valid facts on 3 of 10 one-minute windows on the phone; the rest failed validation. The 1.5B bundle is the next measurement. Until then, extraction on a phone is a demonstration, not a product.</li>
-              <li><b>Speed is measured on two devices.</b> A Pixel 8a and an 8 GB Intel Mac. Other tiers are not judged for speed until we measure them.</li>
-              <li><b>Windows are fixed at 12 seconds.</b> Sentences get cut; voice-activity windowing is next.</li>
-              <li><b>Grammar-constrained decoding is built but off</b>, after the engine aborted on a multi-byte token in an earlier app. Validation plus one repair round stands in for it.</li>
-              <li><b>Bindings:</b> Kotlin, Python and Rust today. Swift and a C header are generated by the same tool and not yet packaged.</li>
+              <li><b className="text-ink">Extraction on the smallest language model is not good enough.</b> The 0.5B model returned schema-valid facts on 3 of 10 one-minute windows on the phone; the rest failed validation. The 1.5B bundle is the next measurement. Until then, extraction on a phone is a demonstration, not a product.</li>
+              <li><b className="text-ink">Speed is measured on two devices.</b> A Pixel 8a and an 8 GB Intel Mac. Other tiers are not judged for speed until we measure them.</li>
+              <li><b className="text-ink">Windows are fixed at 12 seconds.</b> Sentences get cut; voice-activity windowing is next.</li>
+              <li><b className="text-ink">Grammar-constrained decoding is built but off</b>, after the engine aborted on a multi-byte token in an earlier app. Validation plus one repair round stands in for it.</li>
+              <li><b className="text-ink">Bindings:</b> Kotlin, Python and Rust today. Swift and a C header are generated by the same tool and not yet packaged.</li>
             </ul>
           </Section>
 
-          <Section id="get" title="Get the SDK">
+          <Section id="get" title="Get the test kit">
             <p>
               Write to us and say which platform you build for. You receive the Android zip (library, Kotlin binding, a
               ten-year sandbox licence, a signed example manifest with real models, the guide and a changelog) or the
@@ -219,7 +223,7 @@ export default function Sdk() {
             </p>
             <div className="flex flex-wrap gap-4">
               <a href={SDK_REQUEST_MAILTO} className="btn-primary">Email for the test kit →</a>
-              <Link href="/try" className="btn-secondary">Try the app first</Link>
+              <Link href="/try" className="btn-text">Try the app first →</Link>
             </div>
           </Section>
         </div>
@@ -231,8 +235,8 @@ export default function Sdk() {
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
     <section id={id} className="anchor">
-      <h2 className="text-2xl sm:text-3xl font-bold mb-5">{title}</h2>
-      <div className="space-y-5 text-slate-300 leading-relaxed text-base sm:text-lg">{children}</div>
+      <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-5">{title}</h2>
+      <div className="space-y-5 text-ink-2 leading-relaxed text-base sm:text-lg">{children}</div>
     </section>
   );
 }

@@ -1,165 +1,155 @@
 import Link from 'next/link';
-import Pipeline from '@/components/Pipeline';
-import KeepPosted from '@/components/KeepPosted';
-import { LINKEDIN, MACOS_DMG } from '@/lib/links';
+import { CONTACT_EMAIL, LINKEDIN, MACOS_DMG } from '@/lib/links';
 
-// The home page has one job: a company deciding whether to put Verdure in its
-// app should know in ten seconds what it does, and be one click from running
-// it. Everything else on the page earns the next sentence honestly
-// (skills/copywriting.md): what it does, where it runs, what we measured,
-// then the app for anyone who wants to feel it on their own device.
+// The home page has one job: anyone, technical or not, knows in one glance
+// what Verdure is — AI that runs on your own device, offline — and sees the
+// one thing to do next. The uses are a list you open, not a wall you scroll;
+// the developers get one short section and a door. Plain words throughout:
+// the reader may be a clinic owner or a truck driver, not an engineer
+// (skills/design.md, "Assume zero technical knowledge").
 export default function Home() {
   return (
-    <main className="max-w-6xl mx-auto px-5 sm:px-8">
-      {/* Hero */}
-      <section className="pt-20 sm:pt-28 pb-16 sm:pb-20">
-        <p className="rise text-mint-bright text-xs sm:text-sm tracking-[0.2em] uppercase mb-5">The Verdure SDK</p>
-        <h1 className="rise text-4xl sm:text-6xl md:text-7xl font-bold leading-[1.05] tracking-tight max-w-4xl">
-          Run your local models with a few lines of code.
+    <main className="max-w-5xl mx-auto px-5 sm:px-8">
+      {/* What we are */}
+      <section className="pt-20 sm:pt-32 pb-20 sm:pb-28 max-w-3xl">
+        <h1 className="text-[2.6rem] leading-[1.05] sm:text-6xl md:text-7xl font-semibold tracking-tight">
+          Run your own AI. Offline, on your own device.
         </h1>
-        <p className="rise-2 mt-7 text-lg sm:text-2xl text-slate-300 leading-relaxed max-w-3xl">
-          Verdure is a runtime your app embeds. On the user&rsquo;s own phone or laptop it turns speech into a
-          transcript, and the transcript into JSON that matches your schema. Offline. Nothing leaves the device.
+        <p className="mt-7 text-lg sm:text-2xl text-ink-2 leading-relaxed">
+          Verdure runs AI on the phone or computer you already have. What you say and type stays on it.
+          No account. No internet needed.
         </p>
-        <div className="rise-3 mt-10 flex flex-wrap items-center gap-4">
-          <a href="/sdk#hello" className="btn-primary text-base sm:text-lg">See the hello world →</a>
-          <Link href="/sdk" className="btn-secondary text-base sm:text-lg">Read how it works</Link>
+        <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
+          <Link href="/try" className="btn-primary text-base sm:text-lg">Try the app</Link>
+          <Link href="/developers" className="btn-text text-base sm:text-lg">For developers →</Link>
         </div>
-        <p className="rise-3 mt-5 text-ink-soft">
-          Not a developer? <Link href="/try" className="text-mint-bright hover:underline">Try Verdure on your own Mac, iPhone or Android.</Link>
+      </section>
+
+      {/* What it does */}
+      <section className="pb-20 sm:pb-28 grid sm:grid-cols-3 gap-x-8 gap-y-10">
+        <Point title="Ask it anything.">
+          Like any AI chat, except the answer is made on your device, not on someone else&rsquo;s server.
+        </Point>
+        <Point title="Speak instead of typing.">
+          Say it, and it becomes text. The recording never leaves your device.
+        </Point>
+        <Point title="Nothing to set up.">
+          Open it. Verdure picks the AI that fits your device, tells you how big it is, and gets it ready.
+        </Point>
+      </section>
+
+      {/* Where it fits */}
+      <section className="pb-20 sm:pb-28">
+        <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-3">Where it fits</h2>
+        <p className="text-ink-2 text-lg mb-8 max-w-2xl">
+          One engine, many jobs. These are the ones we are working on. Open one to read more.
         </p>
-      </section>
-
-      {/* What the app gets */}
-      <section className="grid md:grid-cols-3 gap-5 mb-20">
-        {[
-          {
-            t: 'Speech to text',
-            d: 'Microphone audio in, transcript events out as the person speaks. The speech model is chosen for the device, not for the demo.',
-          },
-          {
-            t: 'Text to a filled form',
-            d: 'Hand Verdure your JSON Schema. You get JSON that validates against it, or an error that names each field that was wrong.',
-          },
-          {
-            t: 'The right model for the device',
-            d: 'Verdure reads the memory, the disk and the measured speed of the phone it is on, then picks the bundle that runs live, or says in a sentence why not.',
-          },
-        ].map((c) => (
-          <div key={c.t} className="glass p-6 sm:p-7">
-            <h2 className="text-xl font-bold text-mint-bright mb-2">{c.t}</h2>
-            <p className="text-slate-300 leading-relaxed">{c.d}</p>
-          </div>
-        ))}
-      </section>
-
-      {/* The picture */}
-      <section className="mb-20">
-        <div className="glass p-4 sm:p-8">
-          <Pipeline />
+        <div className="space-y-2.5 max-w-3xl">
+          <Row title="Doctors and clinics" lead="A note written while you talk with the patient, without the conversation leaving the room.">
+            <p>
+              This is the use we have measured most. On an ordinary phone and an 8 GB laptop, Verdure turns a
+              consultation into text and misses about one clinical term in six, with the same quality on both.
+              The transcript is then shaped into the fields of your note, on the device, and handed to your
+              records system when you are ready.
+            </p>
+            <p>
+              Turning the transcript into a finished note is further behind than the transcript itself. We say
+              exactly how far on the <Link href="/developers#measured" className="link">developers page</Link>.
+            </p>
+          </Row>
+          <Row title="Field teams and forms" lead="Say what you saw, and the form is drafted for you, on a cheap phone, with no signal.">
+            <p>
+              Built for the health worker on a home visit and anyone who fills the same form twenty times a day.
+              Verdure runs on phones with 4 GB of memory. Everything waits on the phone until there is a
+              connection, if there ever needs to be one.
+            </p>
+          </Row>
+          <Row title="Schools and teachers" lead="A tutor that works from the lesson material on the device, and coaching from a recorded lesson that stays in the school.">
+            <p>
+              The same engine answers questions from documents already on the device, and turns a recorded lesson
+              into text a coach can work from, without the recording going anywhere.
+            </p>
+          </Row>
+          <Row title="Trades, drivers, small businesses" lead="Notes, messages and questions handled by voice, in the cab or on the shop floor, with no signal.">
+            <p>
+              This is what the app does today: a private chat with an AI on your own device, and dictation into it.
+              Open it on your Mac, or ask for a phone test build on the <Link href="/try" className="link">try page</Link>.
+            </p>
+          </Row>
         </div>
-        <p className="mt-4 text-ink-soft text-sm sm:text-base max-w-3xl">
-          One library (whisper.cpp and llama.cpp compiled in), one licence token verified offline, one signed
-          manifest that says which model files exist and where they come from. Your app keeps its screens and its
-          cloud. Verdure is the engine underneath.
-        </p>
       </section>
 
-      {/* Measured, not promised */}
-      <section className="mb-20">
-        <h2 className="text-2xl sm:text-3xl font-bold mb-2">Measured, not promised</h2>
-        <p className="text-ink-soft mb-8 max-w-3xl">
-          Every number here comes from a run we can repeat: ten real two-speaker GP consultations, scored by word
-          error and by the clinical terms a note is made of, on an 8 GB Intel Mac and a Pixel 8a.
-        </p>
-        <div className="grid sm:grid-cols-3 gap-5">
-          <Stat big="1 in 6" small="clinical terms missed with Whisper small, down from 1 in 3.6 with Whisper base. Same result on the phone as on the laptop." />
-          <Stat big="54 s" small="to download the 979 MB clinical bundle on a Pixel 8a over Wi-Fi, verified by hash. 15 s to load it; 1.2 s for the smaller one." />
-          <Stat big="1.25×" small="real time for the live-speech bundle on a Pixel 8a, flat out and throttled. The larger model runs at 3.2×, so Verdure picks it only for recordings." />
-        </div>
-        <p className="mt-6 text-ink-soft">
-          <Link href="/sdk#measured" className="text-mint-bright hover:underline">All the numbers, including what is not done yet →</Link>
-        </p>
-      </section>
-
-      {/* Who it is for */}
-      <section className="mb-20 grid md:grid-cols-[1.2fr_1fr] gap-8 items-start">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-bold mb-4">For apps where the data has to stay in the room</h2>
-          <p className="text-slate-300 leading-relaxed mb-4">
-            A clinician dictating between patients. A lesson being recorded for a teacher&rsquo;s coaching. A community
-            health worker filling a form on a 4 GB phone after a home visit. Their words should not have to leave the
-            building to become a note.
-          </p>
-          <p className="text-slate-300 leading-relaxed">
-            Verdure runs on the phones and laptops those people already have, down to a 4 GB phone for form
-            filling and an 8 GB Intel laptop for a full scribe. Your cloud stays your fallback, through a hook you
-            implement; Verdure never opens that connection itself.
-          </p>
-        </div>
-        <ul className="glass p-6 space-y-3 text-slate-300">
-          <li><span className="text-mint-bright font-semibold">Clinical scribes</span> — offline transcript and facts, uploaded when the connection returns.</li>
-          <li><span className="text-mint-bright font-semibold">Education</span> — a tutor over lesson packs already on the device; coaching from a recorded lesson, never the audio.</li>
-          <li><span className="text-mint-bright font-semibold">Community health</span> — speak to fill the form, on the cheapest phones in the field.</li>
-        </ul>
-      </section>
-
-      {/* Try the app */}
-      <section className="mb-20">
-        <div className="glass p-6 sm:p-10 grid md:grid-cols-[1fr_auto] gap-6 items-center">
+      {/* The app */}
+      <section className="pb-20 sm:pb-28">
+        <div className="card p-7 sm:p-10 grid md:grid-cols-[1fr_auto] gap-7 items-center">
           <div>
-            <h2 className="text-2xl sm:text-3xl font-bold mb-2">Want to feel it first?</h2>
-            <p className="text-slate-300 leading-relaxed max-w-2xl">
-              Verdure the app runs on the same engine: a private chat with a model on your own device, dictation
-              into it, and nothing sent anywhere. Download it for your Mac now, or ask for a test build on iPhone
-              or Android.
+            <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-3">There is also the app.</h2>
+            <p className="text-ink-2 text-lg leading-relaxed max-w-2xl">
+              Verdure is an app you can use today. A private chat with an AI on your own device, and dictation
+              into it. Free, no account.
             </p>
           </div>
-          <div className="flex flex-col gap-3">
-            <a href={MACOS_DMG} className="btn-primary justify-center">Download for macOS</a>
-            <Link href="/try" className="btn-secondary justify-center">iPhone, iPad or Android</Link>
+          <div className="flex flex-col gap-3 sm:min-w-[220px]">
+            <a href={MACOS_DMG} className="btn-primary">Download for Mac</a>
+            <Link href="/try" className="btn-text justify-center">iPhone or Android →</Link>
           </div>
         </div>
       </section>
 
-      {/* Keep me posted */}
-      <section className="mb-20 max-w-3xl">
-        <KeepPosted
-          intent="homepage: keep me posted"
-          title="Keep me posted"
-          blurb="A short note when there is something new to try: new builds, new platforms. No newsletter, no tracking."
-          button="Keep me posted"
-        />
+      {/* Developers */}
+      <section className="pb-20 sm:pb-28 max-w-3xl">
+        <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-3">For developers</h2>
+        <p className="text-ink-2 text-lg leading-relaxed mb-5">
+          Put Verdure inside your own app. A few lines of code give it speech to text and text to a filled form,
+          running offline on your user&rsquo;s device. The developers page has the code, how it chooses a model
+          for each device, every number we measured, and how to get the test kit.
+        </p>
+        <Link href="/developers" className="btn-text text-lg !pl-0">See how it works →</Link>
       </section>
 
-      {/* Founder */}
-      <section className="mb-10 flex flex-col sm:flex-row gap-6 sm:gap-10 items-center sm:items-start">
-        <img
-          src="/Founders-Portrait.jpg"
-          alt="Gesi Wodu"
-          className="w-36 h-44 object-cover object-top rounded-2xl border border-[rgba(76,216,173,0.3)]"
-        />
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold mb-1">Built by Gesi Wodu</h2>
-          <p className="text-slate-300 leading-relaxed max-w-2xl">
-            Computer science at the University of Toronto, then this: AI that is affordable, power-efficient and
-            runs where the person is, for people doing good work. If you are building for them, I would like to
-            hear from you.
-          </p>
-          <a href={LINKEDIN} target="_blank" rel="noopener noreferrer" className="inline-block mt-3 text-mint-bright hover:underline">
-            Connect on LinkedIn →
-          </a>
+      {/* Talk to us */}
+      <section className="pb-10 max-w-3xl">
+        <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-3">Talk to us</h2>
+        <p className="text-ink-2 text-lg leading-relaxed">
+          Want Verdure for your clinic, your team or your product? Write to{' '}
+          <a href={`mailto:${CONTACT_EMAIL}`} className="link">{CONTACT_EMAIL}</a>. You will hear back from the
+          person who built it.
+        </p>
+        <div className="mt-8 flex items-center gap-5">
+          <img
+            src="/Founders-Portrait.jpg"
+            alt="Gesi Wodu"
+            className="w-16 h-16 rounded-full object-cover object-top"
+          />
+          <div className="text-ink-2">
+            <p className="font-semibold text-ink">Gesi Wodu, founder</p>
+            <a href={LINKEDIN} target="_blank" rel="noopener noreferrer" className="link text-sm">LinkedIn</a>
+          </div>
         </div>
       </section>
     </main>
   );
 }
 
-function Stat({ big, small }: { big: string; small: string }) {
+function Point({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="glass p-6">
-      <p className="text-4xl sm:text-5xl font-bold text-mint-bright mb-2">{big}</p>
-      <p className="text-slate-300 text-sm sm:text-base leading-relaxed">{small}</p>
+    <div>
+      <h2 className="text-xl font-semibold tracking-tight mb-2">{title}</h2>
+      <p className="text-ink-2 leading-relaxed">{children}</p>
     </div>
+  );
+}
+
+function Row({ title, lead, children }: { title: string; lead: string; children: React.ReactNode }) {
+  return (
+    <details className="row">
+      <summary>
+        <span>
+          <span className="font-semibold text-ink">{title}</span>
+          <span className="block text-ink-2 mt-0.5">{lead}</span>
+        </span>
+      </summary>
+      <div className="text-ink-2 leading-relaxed space-y-3">{children}</div>
+    </details>
   );
 }

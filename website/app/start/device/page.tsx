@@ -26,13 +26,13 @@ export default function DeviceScreen() {
   if (!ready) return null;
 
   return (
-    <main className="bg-slate-800 text-white min-h-screen px-6 sm:px-12 py-16">
+    <main className="bg-paper text-ink min-h-screen px-6 sm:px-12 py-16">
       <div className="max-w-3xl mx-auto">
-        <p className="text-emerald-400 text-sm mb-3 tracking-widest uppercase">Step 2 of 4</p>
+        <p className="text-green text-sm mb-3 tracking-widest uppercase">Step 2 of 4</p>
         <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-3 leading-tight">
           What kind of computer will you use?
         </h1>
-        <p className="text-slate-300 text-lg mb-10">
+        <p className="text-ink-2 text-lg mb-10">
           Pick whichever one sounds the most like yours.
         </p>
         <div className="grid sm:grid-cols-2 gap-4">
@@ -40,20 +40,20 @@ export default function DeviceScreen() {
             <button
               key={card.id}
               onClick={() => pick(card)}
-              className="text-left p-6 bg-slate-900 border border-slate-700 rounded-xl hover:border-emerald-400 hover:bg-slate-900/60 transition group"
+              className="text-left p-6 bg-white border border-line rounded-xl hover:border-green hover:bg-white/60 transition group"
             >
               <div className="text-3xl mb-3" aria-hidden="true">{card.emoji}</div>
-              <h2 className="text-xl font-semibold mb-1 text-white group-hover:text-emerald-400 transition-colors">
+              <h2 className="text-xl font-semibold mb-1 text-ink group-hover:text-green-dark transition-colors">
                 {card.title}
               </h2>
-              <p className="text-slate-400 text-sm">{card.description}</p>
+              <p className="text-ink-soft text-sm">{card.description}</p>
             </button>
           ))}
         </div>
         <div className="mt-10">
           <button
             onClick={() => router.push('/start')}
-            className="text-slate-400 hover:text-white text-sm"
+            className="text-ink-soft hover:text-ink text-sm"
           >
             ← Back
           </button>

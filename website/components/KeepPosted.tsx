@@ -2,10 +2,10 @@
 
 import { useState, type FormEvent } from 'react';
 
-// One form, two uses: "keep me posted" on the home page and "send me a test
-// build" on the Try page. Both land in the same waitlist sheet (lib/sheets.ts)
-// through /api/waitlist, with `intentText` saying which, so nothing new had
-// to be built on the server to make the beta reachable from a phone.
+// One form: "send me a test build" on the Try page. It lands in the waitlist
+// sheet (lib/sheets.ts) through /api/waitlist, with `intentText` saying which
+// form it came from, so nothing new had to be built on the server to make the
+// beta reachable from a phone.
 export default function KeepPosted({
   intent,
   title,
@@ -49,14 +49,14 @@ export default function KeepPosted({
   };
 
   const field =
-    'w-full p-3 rounded-xl bg-[rgba(2,19,41,0.6)] text-ink placeholder-[#6f8b99] border border-[rgba(76,216,173,0.25)] focus:border-mint-bright focus:outline-none';
+    'w-full p-3 rounded-lg bg-white text-ink placeholder-ink-soft border border-line focus:border-green focus:outline-none';
 
   return (
-    <div className="glass p-6 sm:p-8">
-      <h3 className="text-xl sm:text-2xl font-bold text-ink mb-2">{title}</h3>
-      <p className="text-ink-soft mb-5">{blurb}</p>
+    <div className="card p-6 sm:p-8">
+      <h3 className="text-xl sm:text-2xl font-semibold tracking-tight mb-2">{title}</h3>
+      <p className="text-ink-2 mb-5">{blurb}</p>
       {status === 'success' ? (
-        <p className="text-mint-bright font-semibold">
+        <p className="text-green font-semibold">
           Got it. We&rsquo;ll write to {email}. Nothing else happens with your address.
         </p>
       ) : (
@@ -73,10 +73,10 @@ export default function KeepPosted({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <button type="submit" disabled={status === 'submitting'} className="btn-primary disabled:opacity-50">
+            <button type="submit" disabled={status === 'submitting'} className="btn-primary">
               {status === 'submitting' ? 'Sending…' : button}
             </button>
-            {status === 'error' && <p className="text-coral text-sm">{errorMsg}</p>}
+            {status === 'error' && <p className="text-red-700 text-sm">{errorMsg}</p>}
           </div>
         </form>
       )}
