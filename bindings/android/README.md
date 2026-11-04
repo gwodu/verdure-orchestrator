@@ -43,7 +43,7 @@ val sdk = Verdure.start(assets.open("verdure/sandbox.token").readBytes().decodeT
 val caps = sdk.capabilities()                     // caps.tier e.g. "P3", caps.availableRamMb
 
 sdk.loadManifest(asset("verdure/example.json"), asset("verdure/example.json.sig"), asset("verdure/issuer.pub").trim())
-val bundle = sdk.recommend(Task.SCRIBE)           // scribe-small on an 8 GB phone; or sdk.fit("scribe-small") / sdk.fit("scribe-floor") to judge your own pick
+val bundle = sdk.recommend(Task.SCRIBE)           // scribe-small on an 8 GB phone (about 3× real time on a Pixel 8a: better words, finishes after the visit); sdk.fit("scribe-floor") if the transcript must keep pace
 if (!sdk.isDownloaded(bundle.id)) sdk.download(bundle.id, object : ProgressListener {
     override fun onProgress(done: ULong, total: ULong) { /* bytes */ }
     override fun onStatus(message: String) { }
@@ -93,7 +93,7 @@ engines that stream and never arrives from this one.
 process already holds, never below the kernel's `MemAvailable` — and refuse with the numbers when a
 bundle does not fit. The figure falls after a `load` because the models now count against it. The
 `scribe-floor` bundle needs about 1.3 GB (measured on a Pixel 8a: 683 MB PSS idle after load, 952 MB
-peak during `extract`); `scribe-small` about 1.7 GB by the same rule (Pixel measurement pending); a 1.5B-class bundle about 2.5 GB.
+peak during `extract`); `scribe-small` about 1.7 GB by the same rule (measured on a Pixel 8a: 635 MB PSS idle, 1,143 MB peak during transcription, 1,106 MB during `extract`); a 1.5B-class bundle about 2.5 GB.
 
 The engines live inside the `Verdure` object: keep one instance for as long as your foreground service
 records, in a scope that outlives the Activity (an application-level holder or the service itself). Drop

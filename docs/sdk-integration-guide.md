@@ -275,18 +275,18 @@ The SDK does not choose a speech model for you by quality; it chooses the bundle
 
 **For medical or clinical speech, use Whisper small, not Whisper base.** We ran both through the SDK's own `transcribe()` on ten real two-speaker GP consultations (PriMock57, 14,700 reference words) and scored them on word error rate and on a list of a hundred clinical terms — drug names, symptoms, conditions — because the clinical words are what a note is made of.
 
-| speech model | download | word error rate | clinical terms missed | speed on an 8 GB Intel Mac |
-|---|---|---|---|---|
-| Whisper base (`scribe-floor`) | 141 MB | 26.5 % | 1 in 3.6 | 0.28× real time |
-| **Whisper small** (`scribe-small`) | 465 MB | **21.6 %** | **1 in 6** | 0.75× real time |
+| speech model | download | word error rate | clinical terms missed | speed on an 8 GB Intel Mac | speed on a Pixel 8a (8 GB phone) |
+|---|---|---|---|---|---|
+| Whisper base (`scribe-floor`) | 141 MB | 26.5 % | 1 in 3.6 | 0.28× real time | 0.7–1.8× real time |
+| **Whisper small** (`scribe-small`) | 465 MB | **21.6 %** | **1 in 6** | 0.75× real time | **3.2× real time** (2.7–4.0) |
 
-Base turned *diarrhoea* into "die rule" and *eczema* into "exam"; small gets those right and still misses some (*stools* as "stall", *paracetamol* as "parasitibol"). Small is 3.3× the download and about 2.7× the compute. On a laptop that is comfortably live. On a phone it may lag the speaker; the bundle for phones is being measured on a Pixel 8a before we list it for phone tiers (`knowledge/26`, "The speech bake-off").
+Base turned *diarrhoea* into "die rule" and *eczema* into "exam"; small gets those right and still misses some (*stools* as "stall", *paracetamol* as "parasitibol"). Small is 3.3× the download and about 2.7× the compute. On a laptop that is comfortably live. On a Pixel 8a it is not: the same ten consultations run on the phone through the same API (2026-11-04) gave the same quality as the Mac — 21.1 % word error, 1 in 5.8 clinical terms missed — at 3.2× real time. A ten-minute visit finishes transcribing about twenty minutes after it ends, and a single 12 s window can block `push_pcm` for a minute or two. Base on the same phone ran at 0.7–1.8×. Nothing is lost — the SDK queues the audio — but the transcript is not live (`knowledge/26`, "Small on the Pixel").
 
-**How to act on it.** Nothing, if you call `recommend(Task.SCRIBE)`: on an 8 GB phone or any laptop it returns `scribe-small`; on a 4–6 GB phone it returns `scribe-floor`, because speed on those devices is not yet measured. If you want small everywhere, or base everywhere, pin it: `fit("scribe-small")` or `fit("scribe-floor")` tells you whether it fits that device, then `load` it. Base is a reasonable choice for everyday dictation; small is the one for clinical vocabulary. The device still has the last word: a pin that does not fit the memory is refused with the numbers, and `load_overcommit` exists for machines you have measured yourself.
+**How to act on it.** Nothing, if you call `recommend(Task.SCRIBE)`: on an 8 GB phone or any laptop it returns `scribe-small`; on a 4–6 GB phone it returns `scribe-floor`. On a phone, decide what your product needs: `scribe-small` is the better transcript after the visit, `scribe-floor` keeps pace with the speaker. Pin the one that fits. If you want small everywhere, or base everywhere, pin it: `fit("scribe-small")` or `fit("scribe-floor")` tells you whether it fits that device, then `load` it. Base is a reasonable choice for everyday dictation; small is the one for clinical vocabulary. The device still has the last word: a pin that does not fit the memory is refused with the numbers, and `load_overcommit` exists for machines you have measured yourself.
 
 **Two things not to do.** Do not fill `AsrConfig.keyterms` with a vocabulary list — a 40-word clinical list doubled the error rate in the same measurement; use `replacements` for spellings you need fixed. Do not assume a model fine-tuned "for medical speech" is better: the one we tried (a clinical Whisper medium fine-tuned on African-accented read speech) scored 83 % word error on these consultations.
 
-**What the recommendation does not cover yet:** Whisper medium and large-v3-turbo (bigger, likely better, not measured here), phones (speed), and languages other than English. The licence is the same for every Whisper size: MIT.
+**What the recommendation does not cover yet:** Whisper medium and large-v3-turbo (bigger, likely better, not measured here), phones other than the Pixel 8a, and languages other than English. The licence is the same for every Whisper size: MIT.
 
 ## 8. The developer tool
 

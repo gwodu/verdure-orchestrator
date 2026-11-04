@@ -6,6 +6,21 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 Run: `cargo test --workspace` at the repo root (no models, seconds). CI: the `sdk` job (Linux) runs it plus `cargo check -p verdure-ffi --features llama,whisper` and `cargo fmt --check`.
 
+### 2026-11-04 — Ten PriMock57 consultations on the Pixel 8a with `scribe-small` (vendor's client, `recommend()` unpinned, overnight on mains power)
+
+| | phone, Whisper small | phone, Whisper base (2026-11-03, rescored with `evals/score.py`) | Mac, Whisper small (bake-off) |
+|---|---|---|---|
+| weighted WER (12,034 reference words) | **21.1 %** | 26.2 % | 21.6 % |
+| clinical terms found | **345/417 (17.3 % missed)** | 299/417 (28.3 % missed) | 347/417 (16.8 % missed) |
+| speed, × real time | **3.22** weighted, 2.74–4.01 per consultation | 0.71–1.83 | 0.74 |
+
+- Per consultation: WER 15.3–26.0 %; terms 16/21 to 55/62; first segment 20–45 s after the stream opened; longest single `push_pcm` 35–129 s (consultation 02 blocked for over two minutes once).
+- Chosen by `recommend(SCRIBE)`: `scribe-small`, nothing skipped; 979 MB downloaded in 54.4 s over Wi-Fi; `load` 15.3 s (floor was 1.2 s). PSS 1,089 MB after load, 1,026–1,143 MB peak during ASR, 635–1,016 MB idle between files, 1,095–1,106 MB during `extract`. Free RAM was re-measured after load (4,386 → 3,389 MB), so the first phone run's "capabilities look cached" finding no longer applies.
+- Extraction over the first minute of each transcript (120–190 words): 3 of 10 windows valid, one fact each ("She's got a terrible headache since midday." → symptoms); 7 schema-invalid (missing `group`, placeholder copied into `text`); 16–114 s each, median about 33 s. The same 0.5B fault as on the Mac, `[OQ-118]`.
+- Quality is the Mac's, file for file: consultation 01 scored 20.4 % on both with the same seven terms missed (stools ×3, fever, vomiting, vomited, dioralyte, paracetamol, asthma). The Android build is faithful; the Pixel 8a is about 4.3× slower than the 8 GB Intel Mac on this model.
+- Ran 23:27–03:50 on mains with the screen off; the phone rebooted at 06:54, after every file had been written (cause not investigated, nothing lost). Scored here from the transcripts pulled off the device (`evals/out/*.pixel-small.*`, `summarise.py` row `pixel-small`); the vendor's own report is still to come.
+- **Raised for the founder:** whether the P3 phone tier keeps `scribe-small` as its default (better words, finishes well after the visit) or returns to `scribe-floor` (keeps pace, one clinical term in 3.5 missed), the other staying the documented pin. The manifest is unchanged until that call.
+
 ### 2026-11-03 — `scribe-small` end to end on the Mac, chosen by `recommend()`, nothing pinned
 
 - Manifest: `verdure manifest check` 7 bundles, `verify` ok after re-signing. `recommend --task scribe` per tier at 3600 MB: P1/P2/L1 → `scribe-floor`, P3/L2/L3 → `scribe-small`; P3 at 1500 MB → `scribe-floor` with `skipped: ["scribe-small: needs 1667 MB of memory, 1500 MB available"]`.
