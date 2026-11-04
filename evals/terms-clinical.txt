@@ -25,7 +25,7 @@ anti-inflammatories|anti-inflammatory|antiinflammatories
 eczema
 steroid
 emollients|emollient
-antihistamines|antihistamine
+antihistamines|antihistamine|anti histamines|anti histamine
 loratadine
 piriton
 fexofenadine

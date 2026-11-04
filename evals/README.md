@@ -7,6 +7,7 @@ founder's 8 GB Intel Mac with no network once the models are cached.
 |---|---|
 | `fetch-primock57.sh` | fetches three PriMock57 consultations (Babylon Health, CC BY 4.0): audio outside the repo, reference transcripts into `fixtures/primock57/` |
 | `score.py` (+ `test_score.py`) | word error rate against the reference, numbers kept, numbers invented in facts, real-time factor |
+| `rescore.py` | re-scores every transcript in `out/` after a scorer or term-list change, keeping each run's timing; no recogniser runs. Spellings: the reference writes `antihistamines`, Whisper writes `anti-histamines`, and `normalise()` turns a hyphen into a space, so a term's two-word form goes in `terms-clinical.txt` as an accepted spelling |
 | `run-primock.py` | the whole SDK chain through the Python binding: device → `recommend` → `load` → `transcribe` the mixed doctor+patient audio → `extract` facts per ~60 s window → score. `--transcript FILE` skips recognition. |
 | `out/` | transcripts, facts and `*.score.json` per run (git-ignored) |
 

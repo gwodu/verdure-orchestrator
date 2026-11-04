@@ -51,6 +51,14 @@ class ScoreTests(unittest.TestCase):
         # Terms the reference never says are not counted against anyone.
         self.assertEqual(score.term_recall(score.normalise("hello"), [], terms)["term_error_rate"], None)
 
+    def test_a_hyphenated_spelling_counts_when_listed_as_a_two_word_alternative(self):
+        # Whisper writes "anti-histamines"; PriMock57's transcribers wrote "antihistamines".
+        # normalise() turns the hyphen into a space, so the list carries the two-word form.
+        terms = [[score.normalise("antihistamines"), score.normalise("anti histamines")]]
+        ref = score.normalise("try antihistamines first")
+        self.assertEqual(score.term_recall(ref, score.normalise("try anti-histamines first"), terms)["terms_found"], 1)
+        self.assertEqual(score.term_recall(ref, score.normalise("try anti-history first"), terms)["terms_found"], 0)
+
     def test_the_fetched_reference_parses(self):
         prefix = Path(__file__).parent / "fixtures" / "primock57" / "day1_consultation01"
         if not Path(f"{prefix}_doctor.TextGrid").exists():

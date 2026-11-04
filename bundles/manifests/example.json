@@ -175,6 +175,33 @@
       "requires_acknowledgement": [],
       "attributions": [],
       "notes": "Speech only, for the speech bake-off ([OQ-120]). Hash is whisper.cpp's published one, verified after download 2026-11-03."
+    },
+    {
+      "id": "asr-afrispeech-medium",
+      "task": "scribe",
+      "tiers": [
+        "P3",
+        "L2",
+        "L3"
+      ],
+      "models": [
+        {
+          "id": "afrispeech-whisper-medium",
+          "kind": "asr",
+          "name": "Speech model (clinical, African-accented English)",
+          "file": "ggml-afrispeech-medium.bin",
+          "url": "https://huggingface.co/intronhealth/afrispeech-whisper-medium-all",
+          "sha256": "048f4dbc854bbfe9cb3de7c68a95dc258cd85d3b992f1c3b0c6f50e08cf4126a",
+          "size_bytes": 1533763059,
+          "engine": "whisper",
+          "licence": "apache-2.0"
+        }
+      ],
+      "requires_acknowledgement": [],
+      "attributions": [
+        "Speech model: Intron Health, AfriSpeech Whisper medium (Apache-2.0), converted to ggml by Verdure"
+      ],
+      "notes": "Converted locally 2026-11-03 (evals/convert-intron.sh); the url is the source repo, not a ggml download \u2014 a mirror is needed before this bundle can be downloaded ([OQ-96])."
     }
   ]
 }

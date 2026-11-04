@@ -12,9 +12,9 @@ out = Path(__file__).resolve().parent / "out"
 rows: dict[str, list[dict]] = defaultdict(list)
 for f in sorted(out.glob("*.score.json")):
     parts = f.name.split(".")
-    if len(parts) < 3:
+    if len(parts) < 3:  # not a run output
         continue
-    tag = parts[1]
+    tag = parts[1] if len(parts) > 3 else "(untagged)"  # pre-bake-off runs: no --tag
     rows[tag].append(json.loads(f.read_text()))
 
 print(f"{'configuration':22} {'n':>2} {'WER':>6} {'term err':>8} {'RTF':>5}  most missed terms")
