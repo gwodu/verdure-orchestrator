@@ -71,7 +71,8 @@ Verdure is a monorepo over one brain (the shared decider, `packages/decider`), s
 - **Desktop porter** (macOS runner, PR/manual only): its remaining reason to exist is the **iOS** cross-compile check, which this Mac cannot do. It also runs the frontend build, `cargo test`, the x86_64 check, and the model-URL reachability check — all of which now duplicate free local work. Triggers on `app/**` or `packages/decider/**`.
 - **App checks** (Linux, ~2 billable min): the app's frontend tests (vitest), the release-script tests (`python3 -B -m unittest discover -s app/scripts`; Python stdlib `unittest`, files named `test_*.py` next to the script they test), and `actionlint` over every workflow. Triggers on `app/src/**`, `app/scripts/**` or `.github/workflows/**`.
 - **Android compile check** (Linux): `cargo check --target aarch64-linux-android`, so an Android-only `cfg` branch can't break silently. Triggers on `app/**`.
-- **SDK** (Linux, `crates/**`): `cargo test --workspace` (the pure suite, no models) and `cargo check -p verdure-ffi --features llama,whisper`, which compiles llama.cpp + whisper.cpp on the runner — the only place those feature builds are verified while the founder's Mac lacks the disk for a second engine build (`knowledge/26`, `[OQ-112]`).
+- **SDK** (Linux, `crates/**` or `bindings/**`): `cargo test --workspace` (the pure suite, no models), `cargo check -p verdure-ffi --features llama,whisper`, which compiles llama.cpp + whisper.cpp on the runner — the only place those feature builds are verified while the founder's Mac lacks the disk for a second engine build (`knowledge/26`, `[OQ-112]`) — and the binding checks' own unit tests (`python3 -B -m unittest discover -s bindings/tests`).
+- **SDK for Windows** (`build-sdk-windows.yml`, Windows runner at 2×, tag `sdk-windows-N` or dispatch only): the one place the SDK meets Windows, so it is a test bench, not just a build — the pure suite on Windows, the built `verdure.dll` inspected as a file (`bindings/tests/pe_check.py`), then the zip unpacked and driven from Python and Kotlin through real models (`bindings/tests/sdk_smoke.py`, `Smoke.kt`), once online and once with the network blocked at the firewall. `sdk_smoke.py` runs on any desktop: point it at a built library and the bundles folder to repeat the customer path on the Mac.
 
 Never merge red. When CI fails, the fix lives in the same change.
 
@@ -138,6 +139,13 @@ only before.
 status of its *last* command, so `build | tail` reports `tail`'s success and a
 failed build looks clean. This bit twice in one session, once while testing the
 verifier written to prevent it. Check for the artifact, or check `${PIPESTATUS[0]}`.
+
+**5. A text tool on another OS may not be the tool you know.** The first Windows
+run's "no CRLF in the signed files" check used `grep $'\r'` in Git Bash, whose
+grep strips carriage returns from text files before matching: it could not have
+failed. Its control (a file known to contain CRLF must be seen to) failed in 18
+seconds and said so. When a check is about bytes, read bytes (Python, `cmp`),
+and keep the control — rule 1 is what turned a silent no-op into a red step.
 
 ## Self-check before declaring a feature done
 

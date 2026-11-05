@@ -166,7 +166,8 @@ jobs:
           cp bundles/manifests/example.json "$RUNNER_TEMP/t.json"; cp bundles/manifests/example.json.sig "$RUNNER_TEMP/t.json.sig"; printf ' ' >> "$RUNNER_TEMP/t.json"
           if "$V" manifest verify --public "$ISSUER" "$RUNNER_TEMP/t.json" 2>/dev/null; then echo "::error::a changed manifest verified; the check above proves nothing"; exit 1; fi
           # The device as this tool reads it.
-          "$V" capabilities --data-dir "$RUNNER_TEMP" | tee /dev/stderr | grep -q '"os": "windows"'
+          CAPS=$("$V" capabilities --data-dir "$RUNNER_TEMP"); echo "$CAPS"
+          echo "$CAPS" | grep -q '"os": "windows"'
       - name: A new signing key goes to the user's folder (PowerShell, no HOME — as a Windows developer runs it)
         shell: pwsh
         run: |
