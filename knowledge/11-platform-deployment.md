@@ -38,7 +38,7 @@ This file documents the practical realities of shipping Verdure on each platform
 
 **What CI actually checks** (`ci.yml`, PRs only): a `paths-filter` job decides what changed, then the decider/website suites on Linux, the porter Rust suite plus an `aarch64-apple-ios` `cargo check` on macOS, and an `aarch64-linux-android` `cargo check` on Linux. Model-download URLs are verified by extracting them from `model.rs` (not a hand-kept copy).
 
-**What each trigger costs** — *this table is the one owner; `skills/testing.md` and `21` link here.* Billable = wall minutes × the runner multiplier (macOS 10×, Linux 1×).
+**What each trigger costs** — *this table is the one owner; `skills/testing.md` and `21` link here.* Billable = wall minutes × the runner multiplier (macOS 10×, Windows 2×, Linux 1×).
 
 | What you need | How | Billable min | Measured |
 |---|---|---|---|
@@ -48,6 +48,7 @@ This file documents the practical realities of shipping Verdure on each platform
 | Test on iPad | tag `testflight-N` | ~55 | `testflight-12`: 5 min wall, cold cache |
 | Test on Android | tag `android-build-N` | ~8 cached, ~19 cold | `release-14` |
 | The SDK for Android (arm64 .so + Kotlin, `knowledge/26`) | tag `sdk-android-N` or dispatch `build-sdk-android.yml` | ~12 cold | run 3 on 2026-10-29: 12 min wall, 9 compiling; cache now saves on failed runs too |
+| The SDK for Windows (x64 .dll + Python/Kotlin + CLI, built **and tested** there, `knowledge/26` "Windows") | tag `sdk-windows-N` or dispatch `build-sdk-windows.yml` | ~50 warm, ~68 cold (Windows bills 2×) | run 6 on 2026-11-05: 25 min wall with both engines rebuilt; run 4: 34 min cold. Getting to green took six runs, ~163 billable |
 | Signed + notarized macOS for someone else | tag `app-build-N` | ~145 | `app-build-24/25`: ~14–15 min wall (universal: both arches) |
 | Genuinely ship everywhere | tag `release-N` | ≈ the three above, ~210 | `release-14` was 144, before macOS went universal |
 

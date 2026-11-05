@@ -4,7 +4,31 @@ Test discipline record across the Verdure monorepo. Decider: `npm test --workspa
 
 ## Verdure SDK (`crates/`)
 
-Run: `cargo test --workspace` at the repo root (no models, seconds). CI: the `sdk` job (Linux) runs it plus `cargo check -p verdure-ffi --features llama,whisper` and `cargo fmt --check`.
+Run: `cargo test --workspace` at the repo root (no models, seconds). CI: the `sdk` job (Linux) runs it plus `cargo check -p verdure-ffi --features llama,whisper`, `cargo fmt --check` and `python3 -B -m unittest discover -s bindings/tests`; `build-sdk-windows.yml` runs the suite and the customer path on Windows.
+
+### 2026-11-05 — The SDK on Windows (`build-sdk-windows.yml`, run 42069050142 green; `bindings/tests/`)
+
+Windows has no local machine, so the workflow is the test bench. Run with `gh workflow run build-sdk-windows.yml`; repeat the customer path anywhere with `python3 -I bindings/tests/sdk_smoke.py --binding <dir> --assets <dir> --data-dir <dir> --audio jfk.wav`.
+
+- **Workspace suite: 95 → 99 on the Mac, 98 on Windows** (the 99th is the Unix key-file permission test). New: `windows_volume_for` (10 cases: drive letters in either case, `/`, `\\?\`, a volume mounted in a folder, a look-alike folder, UNC, accents and CJK), `x86_engine_shortfall` (Ivy Bridge named by what it lacks), the live probe now asserts free disk > 0, `delete(All)` removes a hard-linked store file, the CLI's key path under `HOME`/`USERPROFILE`. The download crate's two shared-store tests lost their `#[cfg(unix)]` and pass on NTFS.
+- **`bindings/tests/test_pe_check.py` (8):** the PE parser against a real Windows DLL (the Rust std DLL on the Mac, `kernel32.dll` on the runner); the redistributable rule (VCRUNTIME/MSVCP/VCOMP named, delay-loaded counted, UCRT allowed); wrong machine, missing API exports; CMake cache rules — native build, AVX-512, AVX2 off, OpenMP, shared libs, **optimiser lost and given back either way**, and a cache that is not a ggml build must not pass by saying nothing.
+- **`pe_check.py` on the built files:** control (`kernel32.dll` parses: 1,692 exports) then `verdure.dll` 9.0 MB x64, 178 exports, imports only system DLLs; whisper and llama strings present, absent from the engine-less control; both caches `GGML_NATIVE=OFF`, AVX2 ON, AVX-512 OFF, `-O2` present.
+- **`sdk_smoke.py` against the unpacked zip, online: 18/18.** Tampered licence refused; device sane; relative data folder finds its disk; manifest verifies and a changed one is refused; `recommend` → `scribe-small`; 979 MB downloaded, sizes match the manifest, progress monotonic to total; second download fetches nothing; a second bundle reuses the shared file (same file on disk by `os.path.samefile`, bundle ↔ bundle ↔ store); load 0.9 s; JFK word for word at 1.32× real time (limit 8); "Paris" in 0.8 s streamed (limit 4 s); `{"name":"Ada Obi","age":34}` in 5.0 s; search finds the right passage; `delete(All)` while loaded leaves nothing.
+- **Offline: 18/18**, Python blocked at the Windows firewall. Control first: a request from the same interpreter fails (`URLError`). Files copied in by hand are recognised; one with 64 bytes overwritten is not; a download is refused by policy; then load, transcribe (1.28×), chat, extract, delete as above.
+- **Kotlin on a JVM:** binding compiles against JNA; device, manifest, recommend, an unknown bundle refused, load from placed files, "Paris", delete — `KOTLIN-OK`.
+- **CLI on Windows:** licence keygen/issue/verify, manifest sign/verify, the committed manifest against the committed signature (and one byte more is refused), `recommend`, `grammar`, `capabilities` says `"os": "windows"`; from PowerShell with no `HOME`, the key lands under `USERPROFILE` and nothing in the working folder.
+- **Line endings:** control repository gets CRLF under `autocrlf=true`; ours do not, byte for byte.
+- **The Mac ran the same script first** (pre-placed mode, existing library): 17/17, JFK at 0.16× with Whisper base, "Paris" in 0.2 s, the same form in 2.1 s — the calibration that made the Windows numbers readable.
+
+**Failures on the way, and what each taught (six runs):**
+1. *18 s:* my CRLF check used `grep $'\r'` in Git Bash, whose grep strips carriage returns before matching — it could never fail. Its control failed instead. Rewritten in Python on bytes (`skills/testing.md`, rule 5).
+2. *3.5 min:* `tee /dev/stderr` does not exist in Git Bash.
+3. *14 min:* `LNK2038` — llama.cpp `/MD`, whisper.cpp `/MT`. `CMAKE_MSVC_RUNTIME_LIBRARY`.
+4. *34 min:* everything passed except Kotlin (a `;` in an argument splits it for a `.bat`) — **and the library was ~30× slow, which nothing asserted.** Found by comparing timings with the Mac's: 216 s for 11 s of speech. Cause: optimiser stripped for MSVC + whisper's ggml serving both engines. The two new guards (flags read back; speed limits) exist because of this run.
+5. *4 min:* Git Bash rewrote `/MT` in an environment value to `C:/Program Files/Git/MT`. Dash-form flags.
+6. *25 min:* green.
+
+**Not tested:** a real Windows 10 or 11 PC (the runner is Server build 26100, a 2-vCPU VM); a processor without AVX2 (the refusal is unit-tested, not observed); long audio; anything with a GPU; a C# caller.
 
 ### 2026-11-04 — Production pass: speed-aware `recommend`, one copy per model, a download that talks, plainer errors
 

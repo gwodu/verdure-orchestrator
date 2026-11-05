@@ -1,8 +1,33 @@
 # Verdure SDK — what changed, build by build
 
 Newest first. The build in your hands is named in `VERSION` (commit and time); the Android zip is
-`verdure-android-arm64.zip` from `build-sdk-android.yml`, and this file ships inside it as `CHANGELOG.md`.
+`verdure-android-arm64.zip` from `build-sdk-android.yml`, the Windows zip `verdure-windows-x64.zip` from
+`build-sdk-windows.yml`, and this file ships inside both as `CHANGELOG.md`.
 Sizes are decimal MB (1 MB = 1,000,000 bytes), the unit `download_bytes` counts in.
+
+## 2026-11-05 — the SDK for Windows, and three fixes every platform gets
+
+`verdure-windows-x64.zip` from `build-sdk-windows.yml`: `verdure.dll` for 64-bit Windows with both engines and
+its own C/C++ runtime (nothing to install), Python and Kotlin bindings, `verdure.exe`, and the tests the zip
+passed on a Windows machine before upload — see its `README.md`. Needs a processor with AVX2.
+
+- **`delete(All)` now frees the space.** It removed the bundle folders and left `<data_dir>/models/` behind;
+  with one copy per model held by hard links, that freed nothing. Both go now. (All platforms.)
+- **A processor the engines cannot run on is refused, not crashed on (Windows).** `load()` returns
+  `EngineUnavailable` naming the missing instructions, and `capabilities().notes` says it before you try.
+- **Free disk is read correctly for any data folder on Windows**: relative paths and `\\?\`-prefixed ones
+  read 0 MB before, which refused every bundle for space.
+- **`verdure license keygen` puts a new key under the user's folder on Windows** (`USERPROFILE`), not in the
+  current directory.
+- **One copy per model is now checked the same way on every OS** (volume and file index on Windows).
+- **Read the manifest as UTF-8 and let git leave it alone.** It contains non-ASCII characters and its
+  signature covers its bytes; the repository's `.gitattributes` stops Git for Windows rewriting line endings,
+  and the Python samples pass `encoding="utf-8"`.
+- Models can be shipped inside your own installer: place them in `<data_dir>/bundles/<bundle id>/` and
+  `is_downloaded` recognises them by SHA-256 with downloads forbidden by policy. This always worked; it is
+  now documented and tested with the network blocked.
+
+No API changes: an app built against the 2026-11-04 build compiles unchanged.
 
 ## 2026-11-04, second build — speed-aware choice, one copy per model, plainer errors
 

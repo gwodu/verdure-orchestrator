@@ -177,6 +177,52 @@ Still not production, and said so: the 0.5B extractor fails the schema on 7 of 1
 
 **Public face (2026-11-04).** verdureai.com/developers (`/sdk` redirects; the word is jargon to the home page's reader) is the white paper for a company's developer — what it is, the hello world in three languages, the API, the tiers, the measured tables, licences, what is not done — with its facts held as tested data in `website/lib/sdk-content.ts`. When a number in this file changes, that file changes in the same commit (`05`, "The 2026-11-04 revamp" and "The same day, plainer").
 
+## Windows (2026-11-05) — the SDK as a Windows vendor receives it, tested where it is built
+
+The founder asked for a Windows version of the SDK, and nobody on the team has a Windows machine. So `build-sdk-windows.yml` is both the build and the test bench: a GitHub Windows runner (Windows Server build 26100, 2 vCPU AMD EPYC, 8 GB) builds `verdure.dll`, and the **zip, unpacked into a clean folder**, is then driven the way a vendor's developer would drive it. Six runs, about 163 billable minutes (Windows bills 2×); the sixth is green end to end. The kit is at `~/Verdure-bisect/sdk-windows/verdure-windows-x64.zip` (8.6 MB, commit 152ba73), beside the Android one.
+
+**What is in the zip:** `lib/verdure.dll` (9.0 MB, x64, both engines, 178 exports of which 71 are the SDK's API), `python/verdure.py` with the DLL beside it, `kotlin/uniffi/verdure/verdure.kt` for a desktop JVM, `bin/verdure.exe` (the developer CLI), the sandbox token, issuer key, signed example manifest and schemas, the integration guide, the changelog, `README.md` (`bindings/windows/README.md`) and `tests/` — the two programs the zip passed before it was uploaded.
+
+**What a customer's PC needs: nothing installed.** The DLL imports only libraries Windows itself ships (`kernel32`, `ntdll`, `advapi32`, `bcrypt`, `ws2_32`, `pdh`, `psapi`, `powrprof`, `shell32`, `oleaut32`). Rust and both engines link the C/C++ runtime statically, so there is no Visual C++ Redistributable to forget. A processor with AVX2 is required (below).
+
+**Decisions, each with the evidence that forced it:**
+
+1. **Static C/C++ runtime, said three ways.** `+crt-static` for Rust, `LLAMA_STATIC_CRT=1` for llama-cpp-sys-2, and `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded` because llama.cpp's CMake policy level (3.14…3.28) ignores the `/MT` flag the first two produce. Without the third, run 3 linked `/MD` llama objects against `/MT` whisper ones: 184 × `LNK2038` and seven unresolved `__imp_` CRT symbols.
+2. **Engines compiled for ordinary PCs, not for the build machine.** whisper-rs-sys leaves `GGML_NATIVE` at CMake's default, which is ON when not cross-compiling: a runner with AVX-512 would ship a library that dies with an illegal instruction on most customers' PCs. `GGML_NATIVE=OFF` (both sys crates forward `GGML_*`/`CMAKE_*` from the environment) gives the fixed level llama-cpp-sys-2 already builds at: AVX, AVX2, FMA, F16C, BMI2, no AVX-512. `pe_check.py` reads both CMake caches back and fails the run otherwise.
+3. **A processor without AVX2 is refused in a sentence, not crashed on.** `verdure_hw::engine_cpu_shortfall()` (Windows x86-64) checks AVX2/FMA/F16C/BMI2; `load()` returns `EngineUnavailable` naming what is missing and `capabilities().notes` says so up front. This excludes Sandy/Ivy Bridge (2011–12), most Celeron/Pentium before 2021 and Atom — exactly the school-lab PC the education targets describe. A second library at a lower level is `[OQ-123]`.
+4. **The optimiser has to be given back.** For Microsoft's compiler the `cmake` crate replaces `CMAKE_<LANG>_FLAGS_RELEASE` with its own flags minus every `/O` switch (cmake-rs issue 240). llama-cpp-sys-2 works around it; whisper-rs-sys does not; and the linker keeps **whisper's** copy of ggml for both engines (571 × `LNK4006`, all "already defined in libwhisper_rs_sys": `ggml.c`, `ggml-backend`, `ggml-quants`), so llama's hot loops ran in whisper's unoptimised objects too. Run 4's library was correct in every answer and ~30× slower than the Mac: 11 s of speech in 216 s, a one-word answer in 6.2 s. Fixed by defining `CMAKE_C/CXX_FLAGS_RELEASE` ourselves (in dash form: Git Bash rewrote `/MT` in the environment to `C:/Program Files/Git/MT`). Run 6: the same recording in 14 s, the answer in 0.8 s. **No pass/fail check caught this; reading the timings did.** So `pe_check.py` now reads the optimisation flags back from both caches, and `sdk_smoke.py` has `--max-rtf` and `--max-chat-seconds`.
+5. **`/FORCE:MULTIPLE` at link**, Windows' form of Android's `--allow-multiple-definition` (`[OQ-114]`): two ggml copies, first definition wins. New fact from the link log: on Windows the winner is whisper.cpp's (older) ggml core, so llama.cpp runs partly on it — and both engines produce correct output there (below). One ggml is still the real fix.
+6. **Signed files stay byte-exact: `.gitattributes` `* -text`.** Git for Windows rewrites line endings on checkout by default, and the manifest's signature covers its bytes. The workflow proves it with a control (a repository without the rule does get CRLF) and then checks our files under `core.autocrlf=true`.
+7. **Free disk on Windows by longest mount point** (`verdure_hw::windows_volume_for`, pure, tested on every OS). The first probe asked `path.starts_with(mount)` on the path as given: a relative data folder (what a Python script passes) or a `\\?\C:\…` one matched no drive, read 0 MB free, and every bundle would have been refused for space.
+8. **Shipping models inside the vendor's installer is a supported path**, not an API: files placed in `<data>\bundles\<id>\` are recognised by SHA-256 by `is_downloaded`, and `load` uses them with `network_downloads=false`. Tested with Python's network blocked at the Windows firewall (a control proves the block), and a file with 64 bytes changed is not accepted.
+
+**Found on the way, fixed on every platform:** `delete(All)` removed `bundles/` but not the shared `models/` store, so with hard links it freed nothing (test added); the shared store's "same file" check and its two tests were Unix-only (`same-file` crate now, so "one copy per model" is asserted on NTFS too); `verdure license keygen` wrote a new signing key into the current folder on Windows, where `HOME` is unset (`USERPROFILE` now).
+
+**What the green run (42069050142) showed, from the unpacked zip:**
+
+| Check | Result |
+|---|---|
+| SDK suite on Windows | 98 passed (the 99th is a Unix file-permission test) |
+| Library file | x64 DLL, no redistributable imports, both engines inside (engine-less control lacks them), AVX2 on, AVX-512 off, optimiser on |
+| Device | tier L2, 2 cores, 5.9 of 8.2 GB free, 26 GB disk; a relative data folder reads the same disk |
+| `recommend(SCRIBE)` | `scribe-small` (needs 1,667 MB) |
+| Download | 979 MB in 13 s, verified; second call fetches nothing; `asr-whisper-small` then reuses `ggml-small.bin` — one file on disk, three names (`os.path.samefile`) |
+| Load | 0.9–2.5 s |
+| Transcribe (JFK, 11 s, Whisper small) | word for word; 14.0–14.5 s = **1.3× real time on 2 vCPUs** |
+| Chat (0.5B) | "Paris" in 0.8 s, streamed |
+| Extract (0.5B, a two-field form) | `{"name": "Ada Obi", "age": 34}` in 5.0 s |
+| Search | the right passage first |
+| Offline, network blocked, files placed by hand | all of the above again; download of another bundle refused by policy |
+| Kotlin on a JVM (JNA) | device, manifest, recommend, load, "Paris", delete |
+| Data folder | `C:\vd\…\Vérdure tèst 数据` throughout |
+| `delete(All)` while loaded | bundles and store both gone |
+
+The speed figures are a test bench's, a 2-vCPU cloud VM, not a customer PC: they show the build is sound (the same recording took 216 s before decision 4), and they are not entered in the manifest's speed map. A real Windows laptop is `[OQ-122]`'s job.
+
+**Not in this kit:** a C# binding (`[OQ-124]` — most Windows line-of-business software is .NET); a native arm64 library, a signed DLL, GPU acceleration, `pip`/Maven packages (`[OQ-125]`); a build for processors without AVX2 (`[OQ-123]`). The SDK takes PCM, so the microphone is the vendor's; nothing here opens an audio device.
+
+**How to repeat or change it:** tag `sdk-windows-N` or dispatch `build-sdk-windows.yml`. A warm run with the engines rebuilt is ~25 min wall (~50 billable); cold ~34 (~68). Change an engine build setting in the workflow's `env` block and the "engine settings" stamp rebuilds both engines; nothing else needs touching. From the Mac, `cargo check -p verdure-hw --tests --target x86_64-pc-windows-msvc` type-checks the Windows probe for free, and `python3 -I bindings/tests/sdk_smoke.py …` runs the same customer path against a Mac library (it passed 17 of 17 here before Windows ever ran it, which is why a Windows failure meant Windows).
+
 ## Rules for anyone adding to the crates
 
 (a) All public types live in `verdure-ffi`; no platform `#[cfg]` inside an export block. (b) Every engine sits behind a port in `verdure-core`. (c) No network code outside `verdure-download`, except `CloudFallback`, which calls *into* vendor code. (d) Every long operation reports progress and is cancellable. (e) Measured numbers beat proposed ones — when a rule is changed, the test states the measurement it covers.
@@ -197,7 +243,7 @@ In `02`'s names. Licence posture is `09`'s: Apache-2.0/MIT by default; Llama and
 
 ## Platforms, memory, thermal
 
-iOS 16+, Android 8.0 (API 26, arm64, 16 KB-page ready), macOS 12, Windows 10 21H2 x64, Linux glibc 2.31. Backends per platform and the background-audio, foreground-service and signing specifics are **unverified** and are acceptance gates to measure, not numbers to assume (`[OQ-109]`). Implemented: the memory rule before every load, the tier downgrade with reasons, Intel-Mac CPU pinning carried over from `[OQ-71]`. Planned: unload the LLM (keep ASR) on a memory-pressure signal, halve threads and emit `Throttled` on serious thermal state, a 4k default context capped by tier.
+iOS 16+, Android 8.0 (API 26, arm64, 16 KB-page ready), macOS 12, Windows 10 21H2 x64 (**built and tested 2026-11-05 on Windows Server build 26100, see "Windows"; Windows 10 itself has not been run**), Linux glibc 2.31. Backends per platform and the background-audio, foreground-service and signing specifics are **unverified** and are acceptance gates to measure, not numbers to assume (`[OQ-109]`). Implemented: the memory rule before every load, the tier downgrade with reasons, Intel-Mac CPU pinning carried over from `[OQ-71]`. Planned: unload the LLM (keep ASR) on a memory-pressure signal, halve threads and emit `Throttled` on serious thermal state, a 4k default context capped by tier.
 
 ## Privacy and security — enforced vs. promised
 
@@ -227,5 +273,8 @@ Nabla ~60 LOC (Electron audio module + transcription client; demo: Windows lapto
 - [OQ-119] Google MedASR (105M Conformer, dictation-trained, HAI-DEF terms, community GGUF on `transcribe.cpp`): measure on PriMock57 with Transformers first; licence is acknowledgement-class plus a regulatory clause.
 - [OQ-117] Segment windowing on a phone: 12 s force-cuts cut sentences, one stretch dropped; VAD or a configurable window, measured on PriMock57 first.
 - [OQ-118] Phone extraction: 20–35 s per window on the 0.5B and it copies text (second run 2026-11-04: 3 of 10 windows valid, 16–114 s each); the 1.5B bundle next; streaming tokens; the platform has no `client` fact source.
-- [OQ-114] Two ggml copies in one library (whisper.cpp's and llama.cpp's): Android's linker is told `--allow-multiple-definition`; verify both engines on the Pixel; the real fix is one shared ggml.
+- [OQ-123] A Windows library for processors without AVX2 (Sandy/Ivy Bridge, pre-2021 Celeron/Pentium, Atom): today `load()` refuses them in a sentence. Options: a second DLL at SSE4.2 or AVX, chosen at start; or ggml's runtime-dispatched CPU variants. Measure the speed cost first; it decides whether school-lab PCs are servable.
+- [OQ-124] A C# binding for Windows vendors (.NET is where Windows line-of-business software lives): `uniffi-bindgen-cs` against the pinned UniFFI version, packaged with `verdure.dll`, and the same customer-path test from a .NET program in `build-sdk-windows.yml`.
+- [OQ-125] The rest of Windows packaging: a native arm64 library, an Authenticode-signed DLL (locked-down corporate PCs load only signed files; ties to `[OQ-24]`), GPU backends, a `pip` wheel and a Maven artefact, and a run on a real Windows 10/11 laptop for the manifest's speed map.
+- [OQ-114] Two ggml copies in one library (whisper.cpp's and llama.cpp's): Android's linker is told `--allow-multiple-definition`, Windows' `/FORCE:MULTIPLE`; on Windows the link log shows whisper.cpp's copy winning for both engines, and both give correct output there (2026-11-05); the real fix is one shared ggml.
 - [OQ-113] **First measurements 2026-10-27** (one consultation, the floor bundle, this Mac): ASR RTF 0.24, WER 27.6 %; 0.5B extraction 4/9 windows valid, zero invented numbers. Everything else is still unmeasured. Original note: the release gates, the device lab (Itel A70, Tecno Spark Go, Galaxy A05; Infinix Hot 40, Redmi 13C, A16 5G, iPhone 12/13/15; T460; 2017 MBP, ProBook 450; M1 Air), the `evals/harness` CLI replaying WAV + reference JSON per bundle per device. `[OQ-74]`'s harness is the vehicle; `[OQ-03]` is the device access.
