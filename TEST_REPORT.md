@@ -27,6 +27,7 @@ Windows has no local machine, so the workflow is the test bench. Run with `gh wo
 4. *34 min:* everything passed except Kotlin (a `;` in an argument splits it for a `.bat`) — **and the library was ~30× slow, which nothing asserted.** Found by comparing timings with the Mac's: 216 s for 11 s of speech. Cause: optimiser stripped for MSVC + whisper's ggml serving both engines. The two new guards (flags read back; speed limits) exist because of this run.
 5. *4 min:* Git Bash rewrote `/MT` in an environment value to `C:/Program Files/Git/MT`. Dash-form flags.
 6. *25 min:* green.
+7. *6.6 min:* green again on the final commit, engines from cache ("engine build settings unchanged"): online 18/18, offline 18/18, Kotlin OK; JFK 1.27–1.31×, "Paris" 0.6–0.8 s, the form 5.2 s. The result repeats; the kit on disk is this run's.
 
 **Not tested:** a real Windows 10 or 11 PC (the runner is Server build 26100, a 2-vCPU VM); a processor without AVX2 (the refusal is unit-tested, not observed); long audio; anything with a GPU; a C# caller.
 
