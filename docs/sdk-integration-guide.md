@@ -183,22 +183,23 @@ cargo run -p verdure-ffi --features bindgen --bin uniffi-bindgen -- \
 cp target/debug/libverdure.dylib sandbox/py/
 ```
 
-(On Linux the library is `target/debug/libverdure.so`.) A warning about `yapf` not being found is harmless. Then:
+(On Linux the library is `target/debug/libverdure.so`; on Windows take the zip in section 5c rather than building.) A warning about `yapf` not being found is harmless. Then:
 
 ```python
 import sys; sys.path.insert(0, "sandbox/py")
 import verdure as v
 
-token = open("bundles/sandbox.token").read().strip()
+read = lambda path: open(path, encoding="utf-8").read()   # always UTF-8: see the note below
+token = read("bundles/sandbox.token").strip()
 policy = v.PolicyConfig(network_downloads=True, allowed_hosts=[], local_counters=False,
                         encrypted_storage=True, retention_days=None)
 sdk = v.Verdure.start(token, policy, "/tmp/verdure-sandbox")
 caps = sdk.capabilities()
 print(caps.tier, caps.available_ram_mb)
 
-sdk.load_manifest(open("bundles/manifests/example.json").read(),
-                  open("bundles/manifests/example.json.sig").read(),
-                  open("crates/verdure-ffi/keys/issuer.pub").read().strip())
+sdk.load_manifest(read("bundles/manifests/example.json"),
+                  read("bundles/manifests/example.json.sig"),
+                  read("crates/verdure-ffi/keys/issuer.pub").strip())
 print(sdk.fit("chw-forms-P1").problems)
 
 sdk.index("guides", [v.Doc(id="anc", title="Antenatal care", text="Refer if BP above 140/90.")])
@@ -209,16 +210,30 @@ class MyCloud(v.CloudFallback):
     def extract(self, text, schema_json):
         return '{"client_name":"Amina","pregnant":true,"danger_signs":[],"referred":false}'
 sdk.set_cloud_fallback(MyCloud())
-out = sdk.extract("Client Amina, not pregnant.", open("bundles/manifests/schema-example-chw.json").read())
+out = sdk.extract("Client Amina, not pregnant.", read("bundles/manifests/schema-example-chw.json"))
 print(out.json, out.warnings)
 sdk.delete(v.DeleteScope.ALL())
 ```
 
 Python differences from Rust: enum values are upper case (`v.Task.SCRIBE`, `v.DeleteScope.ALL()` — note the parentheses, it is a variant with no fields), `PolicyConfig` has no defaults so every field is passed, and errors are `v.VerdureError.NoBundle` and friends, catchable with `except v.VerdureError.NoBundle as e`.
 
+**Read the manifest and its signature as UTF-8, explicitly.** The manifest contains characters outside ASCII (a `×` in the notes), and the signature covers its exact bytes. Python on Windows decodes text with the system code page unless told otherwise, and the result is an `Integrity` error on a file nobody changed. `encoding="utf-8"` is right on every platform. For the same reason the repository's `.gitattributes` stops git rewriting line endings on checkout.
+
 ## 5b. Route C — Android (Kotlin)
 
 The CI workflow `build-sdk-android.yml` produces `verdure-android-arm64.zip`: the arm64 library with both engines, the generated Kotlin binding, the sandbox credentials and the example manifest. `bindings/android/README.md` (also inside the zip) says exactly which files go where in an Android project, the two Gradle dependencies (JNA, coroutines), and shows the start → recommend → download → load → transcribe → extract sequence in Kotlin. Same names as Rust and Python, Kotlin casing: `sdk.recommend(Task.SCRIBE)`, `stream.pushPcm(floats, 16000u)`, errors as `VerdureException.*`. Every call blocks; keep them off the main thread.
+
+## 5c. Route D — Windows (Python, or Kotlin/Java on the desktop)
+
+The CI workflow `build-sdk-windows.yml` produces `verdure-windows-x64.zip`: `verdure.dll` for 64-bit Windows with both engines and its own C/C++ runtime (nothing to install on the PC), the generated Python and Kotlin bindings, the developer tool as `verdure.exe`, the sandbox credentials, the example manifest, and the two test programs the zip itself passed before it was uploaded. `bindings/windows/README.md` (also inside the zip, as `README.md`) has the Python sample, the JNA setting for a JVM app, where to put the data folder (`%LOCALAPPDATA%`, not Roaming), how to ship model files inside your own installer so nothing is downloaded, what the processor must support (AVX2; an older one gets `EngineUnavailable` in a sentence, not a crash) and what each load error means.
+
+The zip is built and tested on a Windows machine in CI because nobody on the team has one: the SDK suite, the library file itself (64-bit, exports, no Visual C++ runtime, engines compiled for ordinary PCs with the optimiser on), then the unpacked zip driven from Python and Kotlin through a real download, the shared model store, a known recording, a known question, a form, search, model files placed by hand with the network blocked at the firewall, and delete. You can repeat the Python run on your own PC:
+
+```
+python tests\sdk_smoke.py --binding python --assets bundles --data-dir %LOCALAPPDATA%\verdure-test --audio jfk.wav --mode online --require-engines
+```
+
+(`jfk.wav` is the 11-second sample from the whisper.cpp repository.) The same script runs on macOS and Linux against a library you built.
 
 ## 6. Full API reference
 

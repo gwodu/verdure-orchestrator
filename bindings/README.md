@@ -22,6 +22,8 @@ cargo run -p verdure-ffi --features bindgen --bin uniffi-bindgen -- \
 XCFramework of the `staticlib` — the packaging per platform is `knowledge/11`'s
 job and is not written yet.)
 
+**Windows (2026-11-05):** `build-sdk-windows.yml` builds `verdure.dll`, generates the Python and Kotlin bindings from it on Windows, and tests the zip there; `bindings/windows/README.md` is what a vendor reads, `bindings/tests/` holds the checks (`pe_check.py` inspects the library file, `sdk_smoke.py` is the customer path from Python on any desktop, `Smoke.kt` the same from a JVM).
+
 **Verified 2026-10-26 on macOS:** the Python generation above runs and the module works end to end against `target/debug/libverdure.dylib` (copy the dylib next to `verdure.py`); see `docs/sdk-integration-guide.md` §5. Swift and Kotlin generation are the same command with `--language swift|kotlin` and are not yet exercised.
 
 ## The one-liners the generated code gives a vendor

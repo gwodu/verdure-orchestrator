@@ -64,8 +64,11 @@ jobs:
       # copy of ggml for BOTH engines, run 4's library was correct and ~30x
       # slower than the Mac (11 s of speech in 216 s). pe_check.py now reads the
       # flags back from both CMake caches; sdk_smoke.py has a speed limit.
-      CMAKE_C_FLAGS_RELEASE: "/MT /O2 /Ob2 /DNDEBUG"
-      CMAKE_CXX_FLAGS_RELEASE: "/MT /O2 /Ob2 /DNDEBUG"
+      # Written with dashes, which cl.exe accepts: Git Bash rewrites any
+      # environment value that looks like a Unix path before starting a program,
+      # and run 5's "/MT" reached the compiler as "C:/Program Files/Git/MT".
+      CMAKE_C_FLAGS_RELEASE: "-MT -O2 -Ob2 -DNDEBUG"
+      CMAKE_CXX_FLAGS_RELEASE: "-MT -O2 -Ob2 -DNDEBUG"
       # /FORCE:MULTIPLE: whisper.cpp and llama.cpp each carry their own ggml, so
       # every gguf_*/ggml_* symbol is defined twice — the same thing the Android
       # build answers with --allow-multiple-definition ([OQ-114]). The linker
