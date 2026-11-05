@@ -1,0 +1,8 @@
+# Every file reaches every platform byte for byte. Git for Windows otherwise
+# rewrites line endings on checkout, and this repository carries files whose
+# bytes are signed or hashed: the example manifest and its signature
+# (bundles/manifests), the sandbox licence token, the issuer's public key,
+# fixtures read with include_str!. A manifest with CRLF line endings fails its
+# own signature, on the developer's machine and inside any zip built there
+# (knowledge/26, "Windows").
+* -text

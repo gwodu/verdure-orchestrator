@@ -427,6 +427,10 @@ impl Verdure {
         let inner = self.inner.lock().unwrap();
         let profile = verdure_hw::probe(&inner.data_dir);
         let caps = verdure_core::Capabilities::from_profile(profile, backends());
+        let mut notes = caps.notes.clone();
+        if let Some(why) = verdure_hw::engine_cpu_shortfall() {
+            notes.push(format!("No bundle can be loaded here: {why}."));
+        }
         let mut attributions = caps.attributions.clone();
         if let (Some(m), Some(id)) = (&inner.manifest, &inner.loaded_bundle) {
             if let Some(b) = m.bundle(id) {
@@ -445,7 +449,7 @@ impl Verdure {
             low_power: caps.device.low_power,
             backends: caps.backends,
             attributions,
-            notes: caps.notes,
+            notes,
         }
     }
 
@@ -641,6 +645,13 @@ impl Verdure {
             return Err(VerdureError::License(format!(
                 "{bundle_id} is not included in this licence"
             )));
+        }
+        // A processor the compiled engines cannot run on is refused here, in a
+        // sentence, whatever the caller overrides: the alternative is an
+        // illegal instruction that takes the vendor's whole app down at the
+        // first inference (verdure-hw `engine_cpu_shortfall`).
+        if let Some(why) = verdure_hw::engine_cpu_shortfall() {
+            return Err(VerdureError::EngineUnavailable(why));
         }
         let profile = verdure_hw::probe(&inner.data_dir);
         let needed = bundle.required_mb();
@@ -842,6 +853,10 @@ impl Verdure {
                     let _ = std::fs::remove_file(dir.join(sub));
                 }
                 let _ = std::fs::remove_dir_all(dir.join("bundles"));
+                // The shared model store holds the same bytes under a second
+                // name (hard links): until it goes too, deleting the bundle
+                // folders frees nothing.
+                let _ = std::fs::remove_dir_all(dir.join("models"));
                 let _ = std::fs::remove_dir_all(dir.join("vault"));
             }
         }
@@ -1182,12 +1197,25 @@ mod tests {
             .query("guides".into(), "when is measles?".into(), 3)
             .unwrap();
         assert_eq!(hits[0].doc_id, "epi");
+        // Model files as a download leaves them: one in a bundle folder, the
+        // same bytes linked under the shared store.
+        let bundle_file = verdure_download::bundle_dir(dir.path(), "b").join("m.gguf");
+        let store_file = verdure_download::model_store_path(dir.path(), "abc123");
+        std::fs::create_dir_all(bundle_file.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(store_file.parent().unwrap()).unwrap();
+        std::fs::write(&bundle_file, b"weights").unwrap();
+        std::fs::hard_link(&bundle_file, &store_file).unwrap();
         v.delete(DeleteScope::All).unwrap();
         assert!(v
             .query("guides".into(), "measles".into(), 3)
             .unwrap()
             .is_empty());
         assert!(!dir.path().join("vault.key").exists());
+        assert!(!bundle_file.exists(), "the bundle's copy is gone");
+        assert!(
+            !store_file.exists(),
+            "and so is the shared store's link to the same bytes — otherwise nothing was freed"
+        );
     }
 
     #[test]

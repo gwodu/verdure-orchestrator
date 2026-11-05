@@ -230,19 +230,11 @@ fn place_from_store(model: &ModelRef, dest: &Path, shared: &Path) -> Result<Plac
     Ok(Placed::Missing)
 }
 
-#[cfg(unix)]
+/// Are `a` and `b` the same file on disk (two names for one set of bytes)?
+/// Device and inode on Unix, volume and file index on Windows. An unreadable
+/// path is "no": the caller then verifies and links, which is always safe.
 fn same_file(a: &Path, b: &Path) -> bool {
-    use std::os::unix::fs::MetadataExt;
-    match (a.metadata(), b.metadata()) {
-        (Ok(x), Ok(y)) => x.ino() == y.ino() && x.dev() == y.dev(),
-        _ => false,
-    }
-}
-
-#[cfg(not(unix))]
-fn same_file(_a: &Path, _b: &Path) -> bool {
-    // Without an inode to compare, leave two verified copies alone.
-    true
+    same_file::is_same_file(a, b).unwrap_or(false)
 }
 
 /// One file: resume, verify, rename. `tick(bytes_of_this_file)` returns true
@@ -631,10 +623,10 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
-    fn inode(p: &Path) -> u64 {
-        use std::os::unix::fs::MetadataExt;
-        p.metadata().unwrap().ino()
+    /// Two names for one file on disk — the claim "one copy per model",
+    /// checked the same way on Unix and Windows.
+    fn one_file(a: &Path, b: &Path) -> bool {
+        same_file::is_same_file(a, b).unwrap()
     }
 
     /// The second phone run (2026-11-04) fetched the 491 MB language model a
@@ -674,15 +666,11 @@ mod tests {
         let b = bundle_dir(dir.path(), "scribe-small").join("m.gguf");
         let store = model_store_path(dir.path(), &llm.sha256);
         assert_eq!(fs::read(&b).unwrap(), data);
-        #[cfg(unix)]
-        {
-            assert_eq!(
-                inode(&a),
-                inode(&store),
-                "the first download became the store's file"
-            );
-            assert_eq!(inode(&b), inode(&store), "the second bundle links to it");
-        }
+        assert!(
+            one_file(&a, &store),
+            "the first download became the store's file"
+        );
+        assert!(one_file(&b, &store), "the second bundle links to it");
         // Progress still reaches the whole-bundle total when nothing was fetched.
         let last = log.0.lock().unwrap().iter().rev().find_map(|e| match e {
             Event::Progress { done, total } => Some((*done, *total)),
@@ -705,7 +693,6 @@ mod tests {
 
     /// Devices that downloaded before the store existed hold one copy per
     /// bundle; the next `download` of either bundle folds them into one.
-    #[cfg(unix)]
     #[test]
     fn separate_copies_from_before_the_store_are_folded_into_one_file() {
         let data = body();
@@ -719,7 +706,7 @@ mod tests {
         }
         let a = bundle_dir(dir.path(), "scribe-floor").join("m.gguf");
         let b = bundle_dir(dir.path(), "scribe-small").join("m.gguf");
-        assert_ne!(inode(&a), inode(&b));
+        assert!(!one_file(&a, &b));
 
         fetch_bundle(
             &bundle("scribe-floor", vec![llm.clone()]),
@@ -739,12 +726,8 @@ mod tests {
             "both were verified, nothing fetched"
         );
         let store = model_store_path(dir.path(), &llm.sha256);
-        assert_eq!(inode(&a), inode(&store));
-        assert_eq!(
-            inode(&b),
-            inode(&store),
-            "the duplicate was replaced by a link"
-        );
+        assert!(one_file(&a, &store));
+        assert!(one_file(&b, &store), "the duplicate was replaced by a link");
         assert_eq!(fs::read(&b).unwrap(), data);
 
         // A damaged store copy is replaced by a bundle's good one, never trusted.
@@ -757,7 +740,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fs::read(&store).unwrap(), data);
-        assert_eq!(inode(&a), inode(&store));
+        assert!(one_file(&a, &store));
         // And a damaged store copy with no good bundle copy is fetched afresh.
         fs::remove_file(&store).unwrap();
         fs::write(&store, b"damaged").unwrap();

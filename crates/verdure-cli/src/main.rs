@@ -243,10 +243,22 @@ fn run(args: &[String]) -> Result<(), String> {
 }
 
 fn default_key_path() -> PathBuf {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    home.join(".verdure").join("issuer.key")
+    key_path_under(
+        std::env::var_os("HOME").map(PathBuf::from),
+        std::env::var_os("USERPROFILE").map(PathBuf::from),
+    )
+}
+
+/// Where a new signing key goes when no `--out` is given: the user's own
+/// folder — `HOME` on Unix, `USERPROFILE` on Windows, where `HOME` is not set.
+/// Before this looked at `USERPROFILE`, a key generated on Windows landed in
+/// the current folder, which for a developer is usually a repository.
+fn key_path_under(home: Option<PathBuf>, user_profile: Option<PathBuf>) -> PathBuf {
+    home.filter(|p| !p.as_os_str().is_empty())
+        .or(user_profile.filter(|p| !p.as_os_str().is_empty()))
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".verdure")
+        .join("issuer.key")
 }
 
 fn read_key(path: &str) -> Result<KeyPair, String> {
@@ -295,5 +307,30 @@ impl Args {
             .filter(|w| w[0] == flag)
             .map(|w| w[1].clone())
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_new_signing_key_goes_to_the_users_own_folder_on_every_os() {
+        let unix = key_path_under(Some("/home/ada".into()), None);
+        assert_eq!(unix, PathBuf::from("/home/ada/.verdure/issuer.key"));
+        // Windows: no HOME, USERPROFILE instead.
+        let win = key_path_under(None, Some("C:/Users/Ada".into()));
+        assert_eq!(win, PathBuf::from("C:/Users/Ada/.verdure/issuer.key"));
+        // An empty HOME (some CI shells) is no HOME.
+        let empty = key_path_under(Some("".into()), Some("C:/Users/Ada".into()));
+        assert_eq!(empty, PathBuf::from("C:/Users/Ada/.verdure/issuer.key"));
+        // HOME wins when both exist (Git Bash on Windows sets both).
+        let both = key_path_under(Some("/c/Users/Ada".into()), Some("C:/Users/Ada".into()));
+        assert_eq!(both, PathBuf::from("/c/Users/Ada/.verdure/issuer.key"));
+        // Neither: the current folder, as before.
+        assert_eq!(
+            key_path_under(None, None),
+            PathBuf::from("./.verdure/issuer.key")
+        );
     }
 }

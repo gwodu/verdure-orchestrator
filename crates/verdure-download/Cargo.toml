@@ -12,6 +12,9 @@ ureq.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+# Are two paths one file (the shared model store's hard links)? The same
+# answer on Unix (device + inode) and Windows (volume + file index).
+same-file = "1"
 
 [dev-dependencies]
 tempfile.workspace = true

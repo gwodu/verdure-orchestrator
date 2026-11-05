@@ -107,6 +107,7 @@ jobs:
               - 'Cargo.lock'
               - 'crates/**'
               - 'bundles/**'
+              - 'bindings/**'
               - '.github/workflows/ci.yml'
 
   decider-web:
@@ -312,6 +313,11 @@ jobs:
         run: cargo test --workspace --locked
       - name: Formatting
         run: cargo fmt --all --check
+      - name: The binding checks' own tests (Python unittest)
+        # bindings/tests: the Windows library inspector's rules and parser. The
+        # customer-path script beside them needs a built library and real models;
+        # build-sdk-windows.yml runs it.
+        run: python3 -B -m unittest discover -s bindings/tests -v
       - name: Compile-check the engine features (llama.cpp + whisper.cpp)
         # check-only: the C++ is compiled by the sys crates' build scripts, nothing
         # is linked into a final binary. This is [OQ-112]'s answer until the app

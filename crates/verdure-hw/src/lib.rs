@@ -11,7 +11,10 @@
 //! * Android — a budget of 60 % of total with `MemAvailable` as a floor,
 //!   because the low-memory killer frees what `MemAvailable` doesn't count.
 //! * Linux — `/proc/meminfo` `MemAvailable`, statvfs.
-//! * Windows — `sysinfo` (no measured formula of our own yet, `[OQ-109]`).
+//! * Windows — `sysinfo`: physical memory the system can hand out now (what
+//!   Task Manager calls "Available"), and free space on the volume the data
+//!   folder is on, found by the longest matching mount point. First run on a
+//!   real Windows machine: the SDK's Windows build (knowledge/26, "Windows").
 //!
 //! No fingerprint identifiers are read, ever: nothing here identifies the
 //! device, only sizes it (knowledge/06).
@@ -103,6 +106,82 @@ pub fn android_budget_mb(total_mb: u64, mem_available_mb: u64, self_resident_mb:
     (total_mb * 6 / 10)
         .saturating_sub(self_resident_mb)
         .max(mem_available_mb)
+}
+
+/// Which of `mounts` holds `path`, by the longest mount point that is a
+/// prefix of it. Windows paths, compared the way Windows compares them: no
+/// case, `/` and `\` alike, and the `\\?\` form that canonicalised paths
+/// carry treated as the plain path. Returns the index into `mounts`.
+///
+/// The first version asked `path.starts_with(mount)` on the path as given. A
+/// relative data folder (what a Python script passes) or a `\\?\C:\…` one
+/// (what `canonicalize` returns) matched no drive, free disk read as 0 MB,
+/// and every bundle was refused for lack of space on a disk with room.
+pub fn windows_volume_for(path: &str, mounts: &[&str]) -> Option<usize> {
+    fn norm(p: &str) -> String {
+        let p = p.replace('/', "\\");
+        let p = match p.strip_prefix("\\\\?\\UNC\\") {
+            Some(rest) => format!("\\\\{rest}"),
+            None => p.strip_prefix("\\\\?\\").unwrap_or(&p).to_string(),
+        };
+        let mut p = p.to_lowercase();
+        if !p.ends_with('\\') {
+            p.push('\\');
+        }
+        p
+    }
+    let path = norm(path);
+    mounts
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| !m.is_empty() && path.starts_with(&norm(m)))
+        .max_by_key(|(_, m)| norm(m).len())
+        .map(|(i, _)| i)
+}
+
+/// What the compiled engines need from an x86-64 processor, and whether this
+/// one has it. `None` when it can run them; otherwise a sentence for a log.
+///
+/// The Windows library is built for the level every x86-64 processor since
+/// 2013–2015 has (AVX2, FMA, F16C, BMI2 — Intel Haswell, AMD Excavator/Zen):
+/// whisper.cpp and llama.cpp use those instructions unconditionally, so on an
+/// older or budget processor (Sandy/Ivy Bridge, pre-2021 Celeron and Pentium,
+/// Atom) the first inference would kill the host process with an illegal
+/// instruction. The SDK refuses to load there and says why. The build level
+/// is asserted on the shipped library by `build-sdk-windows.yml`, so this
+/// rule and the binary cannot drift apart silently.
+pub fn x86_engine_shortfall(avx2: bool, fma: bool, f16c: bool, bmi2: bool) -> Option<String> {
+    let missing: Vec<&str> = [("AVX2", avx2), ("FMA", fma), ("F16C", f16c), ("BMI2", bmi2)]
+        .iter()
+        .filter(|(_, has)| !has)
+        .map(|(name, _)| *name)
+        .collect();
+    (!missing.is_empty()).then(|| {
+        format!(
+            "this processor cannot run the on-device models: it lacks {} (needed: an x86-64 processor from about 2014 or later)",
+            missing.join(", ")
+        )
+    })
+}
+
+/// Can the engines in this build run on this processor? `None` = yes.
+/// Checked where we ship one x86-64 binary to processors we have never seen
+/// (Windows); elsewhere the build is made for the machine or the platform
+/// fixes the instruction set (arm64 phones, Apple Silicon).
+pub fn engine_cpu_shortfall() -> Option<String> {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    {
+        x86_engine_shortfall(
+            std::is_x86_feature_detected!("avx2"),
+            std::is_x86_feature_detected!("fma"),
+            std::is_x86_feature_detected!("f16c"),
+            std::is_x86_feature_detected!("bmi2"),
+        )
+    }
+    #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
+    {
+        None
+    }
 }
 
 /// This process's resident set in MB from `/proc/self/statm` (second field,
@@ -310,11 +389,19 @@ mod platform {
         sys.refresh_memory();
         let total_ram_mb = sys.total_memory() / 1_048_576;
         let available_ram_mb = sys.available_memory() / 1_048_576;
-        let free_disk_mb = sysinfo::Disks::new_with_refreshed_list()
+        // The data folder as an absolute path (a relative one is resolved
+        // against the working directory, as the OS will when files are
+        // written), then the volume whose mount point is its longest prefix.
+        let abs = std::path::absolute(data_dir).unwrap_or_else(|_| data_dir.to_path_buf());
+        let disks = sysinfo::Disks::new_with_refreshed_list();
+        let mounts: Vec<String> = disks
             .iter()
-            .filter(|d| data_dir.starts_with(d.mount_point()))
+            .map(|d| d.mount_point().to_string_lossy().into_owned())
+            .collect();
+        let mount_refs: Vec<&str> = mounts.iter().map(String::as_str).collect();
+        let free_disk_mb = windows_volume_for(&abs.to_string_lossy(), &mount_refs)
+            .and_then(|i| disks.iter().nth(i))
             .map(|d| d.available_space() / 1_048_576)
-            .max()
             .unwrap_or(0);
         DeviceProfile {
             os: "windows".into(),
@@ -414,12 +501,78 @@ mod tests {
     }
 
     #[test]
+    fn a_windows_data_folder_finds_its_volume_however_it_is_written() {
+        let mounts = ["C:\\", "D:\\", "C:\\mnt\\models\\"];
+        // Plain, lower-case drive, forward slashes, no trailing slash.
+        assert_eq!(
+            windows_volume_for("C:\\Users\\Ada\\AppData\\Local\\app", &mounts),
+            Some(0)
+        );
+        assert_eq!(windows_volume_for("d:/data/verdure", &mounts), Some(1));
+        // What `canonicalize` returns on Windows.
+        assert_eq!(
+            windows_volume_for("\\\\?\\C:\\Users\\Ada", &mounts),
+            Some(0)
+        );
+        // A volume mounted in a folder wins over the drive it sits on.
+        assert_eq!(
+            windows_volume_for("C:\\mnt\\models\\verdure", &mounts),
+            Some(2)
+        );
+        // ...but a folder that merely starts with the same letters does not.
+        assert_eq!(
+            windows_volume_for("C:\\mnt\\models2\\verdure", &mounts),
+            Some(0)
+        );
+        // Spaces and non-ASCII names are just path characters.
+        assert_eq!(
+            windows_volume_for("C:\\Users\\José Álvarez\\数据", &mounts),
+            Some(0)
+        );
+        // A network share has no local volume: unknown, not "drive C".
+        assert_eq!(
+            windows_volume_for("\\\\server\\share\\verdure", &mounts),
+            None
+        );
+        assert_eq!(
+            windows_volume_for("\\\\?\\UNC\\server\\share\\x", &["\\\\server\\share\\"]),
+            Some(0)
+        );
+        assert_eq!(windows_volume_for("E:\\x", &mounts), None);
+        assert_eq!(windows_volume_for("C:\\x", &[]), None);
+    }
+
+    #[test]
+    fn an_old_processor_is_refused_with_what_it_lacks() {
+        assert_eq!(x86_engine_shortfall(true, true, true, true), None);
+        // Ivy Bridge (2012): AVX and F16C, but no AVX2, FMA or BMI2.
+        let msg = x86_engine_shortfall(false, false, true, false).unwrap();
+        assert!(msg.contains("AVX2, FMA, BMI2"), "{msg}");
+        assert!(!msg.contains("F16C"), "{msg}");
+        assert!(msg.contains("2014"), "{msg}");
+        // One missing feature is enough.
+        assert!(x86_engine_shortfall(true, false, true, true)
+            .unwrap()
+            .contains("FMA"));
+    }
+
+    #[test]
+    fn this_machine_can_run_the_engines_it_was_built_for() {
+        // Off Windows there is no rule; on Windows x86-64 the CI runner (and
+        // any machine the library is tested on) must pass it.
+        assert_eq!(engine_cpu_shortfall(), None);
+    }
+
+    #[test]
     fn the_live_probe_returns_sane_numbers_on_this_machine() {
         let p = probe(&std::env::temp_dir());
         assert!(p.total_ram_mb >= 1024, "{p:?}");
         assert!(p.available_ram_mb <= p.total_ram_mb, "{p:?}");
         assert!(p.cores >= 1);
         assert_eq!(p.os, std::env::consts::OS);
+        // The temp folder is on a real volume with room for a test run: 0 here
+        // means the volume was not found, which refuses every bundle.
+        assert!(p.free_disk_mb > 0, "{p:?}");
         // The tier is derivable from any live reading.
         let _ = p.tier();
     }

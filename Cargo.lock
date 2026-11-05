@@ -1767,6 +1767,7 @@ dependencies = [
 name = "verdure-download"
 version = "0.1.0"
 dependencies = [
+ "same-file",
  "serde_json",
  "sha2",
  "tempfile",
