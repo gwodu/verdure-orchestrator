@@ -47,6 +47,15 @@ jobs:
       # engines link the C/C++ runtime statically. The two settings must agree
       # (mixing /MT and /MD objects fails at link with LNK2038).
       LLAMA_STATIC_CRT: "1"
+      # ...and llama.cpp needs it said a second way. Its CMake policy level
+      # (3.14...3.28) selects the runtime through CMAKE_MSVC_RUNTIME_LIBRARY and
+      # ignores the /MT flag LLAMA_STATIC_CRT adds, so run 3 produced /MD llama
+      # objects beside /MT whisper ones: 184 × LNK2038 and seven unresolved
+      # __imp_ CRT symbols. Both sys crates forward CMAKE_* to CMake; whisper.cpp
+      # (policy 3.5) ignores this one and takes /MT from the cmake crate.
+      # Neither crate re-runs its build script when a CMAKE_* variable changes:
+      # after editing this block, bump the cache key below.
+      CMAKE_MSVC_RUNTIME_LIBRARY: MultiThreaded
       # /FORCE:MULTIPLE: whisper.cpp and llama.cpp each carry their own ggml, so
       # every gguf_*/ggml_* symbol is defined twice — the same thing the Android
       # build answers with --allow-multiple-definition ([OQ-114]). The linker
@@ -139,8 +148,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             C:/vt
-          key: sdk-windows-cargo-${{ hashFiles('Cargo.lock') }}-${{ github.run_id }}
-          restore-keys: sdk-windows-cargo-
+          key: sdk-windows-cargo-v2-${{ hashFiles('Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: sdk-windows-cargo-v2-
       - name: The checks' own tests
         run: python -B -m unittest discover -s bindings/tests -v
       - name: The SDK suite on Windows (no models)
@@ -198,7 +207,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             C:/vt
-          key: sdk-windows-cargo-${{ hashFiles('Cargo.lock') }}-${{ github.run_id }}
+          key: sdk-windows-cargo-v2-${{ hashFiles('Cargo.lock') }}-${{ github.run_id }}
       - name: An engine-less library (the control), and the bindings generated from the real one
         run: |
           set -euo pipefail
