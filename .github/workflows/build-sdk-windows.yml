@@ -64,22 +64,53 @@ jobs:
           git config --global core.autocrlf false
           git config --global core.longpaths true
       - uses: actions/checkout@v4
-      - name: The signed files arrive unchanged, even with git's Windows default
-        run: |
-          set -euo pipefail
-          if grep -q $'\r' bundles/manifests/example.json; then echo "::error::example.json has CRLF line endings; its signature cannot verify"; exit 1; fi
-          # Control: in a repository WITHOUT our .gitattributes, autocrlf=true does
-          # rewrite a file on its way out — so the check below can see a rewrite.
-          C="$RUNNER_TEMP/crlf-control"; rm -rf "$C"; mkdir -p "$C"; ( cd "$C" && git init -q . && printf 'a\nb\n' > f.txt && git -c core.autocrlf=false add f.txt && git -c core.autocrlf=true checkout-index --prefix=out/ f.txt )
-          grep -q $'\r' "$C/out/f.txt" || { echo "::error::control failed: autocrlf=true did not add CRLF, so this check proves nothing"; exit 1; }
-          # The real thing: this repository, checked out the way a Windows developer's git would.
-          git -c core.autocrlf=true checkout-index --prefix="$RUNNER_TEMP/crlf-check/" bundles/manifests/example.json bundles/manifests/example.json.sig bundles/sandbox.token crates/verdure-ffi/keys/issuer.pub
-          if grep -rq $'\r' "$RUNNER_TEMP/crlf-check"; then echo "::error::.gitattributes does not protect the signed files from autocrlf"; exit 1; fi
-          cmp "$RUNNER_TEMP/crlf-check/bundles/manifests/example.json" bundles/manifests/example.json
-          echo "signed files are byte-identical under core.autocrlf=true"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: The signed files arrive unchanged, even with git's Windows default
+        # In Python, reading bytes: the first version of this step used
+        # `grep $'\r'` in Git Bash, whose grep strips carriage returns from text
+        # before matching, so it could never have found one. Its control caught that.
+        run: |
+          python - <<'PYEOF'
+          import os, pathlib, subprocess, sys
+
+          def git(*args, cwd=None):
+              subprocess.run(["git", *args], cwd=cwd, check=True)
+
+          def has_cr(path):
+              return b"\r" in pathlib.Path(path).read_bytes()
+
+          def fail(msg):
+              print(f"::error::{msg}")
+              sys.exit(1)
+
+          signed = ["bundles/manifests/example.json", "bundles/manifests/example.json.sig", "bundles/sandbox.token", "crates/verdure-ffi/keys/issuer.pub"]
+          for f in signed:
+              if has_cr(f):
+                  fail(f"{f} has CRLF line endings in this checkout; its signature cannot verify")
+
+          temp = pathlib.Path(os.environ["RUNNER_TEMP"])
+          # Control: in a repository WITHOUT our .gitattributes, autocrlf=true does
+          # rewrite a file on its way out, and has_cr sees it.
+          ctl = temp / "crlf-control"
+          ctl.mkdir(parents=True, exist_ok=True)
+          (ctl / "f.txt").write_bytes(b"a\nb\n")
+          git("init", "-q", ".", cwd=ctl)
+          git("-c", "core.autocrlf=false", "add", "f.txt", cwd=ctl)
+          git("-c", "core.autocrlf=true", "checkout-index", "--prefix=out/", "f.txt", cwd=ctl)
+          if not has_cr(ctl / "out" / "f.txt"):
+              fail("control failed: autocrlf=true did not add CRLF, so this check proves nothing")
+
+          # The real thing: this repository's signed files, written out the way a
+          # Windows developer's git (autocrlf=true) would write them.
+          out = temp / "crlf-check"
+          git("-c", "core.autocrlf=true", "checkout-index", f"--prefix={out.as_posix()}/", *signed)
+          for f in signed:
+              if (out / f).read_bytes() != pathlib.Path(f).read_bytes():
+                  fail(f".gitattributes does not protect {f} from autocrlf")
+          print("control saw CRLF where expected; the signed files are byte-identical under core.autocrlf=true")
+          PYEOF
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
