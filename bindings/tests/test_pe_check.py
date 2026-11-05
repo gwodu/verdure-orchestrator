@@ -64,6 +64,19 @@ class Rules(unittest.TestCase):
         self.assertTrue(any("AVX2 is off" in p for p in pe_check.engine_build_problems({**good, "GGML_AVX2": "OFF"}, "x")))
         self.assertTrue(any("vcomp140" in p for p in pe_check.engine_build_problems({**good, "GGML_OPENMP": "ON"}, "x")))
         self.assertTrue(any("shared" in p for p in pe_check.engine_build_problems({**good, "BUILD_SHARED_LIBS": "ON"}, "x")))
+        # Microsoft's compiler with the optimiser lost (what the cmake crate does
+        # to a Release build), and with it given back either way round.
+        msvc = {**good, "CMAKE_GENERATOR": "Visual Studio 18 2026", "CMAKE_C_FLAGS": " -nologo -MT -Brepro", "CMAKE_C_FLAGS_RELEASE": " -nologo -MT -Brepro",
+                "CMAKE_CXX_FLAGS": "/utf-8 -nologo -MT -Brepro", "CMAKE_CXX_FLAGS_RELEASE": "/utf-8 -nologo -MT -Brepro"}
+        slow = pe_check.engine_build_problems(msvc, "whisper.cpp")
+        self.assertEqual(len(slow), 2, slow)
+        self.assertTrue(all("without optimisation" in p for p in slow))
+        self.assertEqual(pe_check.engine_build_problems({**msvc, "CMAKE_C_FLAGS_RELEASE": "/MT /O2 /Ob2 /DNDEBUG", "CMAKE_CXX_FLAGS_RELEASE": "/MT /O2 /Ob2 /DNDEBUG"}, "x"), [])
+        self.assertEqual(pe_check.engine_build_problems({**msvc, "CMAKE_C_FLAGS": "/O2 /DNDEBUG /Ob2 -nologo -MT", "CMAKE_CXX_FLAGS": "/O2 /DNDEBUG /Ob2 -nologo -MT"}, "x"), [])
+        # "/Ob2" alone is inlining, not optimisation; "/Od" is off.
+        self.assertTrue(pe_check.engine_build_problems({**msvc, "CMAKE_C_FLAGS_RELEASE": "/Ob2 /Od", "CMAKE_CXX_FLAGS_RELEASE": "/O2"}, "x"))
+        # Other compilers' caches (no Visual Studio generator) are not judged by this rule.
+        self.assertEqual(pe_check.engine_build_problems({**good, "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG", "CMAKE_GENERATOR": "Unix Makefiles"}, "x"), [])
         # A cache that is not a ggml build at all must not pass by saying nothing.
         self.assertTrue(any("not in the CMake cache" in p for p in pe_check.engine_build_problems({}, "x")))
 

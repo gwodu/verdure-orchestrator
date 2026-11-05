@@ -12,7 +12,8 @@ What it asserts about `verdure.dll`:
     fails to load such a library with an error that names none of this);
   * both engines are inside it, and were compiled for ordinary PCs: the engine
     builds' CMake caches say "not for the build machine's processor", AVX2 on,
-    AVX-512 off — the level `verdure-hw::x86_engine_shortfall` refuses below.
+    AVX-512 off — the level `verdure-hw::x86_engine_shortfall` refuses below —
+    and with the optimiser on.
 
 Every "not found" assertion has a control that proves the instrument can find
 things: a system DLL must parse and show imports and exports; an engine-less
@@ -161,6 +162,16 @@ def engine_build_problems(cache: dict[str, str], name: str) -> list[str]:
     for k in ("GGML_AVX512", "GGML_AVX512_VBMI", "GGML_AVX512_VNNI", "GGML_AVX512_BF16", "GGML_AMX_TILE", "GGML_AMX_INT8", "GGML_AMX_BF16"):
         if _on(cache.get(k)):
             problems.append(f"{name}: {k} is on; most PCs lack it and the library would crash there")
+    # Microsoft's compiler, built through the `cmake` crate: the crate replaces
+    # CMAKE_<LANG>_FLAGS_RELEASE with its own flags minus every /O switch
+    # (cmake-rs issue 240), so "Release" quietly means "no optimisation" unless
+    # the flags are given back. The first Windows build ran 30x slower than the
+    # Mac for exactly this reason and every functional check still passed.
+    if "CMAKE_C_FLAGS_RELEASE" in cache and ("MSVC" in cache.get("CMAKE_C_COMPILER", "").upper() or "Visual Studio" in cache.get("CMAKE_GENERATOR", "")):
+        for lang in ("C", "CXX"):
+            flags = f"{cache.get(f'CMAKE_{lang}_FLAGS', '')} {cache.get(f'CMAKE_{lang}_FLAGS_RELEASE', '')}"
+            if not re.search(r"(^|\s)[-/]O[12x]\b", flags):
+                problems.append(f"{name}: compiled without optimisation ({lang} flags: {flags.strip()!r}); it will run many times slower than it should")
     if _on(cache.get("GGML_OPENMP")):
         problems.append(f"{name}: OpenMP is on; the library would need vcomp140.dll")
     if _on(cache.get("BUILD_SHARED_LIBS")):
@@ -215,7 +226,7 @@ def main() -> int:
             problems.append(f"no CMake cache found for {engine} under {a.build_dir}")
             continue
         cache = cmake_cache_values(caches[engine].read_text(encoding="utf-8", errors="replace"))
-        shown = {k: cache.get(k) for k in ("GGML_NATIVE", "GGML_AVX", "GGML_AVX2", "GGML_AVX512", "GGML_FMA", "GGML_F16C", "GGML_BMI2", "GGML_OPENMP", "BUILD_SHARED_LIBS", "CMAKE_BUILD_TYPE", "CMAKE_MSVC_RUNTIME_LIBRARY")}
+        shown = {k: cache.get(k) for k in ("GGML_NATIVE", "GGML_AVX", "GGML_AVX2", "GGML_AVX512", "GGML_FMA", "GGML_F16C", "GGML_BMI2", "GGML_OPENMP", "BUILD_SHARED_LIBS", "CMAKE_BUILD_TYPE", "CMAKE_MSVC_RUNTIME_LIBRARY", "CMAKE_GENERATOR", "CMAKE_C_FLAGS", "CMAKE_C_FLAGS_RELEASE", "CMAKE_CXX_FLAGS", "CMAKE_CXX_FLAGS_RELEASE")}
         print(f"{engine}: {caches[engine]}\n   {shown}")
         problems += engine_build_problems(cache, engine)
 

@@ -53,9 +53,19 @@ jobs:
       # objects beside /MT whisper ones: 184 × LNK2038 and seven unresolved
       # __imp_ CRT symbols. Both sys crates forward CMAKE_* to CMake; whisper.cpp
       # (policy 3.5) ignores this one and takes /MT from the cmake crate.
-      # Neither crate re-runs its build script when a CMAKE_* variable changes:
-      # after editing this block, bump the cache key below.
+      # Neither crate re-runs its build script when a CMAKE_* variable changes;
+      # the "engine settings" step below cleans both when this block changes.
       CMAKE_MSVC_RUNTIME_LIBRARY: MultiThreaded
+      # The optimiser, given back. For Microsoft's compiler the `cmake` crate
+      # sets CMAKE_<LANG>_FLAGS_RELEASE itself, minus every /O switch (cmake-rs
+      # issue 240) — unless they are already defined, which both sys crates do
+      # for any CMAKE_* variable in the environment. llama-cpp-sys-2 works around
+      # the bug; whisper-rs-sys does not, and since the linker keeps whisper's
+      # copy of ggml for BOTH engines, run 4's library was correct and ~30x
+      # slower than the Mac (11 s of speech in 216 s). pe_check.py now reads the
+      # flags back from both CMake caches; sdk_smoke.py has a speed limit.
+      CMAKE_C_FLAGS_RELEASE: "/MT /O2 /Ob2 /DNDEBUG"
+      CMAKE_CXX_FLAGS_RELEASE: "/MT /O2 /Ob2 /DNDEBUG"
       # /FORCE:MULTIPLE: whisper.cpp and llama.cpp each carry their own ggml, so
       # every gguf_*/ggml_* symbol is defined twice — the same thing the Android
       # build answers with --allow-multiple-definition ([OQ-114]). The linker
@@ -150,6 +160,21 @@ jobs:
             C:/vt
           key: sdk-windows-cargo-v2-${{ hashFiles('Cargo.lock') }}-${{ github.run_id }}
           restore-keys: sdk-windows-cargo-v2-
+      - name: Rebuild the engines if their build settings changed
+        # The restored cache holds engines compiled under whatever the settings
+        # were then, and cargo cannot see a CMAKE_* change. A stamp in the target
+        # folder records the settings; a different stamp cleans the two engine
+        # crates (not the ~5 minutes of Rust dependencies around them).
+        run: |
+          STAMP="$CARGO_TARGET_DIR/engine-settings.txt"
+          NOW="native=$GGML_NATIVE crt=$LLAMA_STATIC_CRT rt=$CMAKE_MSVC_RUNTIME_LIBRARY c=$CMAKE_C_FLAGS_RELEASE cxx=$CMAKE_CXX_FLAGS_RELEASE rustflags=$CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS"
+          if [ "$(cat "$STAMP" 2>/dev/null || true)" != "$NOW" ]; then
+            echo "engine build settings changed (or first build): cleaning whisper-rs-sys and llama-cpp-sys-2"
+            cargo clean --release --target "$TARGET" -p whisper-rs-sys -p llama-cpp-sys-2 || true
+            mkdir -p "$CARGO_TARGET_DIR" && echo "$NOW" > "$STAMP"
+          else
+            echo "engine build settings unchanged; the cached engines are reused"
+          fi
       - name: The checks' own tests
         run: python -B -m unittest discover -s bindings/tests -v
       - name: The SDK suite on Windows (no models)
@@ -269,7 +294,7 @@ jobs:
           python -I "$KIT/tests/sdk_smoke.py" --binding "$KIT/python" --assets "$KIT/bundles" \
             --data-dir C:/vd/online --audio "$RUNNER_TEMP/jfk.wav" --mode online \
             --also-bundle auto --export-bundles C:/vd/seed --awkward-path --require-engines \
-            --report out/smoke-online.json
+            --max-rtf 8 --max-chat-seconds 4 --report out/smoke-online.json
       - name: "Customer path, offline: Python's network blocked, model files placed by hand"
         if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: pwsh
@@ -286,7 +311,7 @@ jobs:
             python -I "$env:KIT/tests/sdk_smoke.py" --binding "$env:KIT/python" --assets "$env:KIT/bundles" `
               --data-dir C:/vd/offline --audio "$env:RUNNER_TEMP/jfk.wav" --mode preplaced `
               --seed-from C:/vd/seed --awkward-path --require-engines --expect-no-network `
-              --report out/smoke-offline.json
+              --max-rtf 8 --max-chat-seconds 4 --report out/smoke-offline.json
             $code = $LASTEXITCODE
           } finally {
             Remove-NetFirewallRule -DisplayName "verdure-ci-block-python"
@@ -302,9 +327,15 @@ jobs:
           Expand-Archive "$T/kotlinc.zip" -DestinationPath $T -Force
           Invoke-WebRequest https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.14.0/jna-5.14.0.jar -OutFile "$T/jna.jar"
           Invoke-WebRequest https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar -OutFile "$T/coroutines.jar"
-          & "$T/kotlinc/bin/kotlinc.bat" "$env:KIT/kotlin/uniffi/verdure/verdure.kt" "$env:KIT/tests/Smoke.kt" -cp "$T/jna.jar;$T/coroutines.jar" -include-runtime -nowarn -d "$T/smoke.jar"
+          # One classpath entry for the compiler: a ';' inside an argument is an
+          # argument separator to a .bat file, so "a.jar;b.jar" reached kotlinc.bat
+          # as two arguments in run 4. Unpack both jars into one folder instead.
+          New-Item -ItemType Directory -Force "$T/kcp" | Out-Null
+          7z x -y -bso0 -bsp0 "-o$T/kcp" "$T/jna.jar"
+          7z x -y -bso0 -bsp0 "-o$T/kcp" "$T/coroutines.jar"
+          & "$T/kotlinc/bin/kotlinc.bat" "$env:KIT/kotlin/uniffi/verdure/verdure.kt" "$env:KIT/tests/Smoke.kt" -cp "$T/kcp" -include-runtime -nowarn -d "$T/smoke.jar"
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::the Kotlin binding did not compile"; exit 1 }
-          java "-Djna.library.path=$env:KIT/lib" -cp "$T/smoke.jar;$T/jna.jar;$T/coroutines.jar" SmokeKt "$env:KIT/bundles" "C:/vd/kotlin" "C:/vd/seed"
+          java "-Djna.library.path=$env:KIT/lib" -cp "$T/smoke.jar;$T/kcp" SmokeKt "$env:KIT/bundles" "C:/vd/kotlin" "C:/vd/seed"
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::the Kotlin run failed"; exit 1 }
       - name: What the checks said
         if: always()

@@ -126,6 +126,8 @@ def main() -> int:
     ap.add_argument("--awkward-path", action="store_true", help=f"put the data under a folder named {AWKWARD!r}")
     ap.add_argument("--expect-no-network", action="store_true", help="the caller blocked this program's network; prove it, then run")
     ap.add_argument("--require-engines", action="store_true", help="fail if the library was built without whisper or llama")
+    ap.add_argument("--max-rtf", type=float, help="fail if the recording takes more than this many times its own length to transcribe")
+    ap.add_argument("--max-chat-seconds", type=float, help="fail if the one-word answer takes longer than this")
     ap.add_argument("--report", help="write the results here as JSON")
     a = ap.parse_args()
 
@@ -385,6 +387,11 @@ def main() -> int:
         ctx["asr_rtf"] = took / seconds
         for phrase in JFK_PHRASES:
             assert phrase in plain(text), f"expected {phrase!r} in the transcript; got {text!r}"
+        # Correct but implausibly slow is a broken build, not a pass: the first
+        # Windows library transcribed this perfectly at 19.7x real time because
+        # the engine had been compiled without optimisation.
+        if a.max_rtf is not None:
+            assert took / seconds <= a.max_rtf, f"{took / seconds:.1f}× real time, limit {a.max_rtf}: correct words, but far too slow — check how the engines were compiled"
         return f"{seconds:.0f} s of speech in {took:.1f} s ({took / seconds:.2f}× real time): {text!r}"
 
     check("a known recording is transcribed correctly", c_transcribe, needs=("load brings both engines into memory",))
@@ -397,6 +404,8 @@ def main() -> int:
         assert "paris" in reply.lower(), f"expected Paris; got {reply!r}"
         assert sink.pieces, "nothing was streamed"
         assert "".join(sink.pieces).strip() == reply.strip(), "the streamed pieces do not add up to the reply"
+        if a.max_chat_seconds is not None:
+            assert took <= a.max_chat_seconds, f"a one-word answer took {took:.1f} s, limit {a.max_chat_seconds}: check how the engines were compiled"
         return f"{reply.strip()!r} in {took:.1f} s, streamed in {len(sink.pieces)} pieces"
 
     check("a known question is answered correctly", c_chat, needs=("load brings both engines into memory",))
